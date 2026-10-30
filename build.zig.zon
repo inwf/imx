@@ -1,6 +1,6 @@
 .{
     .name = .imx,
-    .version = "0.2.0",
+    .version = "0.3.0",
     .fingerprint = 0x36cac559d7d1d067,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
@@ -13,5 +13,5 @@
             .hash = "translate_c-2.0.2-Q_BUWvBNBwDnyehSiuAJmdFcMYHYGA-Jc3KiYdrV2Dqx",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", ".zig-version", "src", "tests", "README.md", "LICENSE", "NOTICE", "licenses" },
+    .paths = .{ "build.zig", "build.zig.zon", ".zig-version", "install.sh", "src", "tests", "README.md", "LICENSE", "NOTICE", "licenses" },
 }

@@ -52,10 +52,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-安装已经发布的指定版本，例如 `v0.2.0`：
+安装已经发布的指定版本，例如 `v0.3.0`：
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.2.0/install.sh | bash -s -- v0.2.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.3.0/install.sh | bash -s -- v0.3.0
 ```
 
 安装脚本同时安装许可证，并在完成后删除下载和解压产生的临时文件。
