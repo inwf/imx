@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import io
 import json
 import os
 import socket
@@ -10,6 +11,7 @@ import termios
 import pexpect
 import psutil
 import pyte
+import pytest
 
 from conftest import BINARY, ROOT
 
@@ -137,6 +139,40 @@ def test_snapshot_restores_active_screen(sessions):
     assert any("定位内容" in line for line in screen.display)
     assert "SCREEN_MARKER" in before
     assert "定位内容" in sessions.run("cat", "dev").stdout
+
+
+@pytest.mark.parametrize("alternate", [False, True])
+def test_attach_and_detach_preserve_terminal_colors(sessions, alternate):
+    initial = io.StringIO()
+    child = sessions.spawn(initialize=False)
+    child.logfile_read = initial
+    child.expect(r"[#$] ")
+    child.sendline("stty -echo; PS1='IMX_PROMPT> '; PROMPT_COMMAND=; printf '\\nINITIALIZED\\n'")
+    child.expect_exact("\r\nINITIALIZED\r\n")
+    child.expect_exact("IMX_PROMPT> ")
+    if alternate:
+        sessions.command(child, "printf '\\033[?1049h'")
+    sessions.command(child, "printf '\\033[2J\\033[H\\033[1;31mINDEXED\\033[0m\\n\\033[38;2;18;52;86mRGB\\033[0m\\n'")
+    child.sendcontrol("\\")
+    child.expect(pexpect.EOF)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+
+    replay = io.StringIO()
+    attached = sessions.spawn(initialize=False)
+    attached.logfile_read = replay
+    attached.expect_exact("IMX_PROMPT> ")
+    attached.sendline("imx detach")
+    attached.expect(pexpect.EOF)
+    restored = replay.getvalue()
+    screen = pyte.Screen(80, 24)
+    pyte.Stream(screen).feed(restored)
+    assert screen.buffer[0][0].bold
+    assert screen.buffer[0][0].fg != "default"
+    assert screen.buffer[1][0].fg == "123456"
+    assert "INDEXED" in restored and "RGB" in restored
+    for text in (initial.getvalue(), restored):
+        for sequence in ("\x1b]4;", "\x1b]10;", "\x1b]11;", "\x1b]12;", "\x1b]104", "\x1b]110", "\x1b]111", "\x1b]112"):
+            assert sequence not in text
 
 
 def test_creation_race_uses_single_daemon_and_session(sessions):

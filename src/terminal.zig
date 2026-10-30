@@ -62,10 +62,6 @@ pub fn restore(allocator: std.mem.Allocator, term: *vt.Terminal) ![]u8 {
     try restoreScreen(&builder.writer, term, true);
     if (term.getPwd()) |pwd| try builder.writer.print("\x1b]7;{s}\x1b\\", .{pwd});
     if (term.getTitle()) |title| try builder.writer.print("\x1b]2;{s}\x07", .{title});
-    const colors = &term.colors;
-    inline for (.{ .{ 10, "foreground" }, .{ 11, "background" }, .{ 12, "cursor" } }) |field| {
-        if (@field(colors, field[1]).override) |color| try builder.writer.print("\x1b]{d};rgb:{x:0>2}/{x:0>2}/{x:0>2}\x1b\\", .{ field[0], color.r, color.g, color.b });
-    }
     const style: u8 = if (term.cursor.is_default) 0 else switch (term.screens.active.cursor.cursor_style) {
         .block, .block_hollow => if (term.modes.get(.cursor_blinking)) 1 else 2,
         .underline => if (term.modes.get(.cursor_blinking)) 3 else 4,
@@ -96,7 +92,7 @@ fn restoreScreen(writer: *std.Io.Writer, term: *vt.Terminal, modes: bool) !void 
         false,
     ) };
     visible.extra = .{
-        .palette = true,
+        .palette = false,
         .modes = modes,
         .scrolling_region = true,
         .tabstops = true,
@@ -105,6 +101,48 @@ fn restoreScreen(writer: *std.Io.Writer, term: *vt.Terminal, modes: bool) !void 
         .screen = .all,
     };
     try visible.format(writer);
+}
+
+test "restore preserves the receiving terminal colors and styled content" {
+    const allocator = std.testing.allocator;
+    for (0..3) |scenario| {
+        var source = try init(allocator, std.testing.io, .{ .rows = 24, .cols = 80 });
+        defer source.deinit(allocator);
+        var input = source.vtStream();
+        defer input.deinit();
+        if (scenario != 0) {
+            input.nextSlice("\x1b]4;1;rgb:ff/00/00\x1b\\\x1b]10;rgb:00/ff/00\x1b\\\x1b]11;rgb:00/00/ff\x1b\\\x1b]12;rgb:ff/ff/00\x1b\\");
+            for (0..40) |_| input.nextSlice("\x1b[31mHISTORY\x1b[0m\r\n");
+            if (scenario == 2) input.nextSlice("\x1b[?1049h");
+            input.nextSlice("\x1b[2J\x1b[H\x1b[1;31mINDEXED\x1b[0m\r\n\x1b[38;2;18;52;86mRGB\x1b[0m");
+        }
+        const snapshot = try restore(allocator, &source);
+        defer allocator.free(snapshot);
+
+        var target = try init(allocator, std.testing.io, .{ .rows = 24, .cols = 80 });
+        defer target.deinit(allocator);
+        var output = target.vtStream();
+        defer output.deinit();
+        output.nextSlice("\x1b]4;0;rgb:12/34/56\x1b\\\x1b]4;1;rgb:ab/cd/ef\x1b\\\x1b]4;255;rgb:65/43/21\x1b\\\x1b]10;rgb:ee/dd/cc\x1b\\\x1b]11;rgb:11/22/33\x1b\\\x1b]12;rgb:aa/bb/cc\x1b\\");
+        const colors = target.colors;
+        output.nextSlice(snapshot);
+        try std.testing.expectEqualDeep(colors.palette.current, target.colors.palette.current);
+        try std.testing.expectEqualDeep(colors.foreground, target.colors.foreground);
+        try std.testing.expectEqualDeep(colors.background, target.colors.background);
+        try std.testing.expectEqualDeep(colors.cursor, target.colors.cursor);
+
+        var expected = std.Io.Writer.Allocating.init(allocator);
+        defer expected.deinit();
+        var actual = std.Io.Writer.Allocating.init(allocator);
+        defer actual.deinit();
+        var source_formatter = vt.formatter.TerminalFormatter.init(&source, .vt);
+        source_formatter.extra = .none;
+        var target_formatter = vt.formatter.TerminalFormatter.init(&target, .vt);
+        target_formatter.extra = .none;
+        try source_formatter.format(&expected.writer);
+        try target_formatter.format(&actual.writer);
+        try std.testing.expectEqualStrings(expected.written(), actual.written());
+    }
 }
 
 test "restore preserves primary history while the alternate screen is active" {
