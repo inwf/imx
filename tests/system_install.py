@@ -60,11 +60,11 @@ def authorize(child, text):
     child.sendline(PASSWORD)
 
 
-def installed(child, download):
-    authorize(child, download)
+def installed(child, invocation, prompt="SYSTEM_PROMPT> "):
+    authorize(child, invocation)
     child.expect_exact("\r\nSTATUS=0\r\n")
     assert "Installed imx" in child.before
-    child.expect_exact("SYSTEM_PROMPT> ")
+    child.expect_exact(prompt)
 
 
 def session(child):
@@ -124,6 +124,9 @@ def main():
                 fetch.kill()
                 fetch.wait()
         assert checked("imx", "-v", env=environment).stdout == f"imx {version}\n"
+        inode = binary.stat().st_ino
+        checked("imx", "update", env=environment)
+        assert binary.stat().st_ino != inode
         checked("imx", "uninstall", env=environment)
         assert not binary.exists()
         assert not licenses.exists()
@@ -165,31 +168,34 @@ def main():
             other_shell = int(next(csv.DictReader(io.StringIO(listing), delimiter="\t"))["PID"])
             other_backend = psutil.Process(psutil.Process(other_shell).ppid())
         shell_pid = None
-        if case in ("inside", "reinstall", "cancel-uninstall", "other-user"):
+        if case in ("inside", "reinstall", "update", "update-inside", "cancel-uninstall", "cancel-update", "other-user"):
             session(child)
             variables = [f"{name}={value}" for name, value in environment.items()]
             listing = checked("runuser", "--user", USERNAME, "--", "env", *variables, "imx", "ls").stdout
             shell_pid = int(next(csv.DictReader(io.StringIO(listing), delimiter="\t"))["PID"])
             backend = psutil.Process(psutil.Process(shell_pid).ppid())
-            if case != "inside":
+            if case not in ("inside", "update-inside"):
                 child.sendcontrol("\\")
                 child.expect_exact("SYSTEM_PROMPT> ")
-        if case == "reinstall":
+        if case in ("reinstall", "update", "update-inside"):
             inode = binary.stat().st_ino
-            command(child, "sudo -k")
-            installed(child, download)
+            prompt = "INNER_PROMPT> " if case == "update-inside" else "SYSTEM_PROMPT> "
+            command(child, "sudo -k", prompt)
+            installed(child, download if case == "reinstall" else "imx update", prompt)
             assert binary.stat().st_ino != inode
             assert psutil.pid_exists(shell_pid)
-            assert "SYSTEM_HISTORY" in command(child, "imx cat dev")
-            child.sendline("imx attach dev")
-            child.expect_exact("INNER_PROMPT> ")
+            assert "SYSTEM_HISTORY" in command(child, "imx cat dev", prompt)
+            if case != "update-inside":
+                child.sendline("imx attach dev")
+                child.expect_exact("INNER_PROMPT> ")
             assert "retained" in command(child, "printf '%s\\n' \"$SYSTEM_MARKER\"", "INNER_PROMPT> ")
             child.sendcontrol("\\")
             child.expect_exact("SYSTEM_PROMPT> ")
-        if case in ("cancel-install", "cancel-uninstall"):
+        if case in ("cancel-install", "cancel-uninstall", "cancel-update"):
             inode = binary.stat().st_ino
             command(child, "sudo -k")
-            child.sendline(download if case == "cancel-install" else "imx uninstall")
+            invocation = download if case == "cancel-install" else "imx update" if case == "cancel-update" else "imx uninstall"
+            child.sendline(invocation)
             child.expect_exact(f"[sudo] password for {USERNAME}:")
             child.sendcontrol("c")
             child.expect_exact("SYSTEM_PROMPT> ")

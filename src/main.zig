@@ -6,6 +6,7 @@ const server = @import("server.zig");
 const protocol = @import("protocol.zig");
 const registry = @import("registry.zig");
 const uninstall = @import("uninstall.zig");
+const update = @import("update.zig");
 const version = @import("build_options").version;
 pub const std_options: std.Options = .{ .log_level = .err };
 
@@ -40,6 +41,7 @@ fn execute(init: std.process.Init.Minimal) !void {
             \\  imx cat <name>       Print retained history and the active screen
             \\  imx detach           Detach clients from the current session
             \\  imx kill <name>      Terminate and remove a session
+            \\  imx update           Install the latest published release
             \\  imx uninstall        Terminate sessions and remove the installation
             \\  imx -v               Print version
             \\  imx help             Print help
@@ -59,6 +61,10 @@ fn execute(init: std.process.Init.Minimal) !void {
     if (std.mem.eql(u8, command, "uninstall")) {
         if (args.len != 2) return error.InvalidArguments;
         return uninstall.run(allocator, io, args[0]);
+    }
+    if (std.mem.eql(u8, command, "update")) {
+        if (args.len != 2) return error.InvalidArguments;
+        return update.run(allocator, io, init.environ);
     }
     const tag: protocol.Tag = if (std.mem.eql(u8, command, "attach")) .attach else if (std.mem.eql(u8, command, "list") or std.mem.eql(u8, command, "ls")) .list else if (std.mem.eql(u8, command, "cat")) .cat else if (std.mem.eql(u8, command, "detach")) .detach else if (std.mem.eql(u8, command, "kill")) .kill else return error.UnknownCommand;
     const name: []const u8 = switch (tag) {

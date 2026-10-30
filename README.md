@@ -91,7 +91,13 @@ imx kill dev
 
 ### Update and uninstall
 
-Run the installation command again to install the latest release while keeping active sessions running. An existing backend continues using the version it started with; once all sessions have ended, a newly created session uses the updated version.
+Install the latest published release:
+
+```bash
+imx update
+```
+
+The updater keeps the current installation directory, detects your architecture, and verifies SHA256 checksums. It prompts for `sudo` when system installation files require administrator permissions. You can run it inside or outside a session. Active sessions keep running; an existing backend continues using the version it started with, and a new backend uses the updated version after all sessions have ended. You can also update by running the installation command again.
 
 ```bash
 imx uninstall
@@ -108,6 +114,7 @@ Uninstalling terminates the current user's imx sessions and removes the current 
 | `imx cat dev` | Print retained history and the active screen as text |
 | `imx detach` | Run inside a session to detach all its connections |
 | `imx kill dev` | Terminate and remove the `dev` session |
+| `imx update` | Install the latest published release in the current installation directory |
 | `imx uninstall` | Remove the current installation and runtime files |
 | `imx -v` | Print the version |
 | `imx help` | Print help |

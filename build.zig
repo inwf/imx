@@ -36,6 +36,7 @@ pub fn build(b: *std.Build) void {
         },
     });
     module.addOptions("build_options", options);
+    module.addAnonymousImport("install.sh", .{ .root_source_file = b.path("install.sh") });
     const exe = b.addExecutable(.{ .name = "imx", .root_module = module });
     b.installArtifact(exe);
     for (layout.license_files) |file| {
