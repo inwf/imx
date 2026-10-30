@@ -168,12 +168,17 @@ def main():
             other_shell = int(next(csv.DictReader(io.StringIO(listing), delimiter="\t"))["PID"])
             other_backend = psutil.Process(psutil.Process(other_shell).ppid())
         shell_pid = None
+        job_pid = None
         if case in ("inside", "reinstall", "update", "update-inside", "cancel-uninstall", "cancel-update", "other-user"):
             session(child)
             variables = [f"{name}={value}" for name, value in environment.items()]
             listing = checked("runuser", "--user", USERNAME, "--", "env", *variables, "imx", "ls").stdout
             shell_pid = int(next(csv.DictReader(io.StringIO(listing), delimiter="\t"))["PID"])
             backend = psutil.Process(psutil.Process(shell_pid).ppid())
+            if case == "inside":
+                output = command(child, "sleep 600 & printf '\\nJOB_PID=%s\\n' \"$!\"", "INNER_PROMPT> ")
+                job_pid = int(next(line.removeprefix("JOB_PID=") for line in output.splitlines() if line.startswith("JOB_PID=")))
+                assert psutil.pid_exists(job_pid)
             if case not in ("inside", "update-inside"):
                 child.sendcontrol("\\")
                 child.expect_exact("SYSTEM_PROMPT> ")
@@ -228,6 +233,8 @@ def main():
         assert not list(binary.parent.glob(".imx-install.*"))
         if shell_pid is not None:
             assert not psutil.pid_exists(shell_pid)
+        if job_pid is not None:
+            assert not psutil.pid_exists(job_pid)
         if other is not None:
             assert other_backend.is_running()
             assert "OTHER_USER_ALIVE" in command(other, "printf 'OTHER_USER_ALIVE\\n'", "OTHER_PROMPT> ")

@@ -22,7 +22,7 @@ def test_commands_and_empty_list(sessions):
     for args in [(), ("list",), ("ls",)]:
         assert sessions.run(*args).stdout == "No sessions.\n"
     assert not (sessions.runtime / "server.sock").exists()
-    assert sessions.run("-v").stdout == "imx 0.3.0\n"
+    assert sessions.run("-v").stdout == "imx 0.3.1\n"
     help_text = sessions.run("help").stdout
     for command in ["attach", "list", "cat", "detach", "kill", "update", "uninstall", "-v", "help"]:
         assert command in help_text
@@ -134,7 +134,8 @@ def test_kill_terminates_shell_and_background_jobs(sessions):
     assert psutil.pid_exists(job_pid)
     sessions.run("kill", "dev")
     child.expect(pexpect.EOF)
-    sessions.wait(lambda: not psutil.pid_exists(shell_pid) and not psutil.pid_exists(job_pid))
+    assert not psutil.pid_exists(shell_pid)
+    assert not psutil.pid_exists(job_pid)
     assert sessions.sessions() == []
 
 

@@ -470,6 +470,12 @@ fn stopClients(self: *Server) !void {
 }
 
 fn terminateSession(sid: c.pid_t) !void {
+    const allocator = std.heap.c_allocator;
+    var descriptors: std.ArrayList(c_int) = .empty;
+    defer {
+        for (descriptors.items) |fd| sys.close(fd);
+        descriptors.deinit(allocator);
+    }
     const directory = c.opendir("/proc") orelse return sys.failure("opendir(/proc)");
     defer _ = c.closedir(directory);
     while (c.readdir(directory)) |entry| {
@@ -477,6 +483,7 @@ fn terminateSession(sid: c.pid_t) !void {
         if (name.len == 0 or !std.ascii.isDigit(name[0])) continue;
         const pid = std.fmt.parseInt(c.pid_t, name, 10) catch return error.InvalidProcessDirectory;
         if (c.getsid(pid) != sid) continue;
+        try descriptors.ensureUnusedCapacity(allocator, 1);
         const raw = std.os.linux.pidfd_open(pid, 0);
         switch (std.os.linux.errno(raw)) {
             .SUCCESS => {},
@@ -484,14 +491,50 @@ fn terminateSession(sid: c.pid_t) !void {
             else => return error.PidfdOpenFailed,
         }
         const fd: c_int = @intCast(raw);
-        defer sys.close(fd);
-        if (c.getsid(pid) != sid) continue;
+        if (c.getsid(pid) != sid) {
+            sys.close(fd);
+            continue;
+        }
+        descriptors.appendAssumeCapacity(fd);
         const result = std.os.linux.pidfd_send_signal(fd, .KILL, null, 0);
         switch (std.os.linux.errno(result)) {
             .SUCCESS, .SRCH => {},
             else => return error.PidfdSendSignalFailed,
         }
     }
+    const deadline = try monotonicMilliseconds() + 5000;
+    for (descriptors.items) |fd| {
+        var event: c.struct_pollfd = .{ .fd = fd, .events = c.POLLIN, .revents = 0 };
+        while (true) {
+            const timeout: c_int = @intCast(@max(0, deadline - try monotonicMilliseconds()));
+            const result = c.poll(&event, 1, timeout);
+            if (result < 0 and c.__errno_location().* == c.EINTR) continue;
+            if (try sys.check(result, "poll(session exit)") == 0) return error.SessionTerminationTimeout;
+            if (event.revents & (c.POLLIN | c.POLLHUP) == 0) return error.PidfdWaitFailed;
+            break;
+        }
+    }
+    for (descriptors.items) |fd| {
+        var info: c.siginfo_t = undefined;
+        // pidfd 保持进程身份，waitid 回收已由后台进程接管的子进程。
+        while (c.waitid(c.P_PIDFD, @intCast(fd), &info, c.WEXITED) < 0) {
+            switch (c.__errno_location().*) {
+                c.EINTR => continue,
+                c.ECHILD => break,
+                else => return sys.failure("waitid(session child)"),
+            }
+        }
+    }
+}
+
+fn monotonicMilliseconds() !i64 {
+    var time: std.os.linux.timespec = undefined;
+    const errno_value = std.os.linux.errno(std.os.linux.clock_gettime(.MONOTONIC, &time));
+    if (errno_value != .SUCCESS) {
+        c.__errno_location().* = @backingInt(errno_value);
+        return sys.failure("clock_gettime");
+    }
+    return time.sec * 1000 + @divTrunc(time.nsec, 1_000_000);
 }
 
 fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8, cwd: []const u8, shell: []const u8, environment: []const u8, size: sys.Size) !struct { pid: c.pid_t, fd: c_int } {
