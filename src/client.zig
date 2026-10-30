@@ -3,6 +3,7 @@ const sys = @import("sys.zig");
 const c = sys.c;
 const protocol = @import("protocol.zig");
 const config = @import("config.zig");
+const registry = @import("registry.zig");
 
 pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8) !void {
     try protocol.send(fd, tag, payload);
@@ -37,7 +38,7 @@ pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, paylo
     }
 }
 
-pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const u8) !void {
+pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const u8, records: *const registry.Registry) !void {
     const size = try sys.Size.get(0);
     const cwd = try std.process.currentPathAlloc(io, allocator);
     defer allocator.free(cwd);
@@ -69,6 +70,9 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
         return error.RequestFailed;
     }
     if (response.tag != .ok or response.len != 0) return error.InvalidMessage;
+    const signal = try sys.signalFd(&.{ c.SIGWINCH, c.SIGTERM, c.SIGHUP, c.SIGINT });
+    defer sys.close(signal);
+    defer sys.unblockSignals() catch @panic("failed to restore signal mask");
     var saved_termios: c.struct_termios = undefined;
     _ = try sys.check(c.tcgetattr(0, &saved_termios), "tcgetattr");
     var raw = saved_termios;
@@ -76,8 +80,8 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
     _ = try sys.check(c.tcsetattr(0, c.TCSANOW, &raw), "tcsetattr(raw)");
     defer {
         _ = c.tcsetattr(0, c.TCSANOW, &saved_termios);
-        sys.writeAll(1, "\x1b[?2026l\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l\x1b[?2004l\x1b[>4;0m\x1b[<u\x1b[?25h\x1b[0m\x1b[0 q\r\n", false) catch |err| {
-            if (err != error.ConnectionClosed) std.log.err("terminal cleanup: {s}", .{@errorName(err)});
+        resetDisplay() catch |err| {
+            if (err != error.ConnectionClosed) std.process.exit(1);
         };
     }
     const stdin_flags = try sys.check(c.fcntl(0, c.F_GETFL), "fcntl(stdin)");
@@ -89,9 +93,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
         _ = c.fcntl(1, c.F_SETFL, stdout_flags);
         _ = c.fcntl(0, c.F_SETFL, stdin_flags);
     }
-    const signal = try sys.signalFd(&.{ c.SIGWINCH, c.SIGTERM, c.SIGHUP, c.SIGINT });
-    defer sys.close(signal);
-    defer sys.unblockSignals() catch @panic("failed to restore signal mask");
+    try records.unlock();
     var input: protocol.Queue = .{};
     defer input.deinit(allocator);
     var output: protocol.Queue = .{};
@@ -107,11 +109,12 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
             .{ .fd = signal, .events = c.POLLIN, .revents = 0 },
             .{ .fd = if (output.pending().len > 0) 1 else -1, .events = c.POLLOUT, .revents = 0 },
         };
-        const count = c.poll(&pollfds, pollfds.len, -1);
+        const count = c.poll(&pollfds, pollfds.len, if (connected) -1 else 100);
         if (count < 0) {
             if (c.__errno_location().* == c.EINTR) continue;
             return sys.failure("poll(client)");
         }
+        if (count == 0) return error.TerminalOutputBlocked;
         if (pollfds[2].revents & c.POLLIN != 0) {
             var info: c.struct_signalfd_siginfo = undefined;
             while ((try sys.read(signal, std.mem.asBytes(&info))) != null) {
@@ -158,4 +161,11 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
         // POLLHUP 可以和未读取的数据同时到达，继续读取直到取得 EOF。
         if (pollfds[1].revents & c.POLLHUP != 0 and pollfds[1].revents & c.POLLIN == 0) connected = false;
     }
+}
+
+fn resetDisplay() !void {
+    const flags = try sys.nonblocking(1, true);
+    defer _ = c.fcntl(1, c.F_SETFL, flags);
+    const bytes = "\x1b[?2026l\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l\x1b[?2004l\x1b[>4;0m\x1b[<u\x1b[?25h\x1b[0m\x1b[0 q\r\n";
+    if (try sys.write(1, bytes, false) != bytes.len) return error.TerminalCleanupBlocked;
 }

@@ -229,7 +229,11 @@ const Server = struct {
                 if (client.session != null) return error.InvalidMessage;
                 try config.validateName(msg.payload);
                 const session = self.sessions.get(msg.payload) orelse return error.SessionNotFound;
-                while (session.clients.items.len > 0) try self.dropClient(session.clients.items[session.clients.items.len - 1]);
+                while (session.clients.items.len > 0) {
+                    const attached = session.clients.items[session.clients.items.len - 1];
+                    try signalClient(attached);
+                    try self.dropClient(attached);
+                }
                 client.closing = true;
                 try self.respond(client, .ok, "");
             },
@@ -275,7 +279,10 @@ const Server = struct {
                 };
                 const message = msg orelse break;
                 self.request(client, message) catch |err| switch (err) {
-                    error.SlowClient => return self.dropClient(client),
+                    error.SlowClient => {
+                        try signalClient(client);
+                        return self.dropClient(client);
+                    },
                     error.SessionNotFound, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.ShellExecFailed => {
                         client.closing = true;
                         try self.respond(client, .failure, @errorName(err));
@@ -326,6 +333,7 @@ const Server = struct {
                     // 屏幕快照必须先发送，期间产生的输出保存在有容量限制的队列中。
                     client.live.message(self.allocator, .output, buffer[0..count]) catch |err| switch (err) {
                         error.SlowClient => {
+                            try signalClient(client);
                             try self.dropClient(client);
                             continue;
                         },
@@ -431,6 +439,31 @@ fn writePty(handler: *Handler, data: []const u8) void {
 
 fn deviceAttributes(_: *Handler) terminal.vt.device_attributes.Attributes {
     return .{};
+}
+
+fn signalClient(client: *const Client) !void {
+    if (client.session == null) return;
+    const credentials = try config.peer(client.fd);
+    const raw = std.os.linux.pidfd_open(credentials.pid, 0);
+    switch (std.os.linux.errno(raw)) {
+        .SUCCESS => {},
+        .SRCH => return,
+        else => return error.PidfdOpenFailed,
+    }
+    const fd: c_int = @intCast(raw);
+    defer sys.close(fd);
+    switch (std.os.linux.errno(std.os.linux.pidfd_send_signal(fd, .TERM, null, 0))) {
+        .SUCCESS, .SRCH => {},
+        else => return error.PidfdSendSignalFailed,
+    }
+}
+
+fn stopClients(self: *Server) !void {
+    var iterator = self.resources.valueIterator();
+    while (iterator.next()) |resource| switch (resource.*) {
+        .client => |client| try signalClient(client),
+        else => {},
+    };
 }
 
 fn terminateSession(sid: c.pid_t) !void {
@@ -540,10 +573,12 @@ pub fn run(allocator: Allocator, io: std.Io, cfg: *const config.Config, ready_fd
     try sys.writeAll(ready_fd, "R", false);
     sys.close(ready_fd);
     self.loop() catch |err| {
+        try stopClients(&self);
         var it = self.sessions.valueIterator();
         while (it.next()) |session| try terminateSession(session.*.pid);
         return err;
     };
+    try stopClients(&self);
     var it = self.sessions.valueIterator();
     while (it.next()) |session| try terminateSession(session.*.pid);
 }

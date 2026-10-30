@@ -19,20 +19,24 @@ class SessionEnvironment:
         self.path = ROOT / "work/t" / uuid.uuid4().hex[:8]
         self.path.mkdir(parents=True)
         self.runtime = self.path / "run"
+        self.home = self.path / "home"
+        self.home.mkdir(mode=0o700)
         self.environment = os.environ.copy()
         self.environment.pop("IMX_SESSION", None)
         self.environment.pop("ZMX_SESSION", None)
         self.environment.update(
             IMX_DIR=str(self.runtime),
+            HOME=str(self.home),
             SHELL="/bin/bash",
             TERM="xterm-256color",
             PATH=f"{BINARY.parent}:{self.environment['PATH']}",
         )
         self.clients = []
+        self.binary = BINARY
 
     def run(self, *args, check=True, **kwargs):
         return subprocess.run(
-            [str(BINARY), *args],
+            [str(self.binary), *args],
             env=self.environment,
             cwd=self.path,
             capture_output=True,
@@ -50,7 +54,7 @@ class SessionEnvironment:
 
     def spawn(self, name="dev", initialize=True, rows=24, cols=80):
         child = pexpect.spawn(
-            str(BINARY),
+            str(self.binary),
             ["attach", name],
             cwd=str(self.path),
             env=self.environment,

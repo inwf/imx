@@ -10,20 +10,20 @@ pub const Config = struct {
     lock_fd: c_int,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io) !Config {
-        const path = if (env("IMX_DIR")) |value|
-            try allocator.dupeSentinel(u8, value, 0)
-        else if (env("XDG_RUNTIME_DIR")) |value|
-            try std.fmt.allocPrintSentinel(allocator, "{s}/imx", .{value}, 0)
-        else
-            try std.fmt.allocPrintSentinel(allocator, "{s}/.local/state/imx/run", .{env("HOME") orelse return error.HomeNotSet}, 0);
+        const path = try runtimePath(allocator);
+        defer allocator.free(path);
+        return initPath(allocator, io, path);
+    }
+
+    pub fn initPath(allocator: std.mem.Allocator, io: std.Io, value: []const u8) !Config {
+        const path = try allocator.dupeSentinel(u8, value, 0);
         errdefer allocator.free(path);
         if (!std.fs.path.isAbsolute(path)) return error.RuntimePathMustBeAbsolute;
-        const socket_path = try std.fmt.allocPrintSentinel(allocator, "{s}/server.sock", .{path}, 0);
-        errdefer allocator.free(socket_path);
-        if (socket_path.len >= @sizeOf(@FieldType(c.struct_sockaddr_un, "sun_path"))) return error.RuntimePathTooLong;
         _ = try std.Io.Dir.cwd().createDirPathStatus(io, path, .fromMode(0o700));
         const dir_fd = try sys.check(c.open(path, c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC | c.O_RDONLY), "open(runtime directory)");
         errdefer sys.close(dir_fd);
+        const socket_path = try std.fmt.allocPrintSentinel(allocator, "/proc/self/fd/{d}/server.sock", .{dir_fd}, 0);
+        errdefer allocator.free(socket_path);
         var stat = try sys.stat(dir_fd);
         if (stat.uid != c.getuid() or stat.mode & 0o077 != 0) return error.UnsafeRuntimeDirectory;
         const lock_fd = try sys.check(c.openat(dir_fd, "startup.lock", c.O_RDWR | c.O_CREAT | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600)), "open(startup lock)");
@@ -75,16 +75,30 @@ pub const Config = struct {
     }
 };
 
+pub fn runtimePath(allocator: std.mem.Allocator) ![:0]u8 {
+    return if (env("IMX_DIR")) |value|
+        try allocator.dupeSentinel(u8, value, 0)
+    else if (env("XDG_RUNTIME_DIR")) |value|
+        try std.fmt.allocPrintSentinel(allocator, "{s}/imx", .{value}, 0)
+    else
+        try std.fmt.allocPrintSentinel(allocator, "{s}/.local/state/imx/run", .{env("HOME") orelse return error.HomeNotSet}, 0);
+}
+
 pub fn env(name: [:0]const u8) ?[]const u8 {
     const value = c.getenv(name) orelse return null;
     return std.mem.span(value);
 }
 
 pub fn checkPeer(fd: c_int) !void {
+    _ = try peer(fd);
+}
+
+pub fn peer(fd: c_int) !c.struct_ucred {
     var credentials: c.struct_ucred = undefined;
     var len: c.socklen_t = @sizeOf(c.struct_ucred);
     _ = try sys.check(c.getsockopt(fd, c.SOL_SOCKET, c.SO_PEERCRED, &credentials, &len), "getsockopt(SO_PEERCRED)");
     if (credentials.uid != c.getuid()) return error.WrongSocketOwner;
+    return credentials;
 }
 
 pub fn validateName(name: []const u8) !void {

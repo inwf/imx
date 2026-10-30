@@ -4,6 +4,8 @@ const config = @import("config.zig");
 const client = @import("client.zig");
 const server = @import("server.zig");
 const protocol = @import("protocol.zig");
+const registry = @import("registry.zig");
+const uninstall = @import("uninstall.zig");
 const version = @import("build_options").version;
 pub const std_options: std.Options = .{ .log_level = .err };
 
@@ -38,6 +40,7 @@ fn execute(init: std.process.Init.Minimal) !void {
             \\  imx cat <name>       Print retained history and the active screen
             \\  imx detach           Detach clients from the current session
             \\  imx kill <name>      Terminate and remove a session
+            \\  imx uninstall        Terminate sessions and remove the installation
             \\  imx -v               Print version
             \\  imx help             Print help
             \\
@@ -52,6 +55,10 @@ fn execute(init: std.process.Init.Minimal) !void {
     if (std.mem.eql(u8, command, "-v")) {
         if (args.len != 2) return error.InvalidArguments;
         return sys.writeAll(1, "imx " ++ version ++ "\n", false);
+    }
+    if (std.mem.eql(u8, command, "uninstall")) {
+        if (args.len != 2) return error.InvalidArguments;
+        return uninstall.run(allocator, io, args[0]);
     }
     const tag: protocol.Tag = if (std.mem.eql(u8, command, "attach")) .attach else if (std.mem.eql(u8, command, "list") or std.mem.eql(u8, command, "ls")) .list else if (std.mem.eql(u8, command, "cat")) .cat else if (std.mem.eql(u8, command, "detach")) .detach else if (std.mem.eql(u8, command, "kill")) .kill else return error.UnknownCommand;
     const name: []const u8 = switch (tag) {
@@ -74,8 +81,11 @@ fn execute(init: std.process.Init.Minimal) !void {
         if (sys.c.isatty(0) == 0 or sys.c.isatty(1) == 0) return error.TerminalRequired;
         _ = try sys.Size.get(0);
     }
+    var records = try registry.Registry.init(allocator, io, false);
+    defer records.deinit();
     var cfg = try config.Config.init(allocator, io);
     defer cfg.deinit();
+    try records.register(io, cfg.dir_fd);
     try cfg.lock();
     defer cfg.unlock() catch @panic("failed to release startup lock");
     var socket = try cfg.connect();
@@ -88,7 +98,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     const fd = socket orelse return error.DaemonStartFailed;
     defer sys.close(fd);
     try cfg.unlock();
-    if (tag == .attach) return client.attach(allocator, io, fd, name);
+    if (tag == .attach) return client.attach(allocator, io, fd, name, &records);
     return client.command(allocator, fd, tag, name);
 }
 

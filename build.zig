@@ -1,6 +1,7 @@
 const std = @import("std");
 const Translator = @import("translate_c").Translator;
 const manifest = @import("build.zig.zon");
+const layout = @import("src/layout.zig");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
@@ -37,13 +38,10 @@ pub fn build(b: *std.Build) void {
     module.addOptions("build_options", options);
     const exe = b.addExecutable(.{ .name = "imx", .root_module = module });
     b.installArtifact(exe);
-    b.installFile("LICENSE", "share/licenses/imx/LICENSE");
-    b.installFile("NOTICE", "share/licenses/imx/NOTICE");
-    b.installDirectory(.{
-        .source_dir = b.path("licenses"),
-        .install_dir = .prefix,
-        .install_subdir = "share/licenses/imx/third-party",
-    });
+    for (layout.license_files) |file| {
+        const source = if (std.mem.startsWith(u8, file, "third-party/")) b.fmt("licenses/{s}", .{file[12..]}) else file;
+        b.installFile(source, b.fmt("share/licenses/imx/{s}", .{file}));
+    }
     const run = b.addRunArtifact(exe);
     run.addPassthruArgs();
     b.step("run", "Run imx").dependOn(&run.step);
