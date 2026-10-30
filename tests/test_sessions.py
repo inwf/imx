@@ -1,4 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
+import csv
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
@@ -39,6 +41,34 @@ def test_attach_directory_environment_and_aliases(sessions):
     assert sessions.run("ls").stdout == baseline
     assert sessions.run().stdout == baseline
     assert sessions.sessions()[0]["CLIENTS"] == "1"
+
+
+@pytest.mark.parametrize("hours", [0, 14, -12])
+def test_session_creation_date(sessions, hours):
+    sessions.environment["TZ"] = f"UTC{-hours:+d}"
+    zone = timezone(timedelta(hours=hours))
+    before = datetime.now(zone).strftime("%y-%m-%d")
+    child = sessions.spawn()
+    after = datetime.now(zone).strftime("%y-%m-%d")
+    listing = sessions.run("ls").stdout
+    reader = csv.DictReader(io.StringIO(listing), delimiter="\t")
+    assert reader.fieldnames == ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED"]
+    row = next(reader)
+    created = row["CREATED"]
+    assert created in (before, after)
+    assert len(created) == 8
+    assert row["NAME"] == "dev" and row["DIRECTORY"] == str(sessions.path)
+    assert sessions.run("list").stdout == listing
+    assert sessions.run().stdout == listing
+
+    child.sendcontrol("\\")
+    child.expect(pexpect.EOF)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    sessions.environment["TZ"] = "UTC0"
+    attached = sessions.spawn(initialize=False)
+    attached.expect_exact("IMX_PROMPT> ")
+    assert sessions.sessions()[0]["CREATED"] == created
+    assert sessions.sessions()[0]["PID"] == row["PID"]
 
 
 def test_detach_and_reattach_preserves_shell_and_history(sessions):

@@ -24,6 +24,7 @@ const Client = struct {
 const Session = struct {
     name: []u8,
     cwd: []u8,
+    created: [8]u8,
     pid: c.pid_t,
     fd: c_int,
     id: u64,
@@ -137,6 +138,7 @@ const Server = struct {
 
     fn create(self: *Server, name: []const u8, cwd: []const u8, shell: []const u8, environment: []const u8, size: sys.Size) !*Session {
         if (!std.fs.path.isAbsolute(cwd) or !std.fs.path.isAbsolute(shell)) return error.InvalidMessage;
+        const created = try sys.localDate();
         const session = try self.allocator.create(Session);
         errdefer self.allocator.destroy(session);
         const saved_name = try self.allocator.dupe(u8, name);
@@ -149,6 +151,7 @@ const Server = struct {
         session.* = .{
             .name = saved_name,
             .cwd = saved_cwd,
+            .created = created,
             .pid = process.pid,
             .fd = process.fd,
             .id = 0,
@@ -207,10 +210,10 @@ const Server = struct {
                             return std.mem.lessThan(u8, a, b);
                         }
                     }.less);
-                    try builder.writer.writeAll("NAME\tPID\tCLIENTS\tDIRECTORY\n");
+                    try builder.writer.writeAll("NAME\tPID\tCLIENTS\tDIRECTORY\tCREATED\n");
                     for (names.items) |name| {
                         const session = self.sessions.get(name).?;
-                        try builder.writer.print("{s}\t{d}\t{d}\t{s}\n", .{ session.name, session.pid, session.clients.items.len, session.cwd });
+                        try builder.writer.print("{s}\t{d}\t{d}\t{s}\t{s}\n", .{ session.name, session.pid, session.clients.items.len, session.cwd, session.created });
                     }
                 }
                 client.snapshot = try builder.toOwnedSlice();

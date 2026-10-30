@@ -112,6 +112,8 @@ Uninstalling terminates the current user's imx sessions and removes the current 
 | `imx -v` | Print the version |
 | `imx help` | Print help |
 
+Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, and `CREATED`. The `CREATED` column records the creation date in the backend's local timezone as `YY-MM-DD`, such as `26-10-30`, and stays the same when you reattach.
+
 Sessions and history are held in memory and are released when the machine restarts or the backend exits. Session name rules, history limits, and behavior with multiple terminals are described in the [usage guide](docs/usage.md).
 
 ## Resource usage

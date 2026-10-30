@@ -26,6 +26,16 @@ pub fn stat(fd: c_int) !std.os.linux.Statx {
     return result;
 }
 
+pub fn localDate() ![8]u8 {
+    var timestamp = c.time(null);
+    if (timestamp == -1) return failure("time");
+    var calendar: c.struct_tm = undefined;
+    if (c.localtime_r(&timestamp, &calendar) == null) return failure("localtime_r");
+    var buffer: [9]u8 = undefined;
+    if (c.strftime(&buffer, buffer.len, "%y-%m-%d", &calendar) != 8) return error.InvalidDate;
+    return buffer[0..8].*;
+}
+
 pub fn nonblocking(fd: c_int, enabled: bool) !c_int {
     const flags = try check(c.fcntl(fd, c.F_GETFL), "fcntl(F_GETFL)");
     _ = try check(c.fcntl(fd, c.F_SETFL, if (enabled) flags | c.O_NONBLOCK else flags & ~@as(c_int, c.O_NONBLOCK)), "fcntl(F_SETFL)");
