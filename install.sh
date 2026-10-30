@@ -17,7 +17,15 @@ for program in curl tar sha256sum mktemp install mkdir mv rm find; do
     command -v "$program" >/dev/null || fail "Required command: $program"
 done
 : "${HOME:?HOME must be set}"
-prefix=${IMX_PREFIX:-"$HOME/.local"}
+if [[ -n ${IMX_PREFIX:-} ]]; then
+    prefix=$IMX_PREFIX
+else
+    case :${PATH:?PATH must be set}: in
+        *:/usr/local/bin:*) prefix=/usr/local ;;
+        *:/usr/bin:*) prefix=/usr ;;
+        *) fail 'PATH must contain /usr/local/bin or /usr/bin.' ;;
+    esac
+fi
 cache=${XDG_CACHE_HOME:-"$HOME/.cache"}
 [[ $prefix == /* && $cache == /* ]] || fail 'Installation and cache paths must be absolute.'
 base=${IMX_RELEASE_BASE_URL:-https://github.com/inwf/imx/releases}
@@ -30,11 +38,16 @@ fi
 mkdir -p -- "$cache"
 stage=$(mktemp -d "$cache/imx-install.XXXXXXXX")
 staged_binary=
+privileged=()
 cleanup() {
     local status=$?
     trap - EXIT
     if [[ -n $staged_binary && -e $staged_binary ]]; then
-        rm -- "$staged_binary"
+        if [[ ${#privileged[@]} -gt 0 ]]; then
+            sudo --non-interactive -- rm -- "$staged_binary"
+        else
+            rm -- "$staged_binary"
+        fi
     fi
     rm -r -- "$stage"
     exit "$status"
@@ -68,23 +81,35 @@ tar --extract --gzip --file "$stage/download/$archive" --directory "$stage/tree"
     --no-same-owner --no-same-permissions bin/imx share/licenses/imx
 [[ $("$stage/tree/bin/imx" -v) == "imx $version" ]] || fail 'Downloaded executable has an unexpected version.'
 
-mkdir -p -- "$prefix/bin" "$prefix/share/licenses/imx"
+writable_directory() {
+    local directory=$1
+    while [[ ! -e $directory ]]; do
+        directory=${directory%/*}
+        [[ -n $directory ]] || directory=/
+    done
+    [[ -d $directory && -w $directory && -x $directory ]]
+}
+
+if (( EUID != 0 )) && { ! writable_directory "$prefix/bin" || ! writable_directory "$prefix/share/licenses/imx"; }; then
+    command -v sudo >/dev/null || fail 'sudo is required to install into the system directory.'
+    printf 'Installing to %s; sudo may ask for your password.\n' "$prefix"
+    sudo --validate
+    privileged=(sudo --)
+fi
+
+"${privileged[@]}" install -d -m 755 -- "$prefix/bin" "$prefix/share/licenses/imx"
 find "$stage/tree/share/licenses/imx" -type f -print0 > "$stage/licenses"
 while IFS= read -r -d '' file; do
     relative=${file#"$stage/tree/share/licenses/imx/"}
     destination="$prefix/share/licenses/imx/$relative"
-    mkdir -p -- "${destination%/*}"
+    "${privileged[@]}" install -d -m 755 -- "${destination%/*}"
     [[ ! -L $destination ]] || fail "License destination is a symbolic link: $destination"
-    install -m 644 -- "$file" "$destination"
+    "${privileged[@]}" install -m 644 -- "$file" "$destination"
 done < "$stage/licenses"
 
 # 在目标目录准备文件，再通过 rename 替换可执行文件，运行中的会话继续执行。
-staged_binary=$(mktemp "$prefix/bin/.imx-install.XXXXXXXX")
-install -m 755 -- "$stage/tree/bin/imx" "$staged_binary"
-mv -T -- "$staged_binary" "$prefix/bin/imx"
+staged_binary=$("${privileged[@]}" mktemp "$prefix/bin/.imx-install.XXXXXXXX")
+"${privileged[@]}" install -m 755 -- "$stage/tree/bin/imx" "$staged_binary"
+"${privileged[@]}" mv -T -- "$staged_binary" "$prefix/bin/imx"
 staged_binary=
 printf 'Installed imx %s: %s/bin/imx\n' "$version" "$prefix"
-case :$PATH: in
-    *:"$prefix/bin":*) ;;
-    *) printf "Add to PATH: export PATH=%q:\"\$PATH\"\n" "$prefix/bin" ;;
-esac

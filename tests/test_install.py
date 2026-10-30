@@ -33,6 +33,7 @@ class DownloadInstallation(SessionEnvironment):
         self.environment.update(HOME=str(self.home), XDG_CACHE_HOME=str(self.path / "cache"))
         self.environment.pop("IMX_PREFIX", None)
         self.binary = self.home / ".local/bin/imx"
+        self.environment["IMX_PREFIX"] = str(self.binary.parent.parent)
         self.release = self.path / "releases/download" / f"v{VERSION}"
         self.release.mkdir(parents=True)
 
@@ -138,7 +139,7 @@ def test_download_install_and_uninstall(downloaded, tag):
     assert result.returncode == 0, result.stderr
     assert downloaded.run("-v").stdout == f"imx {VERSION}\n"
     assert os.access(downloaded.binary, os.X_OK)
-    assert "export PATH=" in result.stdout
+    assert f"Installed imx {VERSION}:" in result.stdout
     license_root = downloaded.binary.parent.parent / "share/licenses/imx"
     source = BINARY.parent.parent / "share/licenses/imx"
     files = [path.relative_to(source) for path in source.rglob("*") if path.is_file()]

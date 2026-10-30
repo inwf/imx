@@ -10,6 +10,7 @@ const File = struct {
     parent: c_int,
     name: [:0]u8,
     stat: c.struct_statx,
+    privileged: bool,
 };
 
 const Plan = struct {
@@ -17,6 +18,7 @@ const Plan = struct {
     io: std.Io,
     files: std.ArrayList(File) = .empty,
     directories: std.ArrayList([:0]u8) = .empty,
+    privileged_directories: std.ArrayList([:0]u8) = .empty,
     runtimes: std.ArrayList(config.Config) = .empty,
 
     fn deinit(self: *Plan) void {
@@ -25,16 +27,23 @@ const Plan = struct {
             self.allocator.free(file.name);
         }
         for (self.directories.items) |path| self.allocator.free(path);
+        for (self.privileged_directories.items) |path| self.allocator.free(path);
         for (self.runtimes.items) |*runtime| runtime.deinit();
         self.files.deinit(self.allocator);
         self.directories.deinit(self.allocator);
+        self.privileged_directories.deinit(self.allocator);
         self.runtimes.deinit(self.allocator);
     }
 
-    fn addFile(self: *Plan, path: []const u8) !void {
+    fn addFile(self: *Plan, path: []const u8, allow_privileged: bool) !void {
         const parent_path = try self.allocator.dupeSentinel(u8, std.fs.path.dirname(path) orelse return error.InvalidUninstallPath, 0);
         defer self.allocator.free(parent_path);
-        const fd = c.open(parent_path, c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC | c.O_RDONLY);
+        const canonical_parent = c.realpath(parent_path, null) orelse {
+            if (c.__errno_location().* == c.ENOENT) return;
+            return sys.failure("realpath(uninstall parent)");
+        };
+        defer c.free(canonical_parent);
+        const fd = c.open(canonical_parent, c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC | c.O_RDONLY);
         if (fd < 0) {
             if (c.__errno_location().* == c.ENOENT) return;
             return sys.failure("open(uninstall parent)");
@@ -53,11 +62,28 @@ const Plan = struct {
         }
         if (stat.stx_mask & (c.STATX_INO | c.STATX_TYPE) != c.STATX_INO | c.STATX_TYPE) return error.IncompleteFileMetadata;
         if (stat.stx_mode & c.S_IFMT == c.S_IFDIR) return error.UninstallFileIsDirectory;
-        _ = try sys.check(c.faccessat(fd, ".", c.W_OK | c.X_OK, c.AT_EACCESS), "access(uninstall parent)");
-        try self.files.append(self.allocator, .{ .parent = fd, .name = name, .stat = stat });
+        for (self.files.items) |existing| {
+            if (!std.mem.eql(u8, existing.name, name)) continue;
+            var parent: c.struct_statx = undefined;
+            var previous_parent: c.struct_statx = undefined;
+            _ = try sys.check(c.statx(fd, "", c.AT_EMPTY_PATH, c.STATX_BASIC_STATS, &parent), "stat(uninstall parent)");
+            _ = try sys.check(c.statx(existing.parent, "", c.AT_EMPTY_PATH, c.STATX_BASIC_STATS, &previous_parent), "stat(existing uninstall parent)");
+            if (sameFile(parent, previous_parent)) {
+                if (!sameFile(stat, existing.stat)) return error.UninstallFileChanged;
+                sys.close(fd);
+                self.allocator.free(name);
+                return;
+            }
+        }
+        var privileged = false;
+        if (c.faccessat(fd, ".", c.W_OK | c.X_OK, c.AT_EACCESS) < 0) {
+            if (!allow_privileged or c.getuid() == 0 or c.__errno_location().* != c.EACCES) return sys.failure("access(uninstall parent)");
+            privileged = true;
+        }
+        try self.files.append(self.allocator, .{ .parent = fd, .name = name, .stat = stat, .privileged = privileged });
     }
 
-    fn addDirectory(self: *Plan, path: []const u8) !void {
+    fn addDirectory(self: *Plan, path: []const u8, allow_privileged: bool) !void {
         if (std.mem.eql(u8, path, "/")) return;
         for (self.directories.items) |existing| if (std.mem.eql(u8, path, existing)) return;
         const copy = try self.allocator.dupeSentinel(u8, path, 0);
@@ -72,6 +98,10 @@ const Plan = struct {
         }
         if (stat.stx_mode & c.S_IFMT != c.S_IFDIR) return error.UninstallDirectoryChanged;
         if (stat.stx_uid != c.getuid()) {
+            if (allow_privileged and c.getuid() != 0 and stat.stx_uid == 0) {
+                try self.privileged_directories.append(self.allocator, copy);
+                return;
+            }
             self.allocator.free(copy);
             return;
         }
@@ -101,9 +131,9 @@ const Plan = struct {
         for ([_][]const u8{ "startup.lock", "server.sock", "server.log" }) |name| {
             const file = try std.fs.path.join(self.allocator, &.{ canonical, name });
             defer self.allocator.free(file);
-            try self.addFile(file);
+            try self.addFile(file, false);
         }
-        try self.addDirectory(canonical);
+        try self.addDirectory(canonical, false);
         try self.runtimes.append(self.allocator, runtime);
     }
 
@@ -126,15 +156,15 @@ const Plan = struct {
             try self.addRuntime(target);
             const file = try std.fs.path.join(self.allocator, &.{ records.path, "paths", entry.name });
             defer self.allocator.free(file);
-            try self.addFile(file);
+            try self.addFile(file, false);
         }
         const paths = try std.fs.path.join(self.allocator, &.{ records.path, "paths" });
         defer self.allocator.free(paths);
-        try self.addDirectory(paths);
+        try self.addDirectory(paths, false);
         const lock = try std.fs.path.join(self.allocator, &.{ records.path, "lifecycle.lock" });
         defer self.allocator.free(lock);
-        try self.addFile(lock);
-        try self.addDirectory(records.path);
+        try self.addFile(lock, false);
+        try self.addDirectory(records.path, false);
     }
 
     fn alias(self: *Plan, path: []const u8, executable: []const u8) !void {
@@ -153,7 +183,7 @@ const Plan = struct {
             return sys.failure("realpath(executable alias)");
         };
         defer c.free(resolved);
-        if (std.mem.eql(u8, std.mem.span(resolved), executable)) try self.addFile(path);
+        if (std.mem.eql(u8, std.mem.span(resolved), executable)) try self.addFile(path, true);
     }
 
     fn installation(self: *Plan, invocation: []const u8) !void {
@@ -187,20 +217,52 @@ const Plan = struct {
             for (layout.license_files) |name| {
                 const path = try std.fs.path.join(self.allocator, &.{ prefix, "share/licenses/imx", name });
                 defer self.allocator.free(path);
-                try self.addFile(path);
+                try self.addFile(path, true);
             }
-            for ([_][]const u8{ "share/licenses/imx/third-party", "share/licenses/imx", "share/licenses", "share", "bin", "" }) |directory| {
+            for ([_][]const u8{ "share/licenses/imx/third-party", "share/licenses/imx", "share/licenses", "share", "bin", "" }, 0..) |directory, index| {
+                if (index >= 2 and (std.mem.eql(u8, prefix, "/usr/local") or std.mem.eql(u8, prefix, "/usr"))) continue;
                 const path = try std.fs.path.join(self.allocator, &.{ prefix, directory });
                 defer self.allocator.free(path);
-                try self.addDirectory(path);
+                try self.addDirectory(path, index < 2);
             }
         }
-        try self.addFile(executable);
+        try self.addFile(executable, true);
+    }
+
+    fn removePrivileged(self: *Plan) !void {
+        var files: std.ArrayList([]const u8) = .empty;
+        defer {
+            for (files.items) |path| self.allocator.free(path);
+            files.deinit(self.allocator);
+        }
+        for (self.files.items) |file| {
+            if (!file.privileged) continue;
+            var current: c.struct_statx = undefined;
+            _ = try sys.check(c.statx(file.parent, file.name, c.AT_SYMLINK_NOFOLLOW, c.STATX_BASIC_STATS, &current), "stat(privileged uninstall file)");
+            if (!sameFile(current, file.stat)) return error.UninstallFileChanged;
+            // 通过已打开的父目录删除文件，目录重命名不会改变删除目标。
+            const path = try std.fmt.allocPrint(self.allocator, "/proc/{d}/fd/{d}/{s}", .{ c.getpid(), file.parent, file.name });
+            errdefer self.allocator.free(path);
+            try files.append(self.allocator, path);
+        }
+        if (files.items.len > 0) try sudoCommand(self.allocator, "rm", &.{"--"}, files.items);
+        if (self.privileged_directories.items.len > 0) {
+            std.mem.sort([:0]u8, self.privileged_directories.items, {}, struct {
+                fn deeper(_: void, a: [:0]u8, b: [:0]u8) bool {
+                    return a.len > b.len;
+                }
+            }.deeper);
+            var paths: std.ArrayList([]const u8) = .empty;
+            defer paths.deinit(self.allocator);
+            for (self.privileged_directories.items) |path| try paths.append(self.allocator, path);
+            try sudoCommand(self.allocator, "rmdir", &.{ "--ignore-fail-on-non-empty", "--" }, paths.items);
+        }
     }
 
     fn perform(self: *Plan) !void {
         for (self.runtimes.items) |*runtime| try stopServer(runtime);
         for (self.files.items) |file| {
+            if (file.privileged) continue;
             var current: c.struct_statx = undefined;
             if (c.statx(file.parent, file.name, c.AT_SYMLINK_NOFOLLOW, c.STATX_BASIC_STATS, &current) < 0) {
                 if (c.__errno_location().* == c.ENOENT) continue;
@@ -224,6 +286,32 @@ const Plan = struct {
         }
     }
 };
+
+fn sudoCommand(allocator: Allocator, command: []const u8, options: []const []const u8, paths: []const []const u8) !void {
+    var arguments: std.ArrayList(?[*:0]const u8) = .empty;
+    defer {
+        for (arguments.items) |argument| if (argument) |value| allocator.free(std.mem.span(value));
+        arguments.deinit(allocator);
+    }
+    for ([_][]const []const u8{ &.{ "sudo", "--", command }, options, paths }) |part| {
+        for (part) |value| {
+            const argument = try allocator.dupeSentinel(u8, value, 0);
+            errdefer allocator.free(argument);
+            try arguments.append(allocator, argument.ptr);
+        }
+    }
+    try arguments.append(allocator, null);
+    const pid = try sys.check(c.fork(), "fork(sudo uninstall)");
+    if (pid == 0) {
+        _ = c.execvp("sudo", @ptrCast(arguments.items.ptr));
+        c._exit(127);
+    }
+    var status: c_int = undefined;
+    while (c.waitpid(pid, &status, 0) < 0) {
+        if (c.__errno_location().* != c.EINTR) return sys.failure("waitpid(sudo uninstall)");
+    }
+    if (status != 0) return error.UninstallPrivilegeFailed;
+}
 
 fn sameFile(a: c.struct_statx, b: c.struct_statx) bool {
     return a.stx_ino == b.stx_ino and a.stx_dev_major == b.stx_dev_major and a.stx_dev_minor == b.stx_dev_minor;
@@ -273,6 +361,7 @@ pub fn run(allocator: Allocator, io: std.Io, invocation: []const u8) !void {
         try plan.addRuntime(path);
     }
     try plan.installation(invocation);
+    try plan.removePrivileged();
     // 独立的 Linux session 允许从正在卸载的会话内部完成清理。
     const pid = try sys.check(c.fork(), "fork(uninstall)");
     if (pid == 0) {
