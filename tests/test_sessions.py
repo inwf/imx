@@ -1,0 +1,240 @@
+from concurrent.futures import ThreadPoolExecutor
+import json
+import os
+import socket
+import struct
+import subprocess
+import sys
+import termios
+
+import pexpect
+import psutil
+import pyte
+
+from conftest import BINARY, ROOT
+
+
+def test_commands_and_empty_list(sessions):
+    for args in [(), ("list",), ("ls",)]:
+        assert sessions.run(*args).stdout == "No sessions.\n"
+    assert not (sessions.runtime / "server.sock").exists()
+    assert sessions.run("-v").stdout == "imx 0.1.0\n"
+    help_text = sessions.run("help").stdout
+    for command in ["attach", "list", "cat", "detach", "kill", "-v", "help"]:
+        assert command in help_text
+    for args in [("attach",), ("cat", "missing"), ("kill", "missing"), ("detach",), ("unknown",), ("attach", "../bad"), ("-v", "extra")]:
+        result = sessions.run(*args, check=False)
+        assert result.returncode != 0
+        assert result.stderr.startswith("imx: ")
+
+
+def test_attach_directory_environment_and_aliases(sessions):
+    sessions.environment["IMX_TEST_VALUE"] = "真实环境变量"
+    child = sessions.spawn()
+    output = sessions.command(child, "printf '%s|%s|%s\\n' \"$PWD\" \"$IMX_SESSION\" \"$IMX_TEST_VALUE\"")
+    assert f"{sessions.path}|dev|真实环境变量" in output
+    baseline = sessions.run("list").stdout
+    assert sessions.run("ls").stdout == baseline
+    assert sessions.run().stdout == baseline
+    assert sessions.sessions()[0]["CLIENTS"] == "1"
+
+
+def test_detach_and_reattach_preserves_shell_and_history(sessions):
+    child = sessions.spawn()
+    sessions.command(child, "export IMX_VALUE=retained; printf '历史输出\\n'")
+    original_pid = sessions.sessions()[0]["PID"]
+    child.sendcontrol("\\")
+    child.expect(pexpect.EOF)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    assert "历史输出" in sessions.run("cat", "dev").stdout
+    other = sessions.spawn(initialize=False)
+    other.expect_exact("IMX_PROMPT> ")
+    assert "retained" in sessions.command(other, "printf '%s\\n' \"$IMX_VALUE\"")
+    assert sessions.sessions()[0]["PID"] == original_pid
+
+
+def test_detach_command_from_inside_session(sessions):
+    child = sessions.spawn()
+    child.sendline("imx detach")
+    child.expect(pexpect.EOF)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    assert sessions.run("cat", "dev").returncode == 0
+
+
+def test_closed_terminal_preserves_session(sessions):
+    child = sessions.spawn()
+    original_pid = sessions.sessions()[0]["PID"]
+    child.close(force=True)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    assert sessions.sessions()[0]["PID"] == original_pid
+
+
+def test_history_overwrites_color_and_unicode(sessions):
+    child = sessions.spawn()
+    sessions.command(child, "printf '\\033[2J\\033[H旧内容\\r\\033[2K\\033[32m新内容\\033[0m\\n'")
+    history = sessions.run("cat", "dev").stdout
+    assert "新内容" in history
+    assert "旧内容" not in history
+    assert "\x1b" not in history
+
+
+def test_terminal_resize_and_multiple_clients(sessions):
+    first = sessions.spawn()
+    second = sessions.spawn(initialize=False, rows=30, cols=100)
+    second.expect_exact("IMX_PROMPT> ")
+    assert "30 100" in sessions.command(second, "stty size")
+    second.setwinsize(40, 120)
+    assert "40 120" in sessions.command(second, "stty size")
+    assert sessions.sessions()[0]["CLIENTS"] == "2"
+    second.sendcontrol("\\")
+    second.expect(pexpect.EOF)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "1")
+    first.expect_exact("IMX_PROMPT> ")
+    assert "24 80" in sessions.command(first, "stty size")
+
+
+def test_kill_terminates_shell_and_background_jobs(sessions):
+    child = sessions.spawn()
+    output = sessions.command(child, "sleep 600 & printf '\\nCHILD_PID=%s\\n' \"$!\"")
+    lines = output.splitlines()
+    job_pid = int(next(line.split("=", 1)[1] for line in lines if line.startswith("CHILD_PID=")))
+    shell_pid = int(sessions.sessions()[0]["PID"])
+    assert psutil.pid_exists(job_pid)
+    sessions.run("kill", "dev")
+    child.expect(pexpect.EOF)
+    sessions.wait(lambda: not psutil.pid_exists(shell_pid) and not psutil.pid_exists(job_pid))
+    assert sessions.sessions() == []
+
+
+def test_shell_exit_flushes_last_output(sessions):
+    child = sessions.spawn()
+    child.sendline("printf 'FINAL_OUTPUT\\n'; exit")
+    child.expect_exact("FINAL_OUTPUT")
+    child.expect(pexpect.EOF)
+    sessions.wait(lambda: sessions.sessions() == [])
+
+
+def test_scrollback_is_bounded(sessions):
+    child = sessions.spawn()
+    sessions.command(child, "seq 1 30000")
+    history = sessions.run("cat", "dev").stdout
+    assert "30000\n" in history
+    assert len(history.splitlines()) <= 10024
+    assert not history.startswith("1\n")
+
+
+def test_snapshot_restores_active_screen(sessions):
+    child = sessions.spawn()
+    sessions.command(child, "printf '\\033[2J\\033[H\\033[31mSCREEN_MARKER\\033[0m\\033[5;8H定位内容'")
+    before = sessions.run("cat", "dev").stdout
+    child.sendcontrol("\\")
+    child.expect(pexpect.EOF)
+    attached = sessions.spawn(initialize=False)
+    restored = sessions.command(attached, "printf 'VIEW_CONNECTED\\n'")
+    screen = pyte.Screen(80, 24)
+    pyte.Stream(screen).feed(restored)
+    assert any("SCREEN_MARKER" in line for line in screen.display)
+    assert any("定位内容" in line for line in screen.display)
+    assert "SCREEN_MARKER" in before
+    assert "定位内容" in sessions.run("cat", "dev").stdout
+
+
+def test_creation_race_uses_single_daemon_and_session(sessions):
+    def launch(_):
+        master, slave = os.openpty()
+        termios.tcsetwinsize(slave, (24, 80))
+        process = subprocess.Popen(
+            [str(BINARY), "attach", "dev"], stdin=slave, stdout=slave, stderr=slave,
+            env=sessions.environment, cwd=sessions.path, start_new_session=True,
+        )
+        os.close(slave)
+        return process, master
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        clients = list(pool.map(launch, range(8)))
+    sessions.wait(lambda: len(sessions.sessions()) == 1 and sessions.sessions()[0]["CLIENTS"] == "8")
+    sessions.run("kill", "dev")
+    for process, master in clients:
+        assert process.wait(timeout=10) == 0
+        os.close(master)
+
+
+def test_bad_protocol_does_not_terminate_sessions(sessions):
+    child = sessions.spawn()
+    for length, tag, version in [(131073, 2, 1), (0, 999, 1), (0, 2, 2)]:
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.connect(str(sessions.runtime / "server.sock"))
+            connection.sendall(struct.pack("<IHH", length, tag, version))
+            connection.settimeout(3)
+            assert connection.recv(4096)
+    assert "ALIVE" in sessions.command(child, "printf 'ALIVE\\n'")
+
+
+def test_detached_terminal_answers_queries(sessions):
+    child = sessions.spawn()
+    result_path = sessions.path / "query.json"
+    command = f"{sys.executable} {ROOT / 'tests/terminal_query.py'} {result_path}"
+    child.sendline(command)
+    child.sendcontrol("\\")
+    child.expect(pexpect.EOF)
+    sessions.wait(result_path.exists)
+    result = json.loads(result_path.read_text())
+    assert result["response"] == "1b5b313b3152"
+
+
+def test_invalid_shell_fails_without_creating_session(sessions):
+    sessions.environment["SHELL"] = "/missing/imx-shell"
+    child = sessions.spawn(initialize=False)
+    child.expect_exact("ShellExecFailed")
+    child.expect(pexpect.EOF)
+    assert sessions.sessions() == []
+
+
+def test_runtime_directory_permissions(sessions):
+    sessions.runtime.mkdir(mode=0o755)
+    result = sessions.run("list", check=False)
+    assert result.returncode != 0
+    assert "UnsafeRuntimeDirectory" in result.stderr
+    sessions.runtime.chmod(0o700)
+
+
+def test_frontend_restores_terminal_attributes(sessions):
+    child = pexpect.spawn(
+        "/bin/bash", ["--noprofile", "--norc"], env=sessions.environment,
+        cwd=str(sessions.path), dimensions=(24, 80), encoding="utf-8", timeout=10,
+    )
+    sessions.clients.append(child)
+    child.sendline("stty -g > before; imx attach attributes")
+    child.expect(r"[#$] ")
+    child.sendcontrol("\\")
+    child.expect(r"[#$] ")
+    child.sendline("stty -g > after; printf '\\nATTRIBUTES_SAVED\\n'")
+    child.expect_exact("\r\nATTRIBUTES_SAVED\r\n")
+    assert (sessions.path / "before").read_text() == (sessions.path / "after").read_text()
+
+
+def test_vim_survives_detach_and_restores_document(sessions):
+    document = sessions.path / "document.txt"
+    document.write_text("VIM_DOCUMENT_MARKER\n真实文档内容\n")
+    child = sessions.spawn()
+    sessions.command(child, "printf 'BEFORE_VIM\\n'")
+    child.sendline("vim -u NONE -i NONE -n document.txt")
+    child.expect_exact("VIM_DOCUMENT_MARKER")
+    child.sendcontrol("\\")
+    child.expect(pexpect.EOF)
+    assert "VIM_DOCUMENT_MARKER" in sessions.run("cat", "dev").stdout
+    attached = sessions.spawn(initialize=False)
+    attached.expect_exact("VIM_DOCUMENT_MARKER")
+    attached.send(":q!\r")
+    attached.expect_exact("IMX_PROMPT> ")
+    assert "BEFORE_VIM" in sessions.run("cat", "dev").stdout
+
+
+def test_slow_terminal_detaches_without_stopping_output(sessions):
+    child = sessions.spawn()
+    done = sessions.path / "slow-output.done"
+    child.sendline(f"seq 1 1000000; printf DONE > '{done}'")
+    sessions.wait(done.exists, timeout=30)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    sessions.wait(lambda: "1000000\n" in sessions.run("cat", "dev").stdout)
+    child.close(force=True)

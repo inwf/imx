@@ -1,0 +1,7 @@
+/work/
+/.zig-cache/
+/zig-pkg/
+/zig-out/
+.venv/
+__pycache__/
+.pytest_cache/

@@ -1,0 +1,11 @@
+imx
+
+Terminal history formatting and state restoration are adapted from zmx,
+Copyright (c) 2025 Eric Bower, MIT License.
+Reference revision: 2626f17f4df9229f54a4c09ae5e3a35375fda943.
+
+The executable uses Ghostty's ghostty-vt library,
+Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors, MIT License.
+Dependency revision: 22f100c6367045bb5fc86172f837047dee2f7670.
+
+Third-party notices are included in licenses/ and installed alongside imx.

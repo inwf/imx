@@ -1,0 +1,52 @@
+const std = @import("std");
+const Translator = @import("translate_c").Translator;
+const manifest = @import("build.zig.zon");
+
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{
+        .default_target = .{ .os_tag = .linux, .abi = .musl },
+    });
+    if (target.result.os.tag != .linux) @panic("imx supports Linux only");
+    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Optimization mode") orelse .safe;
+    const translator: Translator = .init(b.dependency("translate_c", .{}), .{
+        .c_source_file = b.path("src/system.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const ghostty = b.dependency("ghostty", .{
+        .target = target,
+        // 终端库按需使用预留的内存页面，imx 自身保留安全检查。
+        .optimize = @as(std.builtin.OptimizeMode, if (optimize == .debug) .debug else .fast),
+        .@"emit-lib-vt" = true,
+        .@"emit-xcframework" = false,
+        .@"emit-macos-app" = false,
+    });
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", manifest.version);
+    const module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .strip = b.option(bool, "strip", "Strip debug information") orelse (optimize != .debug),
+        .imports = &.{
+            .{ .name = "c", .module = translator.mod },
+            .{ .name = "ghostty-vt", .module = ghostty.module("ghostty-vt") },
+        },
+    });
+    module.addOptions("build_options", options);
+    const exe = b.addExecutable(.{ .name = "imx", .root_module = module });
+    b.installArtifact(exe);
+    b.installFile("LICENSE", "share/licenses/imx/LICENSE");
+    b.installFile("NOTICE", "share/licenses/imx/NOTICE");
+    b.installDirectory(.{
+        .source_dir = b.path("licenses"),
+        .install_dir = .prefix,
+        .install_subdir = "share/licenses/imx/third-party",
+    });
+    const run = b.addRunArtifact(exe);
+    run.addPassthruArgs();
+    b.step("run", "Run imx").dependOn(&run.step);
+    const unit = b.addTest(.{ .root_module = module });
+    b.step("test", "Run unit tests").dependOn(&b.addRunArtifact(unit).step);
+}
