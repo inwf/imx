@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+    printf 'imx install: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ $# -le 1 ]] || fail 'Usage: bash install.sh [vVERSION]'
+[[ $(uname -s) == Linux ]] || fail 'Linux is required.'
+case $(uname -m) in
+    x86_64) architecture=x86_64 ;;
+    aarch64 | arm64) architecture=aarch64 ;;
+    *) fail 'Supported architectures: x86_64 and aarch64.' ;;
+esac
+for program in curl tar sha256sum mktemp install mkdir mv rm find; do
+    command -v "$program" >/dev/null || fail "Required command: $program"
+done
+: "${HOME:?HOME must be set}"
+prefix=${IMX_PREFIX:-"$HOME/.local"}
+cache=${XDG_CACHE_HOME:-"$HOME/.cache"}
+[[ $prefix == /* && $cache == /* ]] || fail 'Installation and cache paths must be absolute.'
+base=${IMX_RELEASE_BASE_URL:-https://github.com/inwf/imx/releases}
+base=${base%/}
+selector=${1:-latest}
+if [[ $selector != latest ]]; then
+    [[ $selector == v[0-9]* && $selector != *[!a-zA-Z0-9.+-]* ]] || fail 'Invalid release tag.'
+fi
+
+mkdir -p -- "$cache"
+stage=$(mktemp -d "$cache/imx-install.XXXXXXXX")
+staged_binary=
+cleanup() {
+    local status=$?
+    trap - EXIT
+    if [[ -n $staged_binary && -e $staged_binary ]]; then
+        rm -- "$staged_binary"
+    fi
+    rm -r -- "$stage"
+    exit "$status"
+}
+trap cleanup EXIT
+
+download() {
+    curl --fail --silent --show-error --location --proto '=https,http' --proto-redir '=https' \
+        --connect-timeout 15 --max-time 300 "$1" --output "$2"
+}
+
+if [[ $selector == latest ]]; then
+    download "$base/latest/download/VERSION" "$stage/VERSION"
+else
+    download "$base/download/$selector/VERSION" "$stage/VERSION"
+fi
+IFS= read -r version < "$stage/VERSION"
+[[ $version == [0-9]* && $version != *[!a-zA-Z0-9.+-]* ]] || fail 'Invalid release version.'
+[[ $selector == latest || $selector == "v$version" ]] || fail 'Release tag and version do not match.'
+release="$base/download/v$version"
+archive="imx-linux-$architecture.tar.gz"
+mkdir -- "$stage/download" "$stage/tree"
+download "$release/SHA256SUMS" "$stage/SHA256SUMS"
+download "$release/$archive" "$stage/download/$archive"
+# 校验目录仅包含当前架构的软件包，校验文件缺少该软件包时也会失败。
+(
+    cd -- "$stage/download"
+    sha256sum --check --strict --ignore-missing "$stage/SHA256SUMS"
+)
+tar --extract --gzip --file "$stage/download/$archive" --directory "$stage/tree" \
+    --no-same-owner --no-same-permissions bin/imx share/licenses/imx
+[[ $("$stage/tree/bin/imx" -v) == "imx $version" ]] || fail 'Downloaded executable has an unexpected version.'
+
+mkdir -p -- "$prefix/bin" "$prefix/share/licenses/imx"
+find "$stage/tree/share/licenses/imx" -type f -print0 > "$stage/licenses"
+while IFS= read -r -d '' file; do
+    relative=${file#"$stage/tree/share/licenses/imx/"}
+    destination="$prefix/share/licenses/imx/$relative"
+    mkdir -p -- "${destination%/*}"
+    [[ ! -L $destination ]] || fail "License destination is a symbolic link: $destination"
+    install -m 644 -- "$file" "$destination"
+done < "$stage/licenses"
+
+# 在目标目录准备文件，再通过 rename 替换可执行文件，运行中的会话继续执行。
+staged_binary=$(mktemp "$prefix/bin/.imx-install.XXXXXXXX")
+install -m 755 -- "$stage/tree/bin/imx" "$staged_binary"
+mv -T -- "$staged_binary" "$prefix/bin/imx"
+staged_binary=
+printf 'Installed imx %s: %s/bin/imx\n' "$version" "$prefix"
+case :$PATH: in
+    *:"$prefix/bin":*) ;;
+    *) printf "Add to PATH: export PATH=%q:\"\$PATH\"\n" "$prefix/bin" ;;
+esac

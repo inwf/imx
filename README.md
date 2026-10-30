@@ -1,5 +1,45 @@
 # imx
 
+## 下载与安装
+
+支持 Linux x86_64 和 ARM64，需要 Linux 5.9 或更新版本、Bash、curl、GNU tar、GNU coreutils 和 GNU findutils。首次发布 Release 后执行：
+
+```bash
+curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | bash
+```
+
+安装脚本下载当前架构的静态可执行文件，校验 SHA256 和程序版本，安装到 `~/.local/bin/imx`，许可证安装到 `~/.local/share/licenses/imx/`。安装过程无需 Zig。下载和解压使用系统缓存目录，完成后清理临时文件。
+
+如果当前 shell 的 `PATH` 尚未包含安装目录，执行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+imx -v
+imx attach dev
+```
+
+可以将上述 `export` 语句加入自己使用的 shell 配置文件。安装脚本会输出对应的设置命令。
+
+安装指定版本：
+
+```bash
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.2.0/install.sh | bash -s -- v0.2.0
+```
+
+通过 `IMX_PREFIX` 指定安装前缀：
+
+```bash
+curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX_PREFIX="$HOME/apps/imx" bash
+```
+
+重新执行安装命令会更新可执行文件；安装脚本通过原子替换保留运行中的会话。升级完成后，已有后台进程继续使用启动时的版本，全部会话结束后，新建会话使用更新后的版本。
+
+卸载：
+
+```bash
+imx uninstall
+```
+
 ## 命令
 
 | 命令 | 功能 |
@@ -88,6 +128,27 @@ uv run --frozen --project tests python tests/benchmark.py
 ```
 
 集成测试启动真实 PTY、Bash 和会话程序，检查全部命令、历史、重新连接、终端尺寸、分离、进程清理、并发创建和终端查询。测试目录保存在 `work/`。
+
+安装测试通过真实 HTTP 服务下载编译的软件包，执行 `curl | bash`，检查安装、重复安装、卸载、校验失败、下载失败和运行中的会话。
+
+## GitHub Actions 发布
+
+推送 `main` 和创建 Pull Request 会自动执行 `Release` 工作流程，在 x86_64 和 ARM64 的 Linux 环境中分别编译、运行单元测试和集成测试、检查脚本并生成软件包。每次成功运行的附件保留 7 天，可在 Actions 运行页面的 Artifacts 区域下载。
+
+发布 imx 0.2.0，在已包含当前代码的 `main` 分支执行：
+
+```bash
+git tag -a v0.2.0 -m "imx 0.2.0"
+git push origin v0.2.0
+```
+
+进入 GitHub 仓库的 **Actions → Release**，打开对应版本的运行记录。两个 **Build and test** 任务成功后，**Publish release** 会创建草稿、上传两个架构的软件包、安装脚本和 SHA256 校验文件，再公开发布 Release 并设置为最新版本。发布完成后，上面的单条安装命令即可使用。
+
+也可以在 **Actions → Release → Run workflow** 手动执行：`tag` 留空时执行检查并生成附件；填写已经推送的版本标签，例如 `v0.2.0`，会检查该标签的代码并发布。程序版本必须与标签一致。
+
+后续发布需要修改 `build.zig.zon` 中的 `version` 和相关版本测试，提交并推送代码，再创建并推送对应的 `v版本号` 标签。已经公开发布的版本保留；发布新版本需要使用新标签。发布上传失败时，可以在 Actions 中使用 **Re-run failed jobs**，工作流程会继续上传到已有草稿。
+
+工作流程使用 GitHub 提供的 `GITHUB_TOKEN`，发布任务声明 `contents: write`，无需配置个人 Token。仓库需要启用 GitHub Actions；工作流程文件位于 `.github/workflows/release.yml`。
 
 ## 许可证
 
