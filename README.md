@@ -1,135 +1,136 @@
 <div align="center">
   <h1>imx</h1>
-  <p><strong>让终端会话持续运行。</strong></p>
-  <p>面向 Linux 的轻量终端会话管理工具。<br />断开连接后保留程序、屏幕和历史，重新连接即可继续工作。</p>
+  <p><strong>Keep your terminal sessions running.</strong></p>
+  <p>A lightweight terminal session manager for Linux.<br />Disconnect while programs keep running. Reattach to restore your screen and retained history.</p>
   <p>
-    <a href="#快速开始"><strong>快速开始</strong></a> ·
-    <a href="#命令">命令</a> ·
-    <a href="#资源占用">资源占用</a> ·
-    <a href="#文档">文档</a>
+    <a href="#quick-start"><strong>Quick start</strong></a> ·
+    <a href="#commands">Commands</a> ·
+    <a href="#resource-usage">Resource usage</a> ·
+    <a href="#documentation">Documentation</a> ·
+    <a href="README.zh-CN.md">简体中文</a>
   </p>
   <p>Linux x86_64 / ARM64 · <a href=".zig-version">Zig 0.17.0</a> · <a href="LICENSE">MIT License</a></p>
 </div>
 
-## 功能
+## Features
 
-- **保留会话**：关闭终端或断开 SSH 后，shell 和会话中的程序继续运行。
-- **恢复现场**：重新连接时恢复终端屏幕和保留的历史，支持 Vim 等全屏终端程序。
-- **查看输出**：通过 `imx cat` 在会话外读取历史输出和当前屏幕文字。
-- **共享连接**：多个终端可以同时进入同一个会话，共享输入和输出。
-- **控制资源**：当前用户的全部会话由一个单线程后台进程管理，空闲时等待系统事件。
-- **直接安装**：发布文件为静态可执行文件，安装脚本自动选择架构并校验 SHA256。
+- **Persistent sessions:** close a terminal or disconnect SSH while your shell and session programs keep running.
+- **Screen restoration:** reattach to restore the screen and retained history, including full-screen terminal programs such as Vim.
+- **Readable output:** use `imx cat` from outside a session to read retained history and the active screen as text.
+- **Shared connections:** multiple terminals can attach to one session and share its input and output.
+- **Resource control:** one backend process with one thread manages all sessions for a user and waits for system events while idle.
+- **Direct installation:** releases contain static executables; the installer selects your architecture and verifies SHA256 checksums.
 
-## 快速开始
+## Quick start
 
-### 安装
+### Install
 
-支持 **Linux 5.9 或更新版本**，发布软件包提供 **x86_64** 和 **ARM64（aarch64）** 两种架构。安装需要 Bash、curl、GNU tar、GNU coreutils 和 GNU findutils。
+Requires **Linux 5.9 or newer**. Release packages support **x86_64** and **ARM64 (aarch64)**. The installer requires Bash, curl, GNU tar, GNU coreutils, and GNU findutils.
 
 ```bash
 curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | bash
 ```
 
-一键安装下载仓库中公开的 GitHub Release。仓库尚无发布版本时，可以使用下方的[源码编译](#源码编译)。
+The installer downloads a public GitHub Release from this repository. If no release is available, use [Build from source](#build-from-source).
 
-默认安装到 `/usr/local/bin/imx`，安装后即可直接运行：
+The default installation path is `/usr/local/bin/imx`. After installation, run:
 
 ```bash
 imx -v
 imx attach dev
 ```
 
-普通用户安装时，脚本会自动调用 `sudo`，根据系统设置提示输入密码。root 用户直接安装。安装过程自动选择当前 `PATH` 中的系统命令目录；仅包含 `/usr/bin` 的环境会使用 `/usr/bin/imx`。
+For regular users, the installer invokes `sudo` and may prompt for a password, depending on system settings. Root users install directly. The installer chooses a system command directory already on your `PATH`; environments with only `/usr/bin` use `/usr/bin/imx`.
 
 <details>
-<summary><strong>指定安装目录或版本</strong></summary>
+<summary><strong>Choose an installation directory or version</strong></summary>
 
-通过 `IMX_PREFIX` 指定安装前缀。自定义前缀的 `bin/` 目录需要已经位于当前 `PATH` 中，或者通过可执行文件的完整路径运行：
+Set `IMX_PREFIX` to choose an installation prefix. Its `bin/` directory must already be on your `PATH`, or you can invoke the executable by its full path:
 
 ```bash
 curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX_PREFIX="$HOME/apps/imx" bash
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-安装已经发布的指定版本，例如 `v0.2.0`：
+Install a specific published version, such as `v0.2.0`:
 
 ```bash
 curl -fsSL https://github.com/inwf/imx/releases/download/v0.2.0/install.sh | bash -s -- v0.2.0
 ```
 
-安装脚本同时安装许可证，并在完成后删除下载和解压产生的临时文件。
+The installer also installs license files and removes temporary download and extraction files when it finishes.
 
 </details>
 
-### 创建和恢复会话
+### Create and reattach to a session
 
-创建一个名为 `dev` 的会话；会话已经存在时，直接进入：
-
-```bash
-imx attach dev
-```
-
-在会话中照常运行命令。按下 **`Ctrl+\`** 可以分离当前连接，shell 和程序继续运行。重新连接时执行相同命令：
+Create a session named `dev`, or attach to it if it already exists:
 
 ```bash
 imx attach dev
 ```
 
-在另一个终端中查看会话列表和保留的输出：
+Run commands in the session as usual. Press **`Ctrl+\`** to detach the current connection while the shell and programs keep running. Reattach with the same command:
+
+```bash
+imx attach dev
+```
+
+List sessions and read retained output from another terminal:
 
 ```bash
 imx ls
 imx cat dev
 ```
 
-需要结束会话时执行：
+Terminate a session when you are finished:
 
 ```bash
 imx kill dev
 ```
 
-### 更新和卸载
+### Update and uninstall
 
-重新执行安装命令会安装最新发布版本，并保留运行中的会话。已有后台进程继续使用启动时的版本；全部会话结束后，新建会话使用更新后的版本。
+Run the installation command again to install the latest release while keeping active sessions running. An existing backend continues using the version it started with; once all sessions have ended, a newly created session uses the updated version.
 
 ```bash
 imx uninstall
 ```
 
-卸载会终止当前用户的 imx 会话，清理当前可执行文件、安装的许可证和已记录的运行文件。删除系统安装文件时会自动调用 `sudo`。工作目录中的用户文件保留。详细行为见[使用说明](docs/usage.md#卸载)。
+Uninstalling terminates the current user's imx sessions and removes the current executable, installed licenses, and recorded runtime files. It invokes `sudo` when removing system installation files. User files in working directories are preserved. See the [usage guide](docs/usage.md#卸载) for details.
 
-## 命令
+## Commands
 
-| 命令 | 功能 |
+| Command | Purpose |
 | --- | --- |
-| `imx attach dev` | 创建或进入 `dev` 会话 |
-| `imx list`、`imx ls`、`imx` | 查看全部会话 |
-| `imx cat dev` | 输出保留的历史和当前屏幕文字 |
-| `imx detach` | 在会话内部执行，分离该会话的全部连接 |
-| `imx kill dev` | 终止并删除 `dev` 会话 |
-| `imx uninstall` | 卸载当前安装并清理运行文件 |
-| `imx -v` | 查看版本 |
-| `imx help` | 查看帮助 |
+| `imx attach dev` | Create or attach to the `dev` session |
+| `imx list`, `imx ls`, `imx` | List all sessions |
+| `imx cat dev` | Print retained history and the active screen as text |
+| `imx detach` | Run inside a session to detach all its connections |
+| `imx kill dev` | Terminate and remove the `dev` session |
+| `imx uninstall` | Remove the current installation and runtime files |
+| `imx -v` | Print the version |
+| `imx help` | Print help |
 
-会话和历史保存在内存中，机器重启或后台进程结束后释放。会话名称规则、历史容量和多终端连接行为见[使用说明](docs/usage.md)。
+Sessions and history are held in memory and are released when the machine restarts or the backend exits. Session name rules, history limits, and behavior with multiple terminals are described in the [usage guide](docs/usage.md).
 
-## 资源占用
+## Resource usage
 
-在 imx 0.2.0、x86_64 WSL2 Linux、默认编译模式和 80×24 终端下测量：
+Measured with imx 0.2.0 on x86_64 WSL2 Linux, using the default build mode and an 80×24 terminal:
 
-| 空闲会话数量 | 后台内存（PSS） | 后台进程数量 | 后台线程数量 |
+| Idle sessions | Backend memory (PSS) | Backend processes | Backend threads |
 | --- | --- | --- | --- |
 | 1 | 1.47 MiB | 1 | 1 |
 | 10 | 2.02 MiB | 1 | 1 |
 | 100 | 6.38 MiB | 1 | 1 |
 
-表中统计 imx 后台进程，shell 和会话程序单独占用内存。每种场景的 5 秒空闲采样中，后台 CPU 时间增量均为零；静态可执行文件大小约为 1.77 MiB。
+The table covers the imx backend. Shells and session programs consume additional memory. Backend CPU time did not increase during each scenario's 5-second idle sample; the static executable was approximately 1.77 MiB.
 
-测量环境、持续输出结果、容量限制和复测方法见[性能说明](docs/performance.md)。
+See the [performance guide](docs/performance.md) for the measurement environment, sustained output results, capacity limits, and instructions for measuring on your own machine.
 
-## 源码编译
+## Build from source
 
-需要 **Zig 0.17.0** 和 Linux。Zig 会下载并校验 `build.zig.zon` 中固定版本的依赖。
+Requires **Zig 0.17.0** and Linux. Zig downloads and verifies the dependencies pinned in `build.zig.zon`.
 
 ```bash
 git clone https://github.com/inwf/imx.git
@@ -138,16 +139,19 @@ zig build
 ./zig-out/bin/imx attach dev
 ```
 
-默认生成使用 musl 的静态可执行文件。编译模式、交叉编译、测试和 GitHub Actions 操作见[开发说明](docs/development.md)。
+The default build produces a static executable using musl. Build modes, cross-compilation, tests, and GitHub Actions are covered in the [development guide](docs/development.md).
 
-## 文档
+## Documentation
 
-| 内容 | 文档 |
+| Looking for | Start here |
 | --- | --- |
-| 会话行为、历史、环境变量和卸载 | [使用说明](docs/usage.md) |
-| 资源限制、性能测量和复测方法 | [性能说明](docs/performance.md) |
-| 编译、测试、贡献和版本发布 | [开发说明](docs/development.md) |
+| 中文介绍与快速开始 | [简体中文 README](README.zh-CN.md) |
+| Session behavior, history, environment variables, and uninstalling | [Usage guide](docs/usage.md) |
+| Resource limits, measurements, and benchmarking | [Performance guide](docs/performance.md) |
+| Building, testing, contributing, and publishing releases | [Development guide](docs/development.md) |
 
-## 许可证
+The detailed guides linked above are in Simplified Chinese.
 
-imx 使用 [MIT License](LICENSE)。终端历史格式化和状态恢复参考 zmx，终端处理使用 Ghostty 的 `ghostty-vt`。版权与第三方许可证见 [NOTICE](NOTICE) 和 [licenses/](licenses/)。
+## License
+
+imx uses the [MIT License](LICENSE). Terminal history formatting and state restoration are adapted from zmx, and terminal processing uses Ghostty's `ghostty-vt`. Copyright notices and third-party licenses are in [NOTICE](NOTICE) and [licenses/](licenses/).
