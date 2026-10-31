@@ -57,10 +57,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-Install a specific published version, such as `v0.3.1`:
+Install a specific published version, such as `v0.4.0`:
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.3.1/install.sh | bash -s -- v0.3.1
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.4.0/install.sh | bash -s -- v0.4.0
 ```
 
 The installer also installs license and completion files and removes temporary download and extraction files when it finishes.

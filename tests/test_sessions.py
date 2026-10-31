@@ -25,7 +25,7 @@ def test_commands_and_empty_list(sessions):
     for args in [(), ("list",), ("ls",)]:
         assert sessions.run(*args).stdout == "No sessions.\n"
     assert not (sessions.runtime / "server.sock").exists()
-    assert sessions.run("-v").stdout == "imx 0.3.1\n"
+    assert sessions.run("-v").stdout == "imx 0.4.0\n"
     help_text = sessions.run("help").stdout
     for command in ["attach", "list", "cat", "detach", "kill", "update", "uninstall", "-v", "help"]:
         assert command in help_text
