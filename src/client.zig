@@ -15,7 +15,15 @@ pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, paylo
     return receive(allocator, fd, if (customized) .created_format else .normal);
 }
 
-const Response = enum { normal, created_format };
+pub fn completeNames(allocator: std.mem.Allocator, fd: c_int, prefix: []const u8) !void {
+    const options: protocol.ListOptions = .{ .names_only = true, .prefix = prefix };
+    const request = try std.json.Stringify.valueAlloc(allocator, options, .{});
+    defer allocator.free(request);
+    try protocol.send(fd, .list, request);
+    return receive(allocator, fd, .completion);
+}
+
+const Response = enum { normal, created_format, completion };
 
 fn receive(allocator: std.mem.Allocator, fd: c_int, context: Response) !void {
     var acknowledged = false;
@@ -42,6 +50,7 @@ fn receive(allocator: std.mem.Allocator, fd: c_int, context: Response) !void {
                 if (std.mem.eql(u8, bytes, "InvalidMessage")) {
                     switch (context) {
                         .created_format => return error.CreatedFormatUnsupportedByBackend,
+                        .completion => return error.CompletionUnsupportedByBackend,
                         .normal => {},
                     }
                 }

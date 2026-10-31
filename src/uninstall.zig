@@ -221,6 +221,22 @@ const Plan = struct {
                 defer self.allocator.free(path);
                 try self.addFile(path, true);
             }
+            for (layout.completion_files) |file| {
+                const path = try std.fs.path.join(self.allocator, &.{ prefix, file.destination });
+                defer self.allocator.free(path);
+                try self.addFile(path, true);
+            }
+            if (layout.systemFishCompletion(prefix)) |path| {
+                try self.addFile(path, true);
+                const directory = std.fs.path.dirname(path).?;
+                try self.addDirectory(directory, true);
+                try self.addDirectory(std.fs.path.dirname(directory).?, true);
+            }
+            for ([_][]const u8{ "share/bash-completion/completions", "share/bash-completion", "share/zsh/site-functions", "share/zsh/vendor-completions", "share/zsh", "share/fish/vendor_completions.d", "share/fish" }) |directory| {
+                const path = try std.fs.path.join(self.allocator, &.{ prefix, directory });
+                defer self.allocator.free(path);
+                try self.addDirectory(path, true);
+            }
             for ([_][]const u8{ "share/licenses/imx/third-party", "share/licenses/imx", "share/licenses", "share", "bin", "" }, 0..) |directory, index| {
                 if (index >= 2 and (std.mem.eql(u8, prefix, "/usr/local") or std.mem.eql(u8, prefix, "/usr"))) continue;
                 const path = try std.fs.path.join(self.allocator, &.{ prefix, directory });

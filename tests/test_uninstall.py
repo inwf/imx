@@ -10,6 +10,7 @@ import psutil
 import pytest
 
 from conftest import BINARY, ROOT, SessionEnvironment
+from completion_shell import COMPLETION_FILES
 from test_prompt import BEGIN, configuration, enter, settings, setup_shell
 
 
@@ -150,11 +151,18 @@ def test_uninstall_preserves_other_files(installation):
     document.write_text("用户文件")
     notes = installation.binary.parent.parent / "share/licenses/imx/notes.txt"
     notes.write_text("安装目录中的用户文件")
+    completion_notes = [installation.binary.parent.parent / name for name in COMPLETION_FILES]
+    completion_notes = [path.with_name("other-command") for path in completion_notes]
+    for path in completion_notes:
+        path.write_text("用户补全文件")
     installation.run("uninstall")
     assert document.read_text() == "用户文件"
     assert notes.read_text() == "安装目录中的用户文件"
     assert list(installation.runtime.iterdir()) == [document]
     assert list(notes.parent.iterdir()) == [notes]
+    for path in completion_notes:
+        assert path.read_text() == "用户补全文件"
+        assert list(path.parent.iterdir()) == [path]
     assert not state_directory(installation).exists()
     assert not installation.binary.exists()
 

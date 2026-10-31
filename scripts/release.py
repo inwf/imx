@@ -13,6 +13,7 @@ from elftools.elf.elffile import ELFFile
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHITECTURES = {"x86_64": "EM_X86_64", "aarch64": "EM_AARCH64"}
+COMPLETIONS = ("share/bash-completion/completions/imx", "share/zsh/site-functions/_imx", "share/zsh/vendor-completions/_imx", "share/fish/vendor_completions.d/imx.fish")
 
 
 def version():
@@ -37,9 +38,12 @@ def package(prefix, architecture, output, tag):
             raise ValueError("可执行文件架构不正确")
         if any(segment.header["p_type"] == "PT_INTERP" for segment in executable.iter_segments()):
             raise ValueError("发布文件需要静态链接")
-    files = [prefix / "bin/imx", *sorted((prefix / "share/licenses/imx").rglob("*"))]
-    files = [path for path in files if path.is_file()]
-    if len(files) < 3 or any(path.is_symlink() for path in files):
+    completion_files = [prefix / name for name in COMPLETIONS]
+    if any(not path.is_file() or path.is_symlink() for path in completion_files):
+        raise ValueError("补全脚本不完整")
+    license_files = [path for path in sorted((prefix / "share/licenses/imx").rglob("*")) if path.is_file()]
+    files = [prefix / "bin/imx", *completion_files, *license_files]
+    if len(license_files) < 2 or any(path.is_symlink() for path in files):
         raise ValueError("安装文件或许可证不完整")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f"imx-linux-{architecture}.tar.gz"

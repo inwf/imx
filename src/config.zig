@@ -16,20 +16,40 @@ pub const Config = struct {
     }
 
     pub fn initPath(allocator: std.mem.Allocator, io: std.Io, value: []const u8) !Config {
+        return (try openPath(allocator, io, value, true)).?;
+    }
+
+    pub fn openExisting(allocator: std.mem.Allocator, io: std.Io) !?Config {
+        const path = try runtimePath(allocator);
+        defer allocator.free(path);
+        return openPath(allocator, io, path, false);
+    }
+
+    fn openPath(allocator: std.mem.Allocator, io: std.Io, value: []const u8, create: bool) !?Config {
+        var initialized = false;
         const path = try allocator.dupeSentinel(u8, value, 0);
-        errdefer allocator.free(path);
+        defer if (!initialized) allocator.free(path);
         if (!std.fs.path.isAbsolute(path)) return error.RuntimePathMustBeAbsolute;
-        _ = try std.Io.Dir.cwd().createDirPathStatus(io, path, .fromMode(0o700));
-        const dir_fd = try sys.check(c.open(path, c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC | c.O_RDONLY), "open(runtime directory)");
-        errdefer sys.close(dir_fd);
+        if (create) _ = try std.Io.Dir.cwd().createDirPathStatus(io, path, .fromMode(0o700));
+        const dir_fd = c.open(path, c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC | c.O_RDONLY);
+        if (dir_fd < 0) {
+            if (!create and c.__errno_location().* == c.ENOENT) return null;
+            return sys.failure("open(runtime directory)");
+        }
+        defer if (!initialized) sys.close(dir_fd);
         const socket_path = try std.fmt.allocPrintSentinel(allocator, "/proc/self/fd/{d}/server.sock", .{dir_fd}, 0);
-        errdefer allocator.free(socket_path);
+        defer if (!initialized) allocator.free(socket_path);
         var stat = try sys.stat(dir_fd);
         if (stat.uid != c.getuid() or stat.mode & 0o077 != 0) return error.UnsafeRuntimeDirectory;
-        const lock_fd = try sys.check(c.openat(dir_fd, "startup.lock", c.O_RDWR | c.O_CREAT | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600)), "open(startup lock)");
-        errdefer sys.close(lock_fd);
+        const lock_fd = c.openat(dir_fd, "startup.lock", c.O_RDWR | c.O_NOFOLLOW | c.O_CLOEXEC | @as(c_int, if (create) c.O_CREAT else 0), @as(c_uint, 0o600));
+        if (lock_fd < 0) {
+            if (!create and c.__errno_location().* == c.ENOENT) return null;
+            return sys.failure("open(startup lock)");
+        }
+        defer if (!initialized) sys.close(lock_fd);
         stat = try sys.stat(lock_fd);
         if (stat.uid != c.getuid() or stat.mode & 0o077 != 0 or stat.mode & c.S_IFMT != c.S_IFREG or stat.nlink != 1) return error.UnsafeLockFile;
+        initialized = true;
         return .{ .allocator = allocator, .path = path, .socket_path = socket_path, .dir_fd = dir_fd, .lock_fd = lock_fd };
     }
 

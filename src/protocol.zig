@@ -8,6 +8,8 @@ pub const Message = struct { tag: Tag, payload: []const u8 };
 pub const ListOptions = struct {
     table: bool = false,
     created_format: [:0]const u8 = sys.default_created_format,
+    names_only: bool = false,
+    prefix: []const u8 = "",
 };
 
 pub fn header(tag: Tag, length: usize) [8]u8 {

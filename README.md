@@ -20,6 +20,7 @@
 - **Shared connections:** multiple terminals can attach to one session and share its input and output.
 - **Session prompt:** enable a configuration option to show `[dev]` before your existing Bash, Zsh, or Fish prompt.
 - **Creation time format:** choose how the `CREATED` column displays session creation times through the configuration file.
+- **Tab completion:** complete commands and current session names in Bash, Zsh, and Fish.
 - **Resource control:** one backend process with one thread manages all sessions for a user and waits for system events while idle.
 - **Direct installation:** releases contain static executables; the installer selects your architecture and verifies SHA256 checksums.
 
@@ -44,6 +45,8 @@ imx attach dev
 
 For regular users, the installer invokes `sudo` and may prompt for a password, depending on system settings. Root users install directly. The installer chooses a system command directory already on your `PATH`; environments with only `/usr/bin` use `/usr/bin/imx`.
 
+The installer places completion files in the standard directories. Bash 4.4 or newer needs `bash-completion` enabled; Zsh needs `compinit` initialized; Fish loads the files automatically. Open a new shell after installation. See [completion setup](docs/usage.md#tab-补全) for loading completion and using a custom prefix.
+
 <details>
 <summary><strong>Choose an installation directory or version</strong></summary>
 
@@ -60,7 +63,7 @@ Install a specific published version, such as `v0.3.1`:
 curl -fsSL https://github.com/inwf/imx/releases/download/v0.3.1/install.sh | bash -s -- v0.3.1
 ```
 
-The installer also installs license files and removes temporary download and extraction files when it finishes.
+The installer also installs license and completion files and removes temporary download and extraction files when it finishes.
 
 </details>
 
@@ -119,6 +122,17 @@ Formats use `strftime` syntax. The default `%m-%d %H:%M:%S` displays `MM-DD HH:m
 
 Each invocation of `imx`, `imx ls`, or `imx list` reads the current setting and formats the stored creation time in the backend's local timezone. Changes apply to existing sessions on the next listing. See [format options](docs/usage.md#created-时间格式) for supported fields and validation.
 
+### Complete commands and session names
+
+Type `imx a<Tab>` to complete `imx attach` with a trailing space. Press Tab at `imx attach <Tab>` to list current sessions when several are available. Type a prefix, such as `imx attach d<Tab>`, to complete `imx attach dev` when the prefix matches one session. A single available session completes directly.
+
+The `attach`, `cat`, and `kill` commands query current session names on each Tab press. Completion is enabled by default. To disable it, add this option to `config.toml`:
+
+```toml
+[completion]
+enabled = false
+```
+
 ### Update and uninstall
 
 Install the latest published release:
@@ -133,7 +147,7 @@ The updater keeps the current installation directory, detects your architecture,
 imx uninstall
 ```
 
-Uninstalling terminates the current user's imx sessions and removes the current executable, installed licenses, configuration file, shell integration, and recorded runtime files. It invokes `sudo` when removing system installation files. User files in working directories are preserved. A manually edited integration block causes uninstallation to stop and report its path. See the [usage guide](docs/usage.md#卸载) for details.
+Uninstalling terminates the current user's imx sessions and removes the current executable, installed licenses, completion files, configuration file, shell integration, and recorded runtime files. It invokes `sudo` when removing system installation files. User files in working directories are preserved. A manually edited integration block causes uninstallation to stop and report its path. See the [usage guide](docs/usage.md#卸载) for details.
 
 ## Commands
 

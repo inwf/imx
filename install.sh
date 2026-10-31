@@ -69,6 +69,12 @@ IFS= read -r version < "$stage/VERSION"
 [[ $selector == latest || $selector == "v$version" ]] || fail 'Release tag and version do not match.'
 release="$base/download/v$version"
 archive="imx-linux-$architecture.tar.gz"
+completions=(share/bash-completion/completions/imx share/zsh/site-functions/_imx share/zsh/vendor-completions/_imx share/fish/vendor_completions.d/imx.fish)
+system_fish_completion=
+case $prefix in
+    /usr/local) system_fish_completion=/usr/share/fish/vendor_completions.d/imx.fish ;;
+    /usr) system_fish_completion=/usr/local/share/fish/vendor_completions.d/imx.fish ;;
+esac
 mkdir -- "$stage/download" "$stage/tree"
 download "$release/SHA256SUMS" "$stage/SHA256SUMS"
 download "$release/$archive" "$stage/download/$archive"
@@ -78,7 +84,7 @@ download "$release/$archive" "$stage/download/$archive"
     sha256sum --check --strict --ignore-missing "$stage/SHA256SUMS"
 )
 tar --extract --gzip --file "$stage/download/$archive" --directory "$stage/tree" \
-    --no-same-owner --no-same-permissions bin/imx share/licenses/imx
+    --no-same-owner --no-same-permissions bin/imx share/licenses/imx "${completions[@]}"
 [[ $("$stage/tree/bin/imx" -v) == "imx $version" ]] || fail 'Downloaded executable has an unexpected version.'
 
 writable_directory() {
@@ -90,7 +96,19 @@ writable_directory() {
     [[ -d $directory && -w $directory && -x $directory ]]
 }
 
-if (( EUID != 0 )) && { ! writable_directory "$prefix/bin" || ! writable_directory "$prefix/share/licenses/imx"; }; then
+needs_sudo=false
+if (( EUID != 0 )); then
+    for directory in "$prefix/bin" "$prefix/share/licenses/imx"; do
+        writable_directory "$directory" || needs_sudo=true
+    done
+    for file in "${completions[@]}"; do
+        writable_directory "$prefix/${file%/*}" || needs_sudo=true
+    done
+    if [[ -n $system_fish_completion ]]; then
+        writable_directory "${system_fish_completion%/*}" || needs_sudo=true
+    fi
+fi
+if [[ $needs_sudo == true ]]; then
     command -v sudo >/dev/null || fail 'sudo is required to install into the system directory.'
     printf 'Installing to %s; sudo may ask for your password.\n' "$prefix"
     sudo --validate
@@ -106,6 +124,18 @@ while IFS= read -r -d '' file; do
     [[ ! -L $destination ]] || fail "License destination is a symbolic link: $destination"
     "${privileged[@]}" install -m 644 -- "$file" "$destination"
 done < "$stage/licenses"
+install_completion() {
+    local source=$1 destination=$2
+    "${privileged[@]}" install -d -m 755 -- "${destination%/*}"
+    [[ ! -L $destination ]] || fail "Completion destination is a symbolic link: $destination"
+    "${privileged[@]}" install -m 644 -- "$source" "$destination"
+}
+for file in "${completions[@]}"; do
+    install_completion "$stage/tree/$file" "$prefix/$file"
+done
+if [[ -n $system_fish_completion ]]; then
+    install_completion "$stage/tree/share/fish/vendor_completions.d/imx.fish" "$system_fish_completion"
+fi
 
 # 在目标目录准备文件，再通过 rename 替换可执行文件，运行中的会话继续执行。
 staged_binary=$("${privileged[@]}" mktemp "$prefix/bin/.imx-install.XXXXXXXX")

@@ -209,6 +209,7 @@ const Server = struct {
                     options = parsed.?.value;
                     try sys.validateCreatedFormat(options.created_format);
                 }
+                if (options.prefix.len > 64) return error.InvalidMessage;
                 const table = options.table;
                 var builder = std.Io.Writer.Allocating.init(self.allocator);
                 defer builder.deinit();
@@ -221,7 +222,11 @@ const Server = struct {
                         return std.mem.lessThan(u8, a, b);
                     }
                 }.less);
-                if (names.items.len == 0) {
+                if (options.names_only) {
+                    for (names.items) |name| {
+                        if (std.mem.startsWith(u8, name, options.prefix)) try builder.writer.print("{s}\n", .{name});
+                    }
+                } else if (names.items.len == 0) {
                     try builder.writer.writeAll("No sessions.\n");
                 } else {
                     const headings = [_][]const u8{ "NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED" };

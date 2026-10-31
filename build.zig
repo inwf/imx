@@ -54,6 +54,7 @@ pub fn build(b: *std.Build) void {
         const source = if (std.mem.startsWith(u8, file, "third-party/")) b.fmt("licenses/{s}", .{file[12..]}) else file;
         b.installFile(source, b.fmt("share/licenses/imx/{s}", .{file}));
     }
+    for (layout.completion_files) |file| b.installFile(file.source, file.destination);
     const run = b.addRunArtifact(exe);
     run.addPassthruArgs();
     b.step("run", "Run imx").dependOn(&run.step);

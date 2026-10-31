@@ -7,12 +7,14 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import tarfile
 import uuid
 
 import pexpect
 import pytest
 
 from conftest import BINARY, ROOT, SessionEnvironment
+from completion_shell import COMPLETION_FILES
 
 
 ARCHITECTURE = platform.machine()
@@ -146,6 +148,10 @@ def test_download_install_and_uninstall(downloaded, tag):
     assert len(files) >= 3
     for relative in files:
         assert (source / relative).read_bytes() == (license_root / relative).read_bytes()
+    for relative in COMPLETION_FILES:
+        path = downloaded.binary.parent.parent / relative
+        assert path.read_bytes() == (BINARY.parent.parent / relative).read_bytes()
+        assert path.stat().st_mode & 0o777 == 0o644
     if tag is None:
         assert "/releases/latest/download/VERSION" in downloaded.requests
     assert f"/releases/download/v{VERSION}/{ARCHIVE}" in downloaded.requests
@@ -154,7 +160,41 @@ def test_download_install_and_uninstall(downloaded, tag):
     downloaded.run("uninstall")
     assert not downloaded.binary.exists()
     assert not license_root.exists()
+    assert all(not (downloaded.binary.parent.parent / name).exists() for name in COMPLETION_FILES)
     assert not (downloaded.home / ".local/state/imx").exists()
+
+
+def test_package_contains_standard_completion_files(native_package):
+    with tarfile.open(native_package) as archive:
+        for relative in COMPLETION_FILES:
+            entry = archive.getmember(relative)
+            assert entry.isfile()
+            assert entry.mode == 0o644
+            with archive.extractfile(entry) as content:
+                assert content.read() == (BINARY.parent.parent / relative).read_bytes()
+
+
+@pytest.mark.parametrize("failure", ["missing-completion", "completion-symlink", "missing-licenses"])
+def test_package_rejects_incomplete_installation(sessions, native_package, failure):
+    prefix = sessions.path / "package-source"
+    output = sessions.path / "package"
+    with tarfile.open(native_package) as archive:
+        archive.extractall(prefix, filter="data")
+    if failure == "missing-licenses":
+        shutil.rmtree(prefix / "share/licenses")
+    else:
+        completion = prefix / COMPLETION_FILES[0]
+        completion.unlink()
+        if failure == "completion-symlink":
+            completion.symlink_to(BINARY.parent.parent / COMPLETION_FILES[0])
+    result = subprocess.run(
+        ["python", str(ROOT / "scripts/release.py"), "package", "--arch", ARCHITECTURE,
+         "--prefix", str(prefix), "--output", str(output)],
+        capture_output=True, text=True, cwd=ROOT, timeout=30,
+    )
+    assert result.returncode != 0
+    assert "不完整" in result.stderr
+    assert not output.exists()
 
 
 def test_download_custom_prefix(downloaded):

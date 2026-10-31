@@ -20,6 +20,7 @@
 - **共享连接**：多个终端可以同时进入同一个会话，共享输入和输出。
 - **显示会话名称**：通过配置选项，在原有 Bash、Zsh 或 Fish 提示符前显示 `[dev]`。
 - **设置时间格式**：通过配置文件修改会话列表中 `CREATED` 列的创建时间显示格式。
+- **Tab 补全**：在 Bash、Zsh 和 Fish 中补全命令和当前会话名称。
 - **控制资源**：当前用户的全部会话由一个单线程后台进程管理，空闲时等待系统事件。
 - **直接安装**：发布文件为静态可执行文件，安装脚本自动选择架构并校验 SHA256。
 
@@ -44,6 +45,8 @@ imx attach dev
 
 普通用户安装时，脚本会自动调用 `sudo`，根据系统设置提示输入密码。root 用户直接安装。安装过程自动选择当前 `PATH` 中的系统命令目录；仅包含 `/usr/bin` 的环境会使用 `/usr/bin/imx`。
 
+安装脚本将补全文件放到标准目录。Bash 4.4 或更新版本需要启用 `bash-completion`，Zsh 需要初始化 `compinit`，Fish 会自动加载。安装后启动新的 shell 即可加载文件。加载补全和自定义前缀的设置见[补全说明](docs/usage.md#tab-补全)。
+
 <details>
 <summary><strong>指定安装目录或版本</strong></summary>
 
@@ -60,7 +63,7 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 curl -fsSL https://github.com/inwf/imx/releases/download/v0.3.1/install.sh | bash -s -- v0.3.1
 ```
 
-安装脚本同时安装许可证，并在完成后删除下载和解压产生的临时文件。
+安装脚本同时安装许可证和补全文件，并在完成后删除下载和解压产生的临时文件。
 
 </details>
 
@@ -119,6 +122,17 @@ created_format = "%m-%d %H:%M:%S"
 
 每次执行 `imx`、`imx ls` 或 `imx list` 都会读取当前配置，按照后台进程的本地时区显示已经记录的创建时间。修改格式后，下一次查看列表即可应用到已有会话。支持的字段和格式检查见[格式说明](docs/usage.md#created-时间格式)。
 
+### 补全命令和会话名称
+
+输入 `imx a<Tab>`，可以补全为 `imx attach` 并添加末尾空格。在 `imx attach <Tab>` 处按下 Tab，有多个会话时会显示当前会话列表。输入名称前缀，例如 `imx attach d<Tab>`，前缀只匹配一个会话时会补全为 `imx attach dev`。只有一个可用会话时会直接补全名称。
+
+`attach`、`cat` 和 `kill` 会在每次按下 Tab 时查询当前会话名称。补全默认开启。需要关闭时，在 `config.toml` 中添加以下选项：
+
+```toml
+[completion]
+enabled = false
+```
+
 ### 更新和卸载
 
 安装最新发布版本：
@@ -133,7 +147,7 @@ imx update
 imx uninstall
 ```
 
-卸载会终止当前用户的 imx 会话，清理当前可执行文件、安装的许可证、配置文件、shell 集成和已记录的运行文件。删除系统安装文件时会自动调用 `sudo`。工作目录中的用户文件保留。手动修改过的集成片段会保留，程序会报告对应路径并终止卸载。详细行为见[使用说明](docs/usage.md#卸载)。
+卸载会终止当前用户的 imx 会话，清理当前可执行文件、安装的许可证、补全文件、配置文件、shell 集成和已记录的运行文件。删除系统安装文件时会自动调用 `sudo`。工作目录中的用户文件保留。手动修改过的集成片段会保留，程序会报告对应路径并终止卸载。详细行为见[使用说明](docs/usage.md#卸载)。
 
 ## 命令
 

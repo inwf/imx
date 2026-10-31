@@ -9,6 +9,7 @@ const uninstall = @import("uninstall.zig");
 const update = @import("update.zig");
 const settings = @import("settings.zig");
 const shell = @import("shell.zig");
+const completion = @import("completion.zig");
 const version = @import("build_options").version;
 pub const std_options: std.Options = .{ .log_level = .err };
 
@@ -32,6 +33,10 @@ fn execute(init: std.process.Init.Minimal) !void {
     defer threaded.deinit();
     const io = threaded.io();
     const command = if (args.len > 1) args[1] else "list";
+    if (std.mem.eql(u8, command, "__complete")) {
+        if (args.len != 4) return error.InvalidArguments;
+        return completion.run(allocator, io, args[2], args[3]);
+    }
     if (std.mem.eql(u8, command, "help")) {
         if (args.len != 2) return error.InvalidArguments;
         return sys.writeAll(1,

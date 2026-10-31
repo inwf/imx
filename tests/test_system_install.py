@@ -9,7 +9,7 @@ from conftest import ROOT
 from test_install import VERSION, downloaded, native_package
 
 
-@pytest.mark.parametrize("case", ["root", "sudo", "inside", "reinstall", "update", "update-inside", "cancel-install", "cancel-uninstall", "cancel-update", "usr-path", "umask", "other-user", "preserve-files", "aliases"])
+@pytest.mark.parametrize("case", ["root", "sudo", "inside", "reinstall", "update", "update-inside", "cancel-install", "cancel-uninstall", "cancel-update", "usr-path", "umask", "other-user", "preserve-files", "aliases", "completion", "completion-usr"])
 def test_system_installation(case, downloaded):
     directory = ROOT / "work/system-tests" / uuid.uuid4().hex
     directory.mkdir(parents=True)

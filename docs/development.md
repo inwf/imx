@@ -14,11 +14,14 @@ zig build
 安装到系统目录：
 
 ```bash
-sudo install -m 755 zig-out/bin/imx /usr/local/bin/imx
-sudo install -d -m 755 /usr/local/share/licenses/imx
-sudo cp -R zig-out/share/licenses/imx/. /usr/local/share/licenses/imx/
+sudo zig build --prefix /usr/local
+sudo install -D -m 644 src/completions/fish.fish /usr/share/fish/vendor_completions.d/imx.fish
 imx -v
 ```
+
+编译会同时安装可执行文件、许可证，以及 `share/bash-completion/completions/imx`、`share/zsh/site-functions/_imx`、`share/zsh/vendor-completions/_imx` 和 `share/fish/vendor_completions.d/imx.fish`。补全加载条件见[使用说明](usage.md#tab-补全)。
+
+系统安装需要在 `/usr/local/share/fish/vendor_completions.d/` 和 `/usr/share/fish/vendor_completions.d/` 同时提供 Fish 补全文件。上面的命令将程序安装到 `/usr/local`，并将 Fish 补全复制到另一个标准目录。使用安装脚本时会自动完成这些操作。
 
 默认生成使用 musl 的静态可执行文件。imx 使用 `safe` 编译模式，开启运行时安全检查；终端库使用 `fast` 模式。`debug` 模式同时开启终端库的安全检查。
 
@@ -38,7 +41,7 @@ zig build -Dtarget=aarch64-linux-musl -Dcpu=baseline --prefix zig-out/aarch64
 
 ## 测试与贡献
 
-测试需要 uv、Python 3.12 或更新版本、Bash、Zsh、Fish、Vim、curl、GNU tar、GNU coreutils、GNU findutils、sudo 和 util-linux。系统安装测试通过 `sudo` 创建独立的 Linux 挂载环境，使用真实普通用户和密码验证安装、升级和卸载；需要系统允许挂载文件系统。Python 依赖版本记录在 [`tests/uv.lock`](../tests/uv.lock)。提交改动前执行：
+测试需要 uv、Python 3.12 或更新版本、Bash、bash-completion、Zsh、Fish、Vim、curl、GNU tar、GNU coreutils、GNU findutils、sudo 和 util-linux。系统安装测试通过 `sudo` 创建独立的 Linux 挂载环境，使用真实普通用户和密码验证安装、升级和卸载；需要系统允许挂载文件系统。Python 依赖版本记录在 [`tests/uv.lock`](../tests/uv.lock)。提交改动前执行：
 
 ```bash
 zig fmt --check build.zig src
@@ -48,13 +51,16 @@ mkdir -p work/runtime
 TMPDIR="$PWD/work/runtime" uv run --frozen --project tests pytest -q
 ```
 
-集成测试启动真实 PTY、Bash、Zsh、Fish、Vim 和会话程序，检查命令、历史、重新连接、终端尺寸、分离、进程清理、并发创建和终端查询。安装测试通过真实 HTTP 服务下载编译的软件包，检查安装、更新、卸载和下载失败。测试目录保存在 `work/`。
+集成测试启动真实 PTY、Bash、Zsh、Fish、Vim 和会话程序，检查命令、历史、重新连接、终端尺寸、分离、进程清理、并发创建和终端查询。补全测试使用各个 shell 的原生加载机制和实际 Tab 按键，检查命令、当前会话名称、候选变化和配置开关。安装测试通过真实 HTTP 服务下载编译的软件包，检查安装、更新、卸载和下载失败，并验证默认系统目录中的补全加载。测试目录保存在 `work/`。
 
 修改安装或发布脚本时，还需要 ShellCheck 和 actionlint：
 
 ```bash
 shellcheck install.sh scripts/*.sh
-shellcheck -s bash src/shell/bash.sh
+shellcheck -s bash src/shell/bash.sh src/completions/bash.sh
+bash -n src/completions/bash.sh
+zsh -n src/completions/zsh.sh
+fish -n src/completions/fish.fish
 actionlint .github/workflows/release.yml
 ```
 
@@ -89,8 +95,8 @@ git push origin v0.3.1
 
 | 发布附件 | 内容 |
 | --- | --- |
-| `imx-linux-x86_64.tar.gz` | x86_64 静态可执行文件及许可证 |
-| `imx-linux-aarch64.tar.gz` | ARM64 静态可执行文件及许可证 |
+| `imx-linux-x86_64.tar.gz` | x86_64 静态可执行文件、许可证及补全文件 |
+| `imx-linux-aarch64.tar.gz` | ARM64 静态可执行文件、许可证及补全文件 |
 | `install.sh` | 安装脚本 |
 | `VERSION` | 发布版本号 |
 | `SHA256SUMS` | 软件包、安装脚本和版本文件的 SHA256 校验值 |

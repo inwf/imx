@@ -28,6 +28,9 @@ show_session = true
 
 [list]
 created_format = "%m-%d %H:%M:%S"
+
+[completion]
+enabled = true
 ```
 
 ### CREATED 时间格式
@@ -73,6 +76,60 @@ created_format = "%m-%d %H:%M:%S"
 
 手动修改过的集成片段或脚本会保留，关闭选项或卸载会报告对应路径并终止操作。修改记录用于识别程序添加的内容，初始化文件中的其他用户内容会保留。
 
+## Tab 补全
+
+安装脚本和源码编译都会提供 Bash、Zsh 和 Fish 补全文件。输入 `imx a` 后按下 Tab，可以补全为 `imx attach `。随后按下 Tab，有多个会话时会显示会话列表；输入名称前缀后再次按下 Tab，唯一匹配时会补全完整名称。只有一个候选时会直接补全，多个候选共享的名称前缀由 shell 补全。
+
+`attach`、`cat` 和 `kill` 的首个参数支持会话名称补全。每次补全都查询当前用户所选运行目录中的后台进程，新增和删除会话会即时反映到候选中。候选按会话名称排序，名称查询独立于 `CREATED` 的显示格式。
+
+`completion.enabled` 默认为 `true`。设置为 `false` 后，下一次按下 Tab 即可停止提供命令和会话候选；设置为 `true` 或删除该选项即可重新开启。
+
+| Shell | 安装前缀下的目录 | 加载条件 |
+| --- | --- | --- |
+| Bash | `share/bash-completion/completions/imx` | Bash 4.4 或更新版本，安装并启用 `bash-completion` |
+| Zsh | `share/zsh/site-functions/_imx`、`share/zsh/vendor-completions/_imx` | 初始化 `compinit`，并通过 `fpath` 搜索补全目录 |
+| Fish | `share/fish/vendor_completions.d/imx.fish` | 通过标准补全目录自动加载 |
+
+系统安装会同时提供 `/usr/local/share/fish/vendor_completions.d/imx.fish` 和 `/usr/share/fish/vendor_completions.d/imx.fish`，覆盖 Fish 的两种默认安装位置。卸载会同步清理这两个文件。
+
+默认系统安装使用 `/usr/local`，仅包含 `/usr/bin` 的环境使用 `/usr`。安装完成后启动新的 shell。Bash 和 Zsh 的补全机制由 shell 环境初始化。例如，Ubuntu 和 Debian 的 Bash 可以在当前 shell 中执行：
+
+```bash
+source /usr/share/bash-completion/bash_completion
+```
+
+Zsh 可以执行：
+
+```zsh
+autoload -Uz compinit
+compinit
+```
+
+使用 `IMX_PREFIX` 自定义安装前缀时，命令目录需要在 `PATH` 中。Bash 和 Fish 通过 `XDG_DATA_DIRS` 搜索该前缀的 `share/`，Zsh 通过 `fpath` 搜索其中的 `share/zsh/site-functions/`。例如，安装到 `$HOME/apps/imx` 时，Bash 使用：
+
+```bash
+export PATH="$HOME/apps/imx/bin:$PATH"
+export XDG_DATA_DIRS="$HOME/apps/imx/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+source /usr/share/bash-completion/bash_completion
+```
+
+Zsh 在初始化 `compinit` 前添加搜索目录：
+
+```zsh
+fpath=("$HOME/apps/imx/share/zsh/site-functions" $fpath)
+autoload -Uz compinit
+compinit
+```
+
+Fish 可以在启动新的 shell 前设置：
+
+```fish
+set -gx PATH "$HOME/apps/imx/bin" $PATH
+set -gx XDG_DATA_DIRS "$HOME/apps/imx/share:/usr/local/share:/usr/share"
+```
+
+旧版本启动的后台进程不支持名称查询时，会报告 `CompletionUnsupportedByBackend`。全部会话结束后，重新创建会话会启动当前安装的版本。
+
 ## 多个终端连接
 
 多个终端可以同时连接同一个会话，全部连接共享输入和输出。
@@ -101,6 +158,7 @@ imx cat dev
 | `IMX_DIR` | 指定绝对路径的运行目录，优先于 `XDG_RUNTIME_DIR` |
 | `XDG_RUNTIME_DIR` | 未设置 `IMX_DIR` 时，使用该目录下的 `imx/` |
 | `XDG_CONFIG_HOME` | 指定 imx 配置目录，并遵循 Fish 的初始化目录设置 |
+| `XDG_DATA_DIRS` | Bash 和 Fish 搜索安装前缀下的补全文件 |
 | `ZDOTDIR` | shell 为 Zsh 时，使用继承的绝对路径选择初始化文件 |
 
 安装脚本另支持 `IMX_PREFIX` 指定安装前缀。默认优先选择当前 `PATH` 中的 `/usr/local/bin`，安装前缀为 `/usr/local`；仅包含 `/usr/bin` 的环境使用 `/usr`。下载和解压目录位于 `${XDG_CACHE_HOME:-$HOME/.cache}`，安装结束后清理。写入系统目录时自动调用 `sudo`。
@@ -141,12 +199,12 @@ imx update
 imx uninstall
 ```
 
-卸载会终止当前用户在已记录运行目录中的全部 imx 会话和后台进程，删除 socket、启动锁、日志、目录记录、当前可执行文件、安装的许可证、imx 配置文件及记录中的 shell 集成，并清理属于当前用户的空目录。当前默认目录、`XDG_RUNTIME_DIR` 和 `IMX_DIR` 对应的运行文件也会清理。
+卸载会终止当前用户在已记录运行目录中的全部 imx 会话和后台进程，删除 socket、启动锁、日志、目录记录、当前可执行文件、安装的许可证和补全文件、imx 配置文件及记录中的 shell 集成，并清理属于当前用户的空目录。当前默认目录、`XDG_RUNTIME_DIR` 和 `IMX_DIR` 对应的运行文件也会清理。
 
-通过符号链接运行时，卸载会删除实际可执行文件、调用使用的链接，以及 `PATH` 中指向该文件的 `imx` 链接。安装到 `bin/imx` 时，许可证从同一安装前缀的 `share/licenses/imx/` 清理；独立复制的可执行文件也支持卸载。
+通过符号链接运行时，卸载会删除实际可执行文件、调用使用的链接，以及 `PATH` 中指向该文件的 `imx` 链接。安装到 `bin/imx` 时，许可证和补全文件从同一安装前缀清理；独立复制的可执行文件也支持卸载。
 
 卸载会检查文件身份和删除权限。普通用户删除系统安装文件时会自动调用 `sudo`，根据系统设置提示输入密码；取消授权会终止卸载，会话继续运行。会话和运行文件按执行命令的当前用户清理，其他用户的运行文件由各用户管理。系统安装的可执行文件和许可证为共享文件。
 
 启动锁阻止并发连接重新创建运行文件。会话内部执行卸载时，独立清理进程会在会话关闭后继续完成运行文件删除。系统的共享目录保留。
 
-工作目录中的用户文件，以及运行目录、配置目录和许可证目录中的额外用户文件保留。shell 初始化文件保留原有用户内容；手动修改过的 imx 集成片段或脚本会在删除安装文件之前报告，并终止卸载。
+工作目录中的用户文件，以及运行目录、配置目录、许可证目录和补全目录中的额外用户文件保留。shell 初始化文件保留原有用户内容；手动修改过的 imx 集成片段或脚本会在删除安装文件之前报告，并终止卸载。

@@ -11,6 +11,8 @@ import uuid
 import pexpect
 import psutil
 
+from completion_shell import COMPLETION_FILES, CompletionShell
+
 
 USERNAME = "imx-install-tests"
 PASSWORD = "imx-install-test-password"
@@ -84,8 +86,7 @@ def main():
     assert os.geteuid() == 0
     checked("mount", "--make-rprivate", "/")
     overlay(directory / "etc", "/etc")
-    if case in ("usr-path", "aliases"):
-        overlay(directory / "usr", "/usr")
+    overlay(directory / "usr", "/usr")
     system = directory / "system"
     system.mkdir()
     checked("mount", "--bind", str(system), "/usr/local")
@@ -108,9 +109,12 @@ def main():
         HOME=str(home), IMX_DIR=str(home / "run"), XDG_CACHE_HOME=str(home / ".cache"),
         TMPDIR=str(home), SHELL="/bin/bash", TERM="xterm-256color", LC_ALL="C",
         IMX_RELEASE_BASE_URL=release,
-        PATH="/usr/bin:/bin" if case == "usr-path" else "/usr/local/bin:/usr/bin:/bin",
+        PATH="/usr/bin:/bin" if case in ("usr-path", "completion-usr") else "/usr/local/bin:/usr/bin:/bin",
     )
-    binary = Path("/usr/bin/imx" if case == "usr-path" else "/usr/local/bin/imx")
+    binary = Path("/usr/bin/imx" if case in ("usr-path", "completion-usr") else "/usr/local/bin/imx")
+    completions = [binary.parent.parent / name for name in COMPLETION_FILES]
+    other_prefix = Path("/usr" if binary.parent.parent == Path("/usr/local") else "/usr/local")
+    completions.append(other_prefix / "share/fish/vendor_completions.d/imx.fish")
     licenses = binary.parent.parent / "share/licenses/imx"
     download = f"curl -fsSL {release}/download/v{version}/install.sh | bash"
     if case == "root":
@@ -124,12 +128,15 @@ def main():
                 fetch.kill()
                 fetch.wait()
         assert checked("imx", "-v", env=environment).stdout == f"imx {version}\n"
+        for path in completions:
+            assert path.stat().st_mode & 0o777 == 0o644
         inode = binary.stat().st_ino
         checked("imx", "update", env=environment)
         assert binary.stat().st_ino != inode
         checked("imx", "uninstall", env=environment)
         assert not binary.exists()
         assert not licenses.exists()
+        assert all(not path.exists() for path in completions)
         assert Path("/usr/local").exists()
         print("System installation and uninstall as root passed.")
         return
@@ -150,6 +157,10 @@ def main():
         assert licenses.stat().st_mode & 0o777 == 0o755
         for path in licenses.rglob("*"):
             assert path.stat().st_mode & 0o777 == (0o755 if path.is_dir() else 0o644)
+        for path in completions:
+            assert path.stat().st_uid == 0
+            assert path.stat().st_mode & 0o777 == 0o644
+            assert path.parent.stat().st_mode & 0o777 == 0o755
         assert f"imx {version}" in command(child, "imx -v")
         assert "No sessions." in command(child, "imx ls")
         if case == "preserve-files":
@@ -169,7 +180,7 @@ def main():
             other_backend = psutil.Process(psutil.Process(other_shell).ppid())
         shell_pid = None
         job_pid = None
-        if case in ("inside", "reinstall", "update", "update-inside", "cancel-uninstall", "cancel-update", "other-user"):
+        if case in ("inside", "reinstall", "update", "update-inside", "cancel-uninstall", "cancel-update", "other-user", "completion", "completion-usr"):
             session(child)
             variables = [f"{name}={value}" for name, value in environment.items()]
             listing = checked("runuser", "--user", USERNAME, "--", "env", *variables, "imx", "ls").stdout
@@ -182,6 +193,18 @@ def main():
             if case not in ("inside", "update-inside"):
                 child.sendcontrol("\\")
                 child.expect_exact("SYSTEM_PROMPT> ")
+        if case in ("completion", "completion-usr"):
+            for shell in ("bash", "zsh", "fish"):
+                with CompletionShell(environment, shell, user=USERNAME, fixtures=Path("/mnt/tests/completion")) as terminal:
+                    completed = terminal.complete("imx a\t")
+                    assert completed == "imx attach ", f"{shell}: {completed!r}\n{terminal.log.getvalue()!r}"
+                    assert terminal.complete("imx attach d\t") == "imx attach dev "
+            command(child, "sudo -k")
+            installed(child, "imx update")
+            for shell in ("bash", "zsh", "fish"):
+                with CompletionShell(environment, shell, user=USERNAME, fixtures=Path("/mnt/tests/completion")) as terminal:
+                    assert terminal.complete("imx c\t") == "imx cat "
+                    assert terminal.complete("imx kill d\t") == "imx kill dev "
         if case in ("reinstall", "update", "update-inside"):
             inode = binary.stat().st_ino
             prompt = "INNER_PROMPT> " if case == "update-inside" else "SYSTEM_PROMPT> "
@@ -227,6 +250,7 @@ def main():
             assert list(licenses.iterdir()) == [notes]
         else:
             assert not licenses.exists()
+        assert all(not path.exists() for path in completions)
         assert not (home / ".local/state/imx").exists()
         assert not (home / "run").exists()
         assert not list((home / ".cache").glob("imx-install.*"))
