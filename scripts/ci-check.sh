@@ -13,5 +13,5 @@ zsh -n src/completions/zsh.sh
 fish -n src/shell/fish.fish
 fish -n src/completions/fish.fish
 actionlint .github/workflows/release.yml
-uv run --frozen --project tests pytest -q
+uv run --frozen --project tests pytest -q tests
 uv run --frozen --project tests python scripts/release.py package --arch "$ARCH" --tag "${RELEASE_TAG:-}"

@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def checked(*arguments, **kwargs):
-    return subprocess.run(arguments, check=True, capture_output=True, text=True, timeout=30, **kwargs)
+    result = subprocess.run(arguments, capture_output=True, text=True, timeout=30, **kwargs)
+    assert result.returncode == 0, f"{arguments!r}\n{result.stdout}{result.stderr}"
+    return result
 
 
 def overlay(directory, target):
@@ -107,6 +109,7 @@ def main():
     checked("visudo", "--check", "--file", str(policy))
     environment = dict(
         HOME=str(home), IMX_DIR=str(home / "run"), XDG_CACHE_HOME=str(home / ".cache"),
+        XDG_CONFIG_HOME=str(home / ".config"),
         TMPDIR=str(home), SHELL="/bin/bash", TERM="xterm-256color", LC_ALL="C",
         IMX_RELEASE_BASE_URL=release,
         PATH="/usr/bin:/bin" if case in ("usr-path", "completion-usr") else "/usr/local/bin:/usr/bin:/bin",

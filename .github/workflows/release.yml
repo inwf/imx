@@ -55,6 +55,8 @@ jobs:
         run: |
           sudo --preserve-env=TMPDIR apt-get update
           sudo --preserve-env=TMPDIR apt-get install -y vim zsh fish bash-completion shellcheck sudo util-linux passwd
+          sudo chmod -R go-w /usr/share/zsh
+          zsh -fc 'autoload -Uz compaudit; compaudit'
       - name: Set up build tools
         run: uv run --frozen --project tests python scripts/setup_ci.py
       - name: Check, test and package
