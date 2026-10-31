@@ -84,11 +84,11 @@ actionlint .github/workflows/release.yml
 
 日常更新提交代码并按需推送分支。正式发版时创建并推送版本标签，触发 Release 发布。
 
-发布前更新 `build.zig.zon` 中的 `version`，同步相关版本测试，并提交通过检查的代码。标签需要使用 `v版本号`，与程序输出的版本一致。例如发布 `0.4.0`：
+发布前更新 `build.zig.zon` 中的 `version`，同步相关版本测试，并提交通过检查的代码。标签需要使用 `v版本号`，与程序输出的版本一致。例如发布 `0.4.1`：
 
 ```bash
-git tag -a v0.4.0 -m "imx 0.4.0"
-git push origin v0.4.0
+git tag -a v0.4.1 -m "imx 0.4.1"
+git push origin v0.4.1
 ```
 
 进入仓库的 **Actions / Release**，打开对应标签的运行记录。两个 **Build and test** 任务成功后，**Publish release** 会创建草稿、上传附件，再公开发布并设置为最新版本。
