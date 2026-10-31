@@ -10,6 +10,7 @@ pub const Registry = struct {
     paths_fd: c_int,
     lock_fd: c_int,
     image_fd: c_int,
+    integration_fd: ?c_int = null,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, exclusive: bool) !Registry {
         const image_fd = try sys.check(c.open("/proc/self/exe", c.O_RDONLY | c.O_CLOEXEC), "open(executable lock)");
@@ -54,7 +55,22 @@ pub const Registry = struct {
         _ = try sys.check(c.flock(self.image_fd, c.LOCK_UN), "flock(executable unlock)");
     }
 
+    pub fn lockIntegration(self: *Registry) !void {
+        const fd = try sys.check(c.openat(self.dir_fd, "integration.lock", c.O_RDWR | c.O_CREAT | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600)), "open(integration lock)");
+        errdefer sys.close(fd);
+        const stat = try sys.stat(fd);
+        if (stat.uid != c.getuid() or stat.mode & 0o077 != 0 or stat.mode & c.S_IFMT != c.S_IFREG or stat.nlink != 1) return error.UnsafeLockFile;
+        try lock(fd, true);
+        self.integration_fd = fd;
+    }
+
+    pub fn finishSetup(self: *Registry) void {
+        if (self.integration_fd) |fd| sys.close(fd);
+        self.integration_fd = null;
+    }
+
     pub fn deinit(self: *Registry) void {
+        self.finishSetup();
         sys.close(self.paths_fd);
         sys.close(self.lock_fd);
         sys.close(self.dir_fd);

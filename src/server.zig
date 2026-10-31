@@ -180,6 +180,7 @@ const Server = struct {
                 client.size = try sys.Size.decode(msg.payload[0..4]);
                 var fields = std.mem.splitScalar(u8, msg.payload[4..], 0);
                 const name = fields.next() orelse return error.InvalidMessage;
+                if (!std.mem.eql(u8, name, self.cfg.session_name.?)) return error.InvalidSessionName;
                 const cwd = fields.next() orelse return error.InvalidMessage;
                 const shell = fields.next() orelse return error.InvalidMessage;
                 const environment = fields.rest();
@@ -192,6 +193,27 @@ const Server = struct {
                 session.leader = client;
                 try session.clients.append(self.allocator, client);
                 if (session.clients.items.len == 1) try self.focus(session, true);
+                try self.respond(client, .ok, "");
+            },
+            .info => {
+                if (client.session != null) return error.InvalidMessage;
+                const options = std.json.parseFromSlice(protocol.ListOptions, self.allocator, msg.payload, .{}) catch |err| {
+                    if (err == error.OutOfMemory) return err;
+                    return error.InvalidMessage;
+                };
+                defer options.deinit();
+                try sys.validateCreatedFormat(options.value.created_format);
+                const session = self.sessions.get(self.cfg.session_name.?) orelse return error.SessionNotFound;
+                var created: [sys.max_created_display]u8 = undefined;
+                const info: protocol.SessionInfo = .{
+                    .name = session.name,
+                    .pid = session.pid,
+                    .clients = session.clients.items.len,
+                    .directory = session.cwd,
+                    .created = try sys.formatDateTime(&created, session.created, options.value.created_format),
+                };
+                client.snapshot = try std.json.Stringify.valueAlloc(self.allocator, info, .{});
+                client.closing = true;
                 try self.respond(client, .ok, "");
             },
             .list => {
@@ -452,13 +474,13 @@ const Server = struct {
         var events: [64]c.struct_epoll_event = undefined;
         while (true) {
             if (self.sessions.count() == 0 and self.resources.count() == 2) {
-                const lock = c.openat(self.cfg.dir_fd, "startup.lock", c.O_RDWR | c.O_NOFOLLOW | c.O_CLOEXEC);
+                const lock = c.openat(self.cfg.dir_fd, self.cfg.lock_name, c.O_RDWR | c.O_NOFOLLOW | c.O_CLOEXEC);
                 _ = try sys.check(lock, "open(shutdown lock)");
                 defer sys.close(lock);
                 if (c.flock(lock, c.LOCK_EX | c.LOCK_NB) == 0) {
                     try self.acceptClients();
                     if (self.resources.count() == 2) {
-                        _ = try sys.check(c.unlinkat(self.cfg.dir_fd, "server.sock", 0), "unlink(socket)");
+                        _ = try sys.check(c.unlinkat(self.cfg.dir_fd, self.cfg.socket_name, 0), "unlink(socket)");
                         return;
                     }
                 } else if (c.__errno_location().* != c.EAGAIN) return sys.failure("flock(shutdown)");
@@ -568,11 +590,11 @@ fn terminateSession(sid: c.pid_t) !void {
             else => return error.PidfdSendSignalFailed,
         }
     }
-    const deadline = try monotonicMilliseconds() + 5000;
+    const deadline = try sys.monotonicMilliseconds() + 5000;
     for (descriptors.items) |fd| {
         var event: c.struct_pollfd = .{ .fd = fd, .events = c.POLLIN, .revents = 0 };
         while (true) {
-            const timeout: c_int = @intCast(@max(0, deadline - try monotonicMilliseconds()));
+            const timeout: c_int = @intCast(@max(0, deadline - try sys.monotonicMilliseconds()));
             const result = c.poll(&event, 1, timeout);
             if (result < 0 and c.__errno_location().* == c.EINTR) continue;
             if (try sys.check(result, "poll(session exit)") == 0) return error.SessionTerminationTimeout;
@@ -591,16 +613,6 @@ fn terminateSession(sid: c.pid_t) !void {
             }
         }
     }
-}
-
-fn monotonicMilliseconds() !i64 {
-    var time: std.os.linux.timespec = undefined;
-    const errno_value = std.os.linux.errno(std.os.linux.clock_gettime(.MONOTONIC, &time));
-    if (errno_value != .SUCCESS) {
-        c.__errno_location().* = @backingInt(errno_value);
-        return sys.failure("clock_gettime");
-    }
-    return time.sec * 1000 + @divTrunc(time.nsec, 1_000_000);
 }
 
 fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8, cwd: []const u8, shell: []const u8, environment: []const u8, size: sys.Size) !struct { pid: c.pid_t, fd: c_int } {
@@ -660,7 +672,7 @@ pub fn run(allocator: Allocator, io: std.Io, cfg: *const config.Config, ready_fd
     defer sys.close(signal);
     const listener = try sys.check(c.socket(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_NONBLOCK | c.SOCK_CLOEXEC, 0), "socket(listener)");
     defer sys.close(listener);
-    if (c.unlinkat(cfg.dir_fd, "server.sock", 0) < 0 and c.__errno_location().* != c.ENOENT) return sys.failure("unlink(stale socket)");
+    if (c.unlinkat(cfg.dir_fd, cfg.socket_name, 0) < 0 and c.__errno_location().* != c.ENOENT) return sys.failure("unlink(stale socket)");
     var address = cfg.address();
     _ = try sys.check(c.bind(listener, @ptrCast(&address), @sizeOf(c.struct_sockaddr_un)), "bind");
     _ = try sys.check(c.listen(listener, 128), "listen");
@@ -707,7 +719,7 @@ pub fn start(allocator: Allocator, io: std.Io, cfg: *const config.Config) !void 
         if (daemon_pid != 0) c._exit(0);
         _ = c.umask(0o077);
         const null_fd = sys.check(c.open("/dev/null", c.O_RDWR | c.O_CLOEXEC), "open(/dev/null)") catch c._exit(1);
-        const log_fd = sys.check(c.openat(cfg.dir_fd, "server.log", c.O_WRONLY | c.O_CREAT | c.O_APPEND | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600)), "open(server.log)") catch c._exit(1);
+        const log_fd = sys.check(c.openat(cfg.dir_fd, cfg.log_name, c.O_WRONLY | c.O_CREAT | c.O_APPEND | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600)), "open(session log)") catch c._exit(1);
         for (0..2) |fd| _ = c.dup2(null_fd, @intCast(fd));
         _ = c.dup2(log_fd, 2);
         sys.close(null_fd);

@@ -10,6 +10,7 @@ const update = @import("update.zig");
 const settings = @import("settings.zig");
 const shell = @import("shell.zig");
 const completion = @import("completion.zig");
+const sessions = @import("sessions.zig");
 const version = @import("build_options").version;
 pub const std_options: std.Options = .{ .log_level = .err };
 
@@ -96,18 +97,27 @@ fn execute(init: std.process.Init.Minimal) !void {
     }
     var preferences = if (tag == .attach or tag == .list) try settings.load(allocator, io, .{}) else settings.Settings{};
     defer preferences.deinit(allocator);
-    var records = try registry.Registry.init(allocator, io, tag == .attach);
+    var records = try registry.Registry.init(allocator, io, false);
     defer records.deinit();
+    if (tag == .attach) try records.lockIntegration();
     if (preferences.file_missing) preferences = try settings.load(allocator, io, .{ .create_default = true });
     if (tag == .attach) try shell.synchronize(allocator, io, &records, preferences.show_session, config.env("SHELL") orelse "/bin/sh");
-    var cfg = try config.Config.init(allocator, io);
+    var root = try config.Config.init(allocator, io);
+    defer root.deinit();
+    try records.register(io, root.dir_fd);
+    records.finishSetup();
+    if (try root.connect()) |legacy| {
+        defer sys.close(legacy);
+        if (tag == .attach) return client.attach(allocator, io, legacy, name, &records);
+        return client.command(allocator, legacy, tag, name, preferences.createdFormat());
+    }
+    if (tag == .list) return sessions.list(allocator, io, &root, preferences.createdFormat(), null);
+    var cfg = (try root.session(io, name, tag == .attach)) orelse return error.SessionNotFound;
     defer cfg.deinit();
-    try records.register(io, cfg.dir_fd);
     try cfg.lock();
     defer cfg.unlock() catch @panic("failed to release startup lock");
     var socket = try cfg.connect();
     if (socket == null) {
-        if (tag == .list) return sys.writeAll(1, "No sessions.\n", false);
         if (tag != .attach) return error.SessionNotFound;
         try server.start(allocator, io, &cfg);
         socket = try cfg.connect();

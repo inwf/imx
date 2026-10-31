@@ -201,7 +201,7 @@ def test_invalid_list_requests_leave_sessions_running(sessions, payload, error):
     original = sessions.sessions()[0]
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(5)
-        connection.connect(str(sessions.runtime / "server.sock"))
+        connection.connect(str(sessions.runtime / "session-dev.sock"))
         connection.sendall(struct.pack("<IHH", len(payload), 2, 1) + payload)
         response = bytearray()
         while chunk := connection.recv(4096):

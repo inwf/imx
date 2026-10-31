@@ -24,7 +24,7 @@ from test_prompt import configuration
 def test_commands_and_empty_list(sessions):
     for args in [(), ("list",), ("ls",)]:
         assert sessions.run(*args).stdout == "No sessions.\n"
-    assert not (sessions.runtime / "server.sock").exists()
+    assert not list(sessions.runtime.glob("*.sock"))
     assert sessions.run("-v").stdout == "imx 0.4.1\n"
     help_text = sessions.run("help").stdout
     for command in ["attach", "list", "cat", "detach", "kill", "update", "uninstall", "-v", "help"]:
@@ -55,7 +55,7 @@ def test_session_creation_time(sessions, hours):
     after = datetime.now(zone).replace(microsecond=0)
     listing = sessions.run("ls").stdout
     reader = csv.DictReader(io.StringIO(listing), delimiter="\t")
-    assert reader.fieldnames == ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED"]
+    assert reader.fieldnames == ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED", "STATUS"]
     row = next(reader)
     created = row["CREATED"]
     recorded = [datetime.strptime(f"{year} {created}", "%Y %m-%d %H:%M:%S").replace(tzinfo=zone)
@@ -90,7 +90,7 @@ def test_terminal_session_list_columns(sessions, created_format):
         clients.append(sessions.spawn(name=name, cols=240))
     sessions.path = original
     rows = sessions.sessions()
-    headings = ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED"]
+    headings = ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED", "STATUS"]
     baseline = None
     for invocation in ("imx", "imx ls", "imx list"):
         output = sessions.command(clients[0], invocation)
@@ -108,7 +108,7 @@ def test_terminal_session_list_columns(sessions, created_format):
                 text = "".join(screen.buffer[line][column].data
                                for column in range(positions[index], positions[index + 1])).rstrip()
                 assert text == unicodedata.normalize("NFC", row[heading])
-    assert sessions.run("ls").stdout.count("\t") == 4 * (len(rows) + 1)
+    assert sessions.run("ls").stdout.count("\t") == 5 * (len(rows) + 1)
 
 
 def test_session_list_after_executable_replacement(sessions):
@@ -124,7 +124,8 @@ def test_session_list_after_executable_replacement(sessions):
     replacement.replace(installed)
     for invocation in ("imx", "imx ls", "imx list"):
         output = sessions.command(child, invocation)
-        assert "NAME\tPID\tCLIENTS\tDIRECTORY\tCREATED" in output
+        assert "\t" not in output
+        assert all(heading in output for heading in ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED", "STATUS"])
         assert original_pid in output
         assert "imx: " not in output
     assert sessions.sessions()[0]["PID"] == original_pid
@@ -299,7 +300,7 @@ def test_bad_protocol_does_not_terminate_sessions(sessions):
     child = sessions.spawn()
     for length, tag, version in [(131073, 2, 1), (0, 999, 1), (0, 2, 2)]:
         with socket.socket(socket.AF_UNIX) as connection:
-            connection.connect(str(sessions.runtime / "server.sock"))
+            connection.connect(str(sessions.runtime / "session-dev.sock"))
             connection.sendall(struct.pack("<IHH", length, tag, version))
             connection.settimeout(3)
             assert connection.recv(4096)

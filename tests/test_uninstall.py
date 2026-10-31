@@ -60,11 +60,12 @@ def test_uninstall_terminates_sessions_and_jobs(installation):
     job = int(next(line.split("=", 1)[1] for line in output.splitlines() if line.startswith("JOB_PID=")))
     second = installation.spawn("other")
     shells = [int(row["PID"]) for row in installation.sessions()]
-    server = psutil.Process(shells[0]).ppid()
+    servers = [psutil.Process(pid).ppid() for pid in shells]
+    assert len(set(servers)) == len(shells)
     installation.run("uninstall")
     child.expect(pexpect.EOF)
     second.expect(pexpect.EOF)
-    installation.wait(lambda: not any(psutil.pid_exists(pid) for pid in [server, job, *shells]))
+    installation.wait(lambda: not any(psutil.pid_exists(pid) for pid in [*servers, job, *shells]))
     assert_removed(installation)
 
 
@@ -84,6 +85,24 @@ def test_uninstall_cleans_all_registered_runtime_directories(installation):
     installation.wait(lambda: not psutil.pid_exists(first_pid) and not psutil.pid_exists(second_pid))
     assert not first_directory.exists()
     assert_removed(installation)
+
+
+def test_uninstall_terminates_paused_backend(installation):
+    child = installation.spawn("paused")
+    other = installation.spawn("healthy")
+    processes = [psutil.Process(psutil.Process(int(row["PID"])).ppid())
+                 for row in installation.sessions()]
+    processes[0].suspend()
+    try:
+        installation.run("uninstall")
+        child.expect(pexpect.EOF)
+        other.expect(pexpect.EOF)
+        installation.wait(lambda: not any(process.is_running() for process in processes))
+        assert_removed(installation)
+    finally:
+        for process in processes:
+            if process.is_running():
+                process.resume()
 
 
 def test_uninstall_default_runtime(installation):

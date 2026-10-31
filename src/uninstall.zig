@@ -6,6 +6,7 @@ const registry = @import("registry.zig");
 const layout = @import("layout.zig");
 const settings = @import("settings.zig");
 const shell = @import("shell.zig");
+const sessions = @import("sessions.zig");
 const Allocator = std.mem.Allocator;
 
 const File = struct {
@@ -126,16 +127,31 @@ const Plan = struct {
         var buffer: [std.fs.max_path_bytes]u8 = undefined;
         const size = try (std.Io.Dir{ .handle = directory }).realPath(self.io, &buffer);
         const canonical = buffer[0..size];
-        for (self.runtimes.items) |runtime| if (std.mem.eql(u8, runtime.path, canonical)) return;
+        for (self.runtimes.items) |runtime| if (runtime.session_name == null and std.mem.eql(u8, runtime.path, canonical)) return;
         var runtime = try config.Config.initPath(self.allocator, self.io, canonical);
+        defer runtime.deinit();
+        const names = try sessions.names(self.allocator, self.io, &runtime, ".lock");
+        defer {
+            for (names) |name| self.allocator.free(name);
+            self.allocator.free(names);
+        }
+        for (names) |name| {
+            const endpoint = (try runtime.session(self.io, name, false)) orelse return error.RuntimeChanged;
+            try self.addEndpoint(endpoint);
+        }
+        try self.addDirectory(canonical, false);
+        try self.addEndpoint(try config.Config.initPath(self.allocator, self.io, canonical));
+    }
+
+    fn addEndpoint(self: *Plan, endpoint: config.Config) !void {
+        var runtime = endpoint;
         errdefer runtime.deinit();
         try runtime.lock();
-        for ([_][]const u8{ "startup.lock", "server.sock", "server.log" }) |name| {
-            const file = try std.fs.path.join(self.allocator, &.{ canonical, name });
+        for ([_][]const u8{ runtime.lock_name, runtime.socket_name, runtime.log_name }) |name| {
+            const file = try std.fs.path.join(self.allocator, &.{ runtime.path, name });
             defer self.allocator.free(file);
             try self.addFile(file, false);
         }
-        try self.addDirectory(canonical, false);
         try self.runtimes.append(self.allocator, runtime);
     }
 
@@ -163,9 +179,11 @@ const Plan = struct {
         const paths = try std.fs.path.join(self.allocator, &.{ records.path, "paths" });
         defer self.allocator.free(paths);
         try self.addDirectory(paths, false);
-        const lock = try std.fs.path.join(self.allocator, &.{ records.path, "lifecycle.lock" });
-        defer self.allocator.free(lock);
-        try self.addFile(lock, false);
+        for ([_][]const u8{ "lifecycle.lock", "integration.lock" }) |name| {
+            const lock = try std.fs.path.join(self.allocator, &.{ records.path, name });
+            defer self.allocator.free(lock);
+            try self.addFile(lock, false);
+        }
         try self.addDirectory(records.path, false);
     }
 
@@ -348,6 +366,11 @@ fn stopServer(runtime: *const config.Config) !void {
     const fd: c_int = @intCast(raw);
     defer sys.close(fd);
     switch (std.os.linux.errno(std.os.linux.pidfd_send_signal(fd, .TERM, null, 0))) {
+        .SUCCESS => {},
+        .SRCH => return,
+        else => return error.PidfdSendSignalFailed,
+    }
+    switch (std.os.linux.errno(std.os.linux.pidfd_send_signal(fd, .CONT, null, 0))) {
         .SUCCESS => {},
         .SRCH => return,
         else => return error.PidfdSendSignalFailed,

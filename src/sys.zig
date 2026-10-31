@@ -36,6 +36,23 @@ pub fn timestamp() !c.time_t {
     return value;
 }
 
+pub fn monotonicMilliseconds() !i64 {
+    var time: std.os.linux.timespec = undefined;
+    const errno_value = std.os.linux.errno(std.os.linux.clock_gettime(.MONOTONIC, &time));
+    if (errno_value != .SUCCESS) {
+        c.__errno_location().* = @backingInt(errno_value);
+        return failure("clock_gettime");
+    }
+    return time.sec * 1000 + @divTrunc(time.nsec, 1_000_000);
+}
+
+pub fn socketTimeout(fd: c_int, milliseconds: u32) !void {
+    const timeout: c.struct_timeval = .{ .tv_sec = milliseconds / 1000, .tv_usec = (milliseconds % 1000) * 1000 };
+    for ([_]c_int{ c.SO_RCVTIMEO, c.SO_SNDTIMEO }) |option| {
+        _ = try check(c.setsockopt(fd, c.SOL_SOCKET, option, &timeout, @sizeOf(c.struct_timeval)), "setsockopt(timeout)");
+    }
+}
+
 pub fn formatDateTime(buffer: []u8, value: c.time_t, format: [:0]const u8) ![]const u8 {
     var date = value;
     var calendar: c.struct_tm = undefined;
@@ -101,6 +118,7 @@ pub fn writeAll(fd: c_int, bytes: []const u8, socket: bool) !void {
     while (offset < bytes.len) {
         const n = try write(fd, bytes[offset..], socket);
         if (n == 0) {
+            if (socket) return error.BackendTimeout;
             var pollfd: c.struct_pollfd = .{ .fd = fd, .events = c.POLLOUT, .revents = 0 };
             _ = try check(c.poll(&pollfd, 1, -1), "poll");
         }
@@ -111,7 +129,7 @@ pub fn writeAll(fd: c_int, bytes: []const u8, socket: bool) !void {
 pub fn readExact(fd: c_int, buffer: []u8) !void {
     var offset: usize = 0;
     while (offset < buffer.len) {
-        const n = (try read(fd, buffer[offset..])) orelse return error.WouldBlock;
+        const n = (try read(fd, buffer[offset..])) orelse return error.BackendTimeout;
         if (n == 0) return error.ConnectionClosed;
         offset += n;
     }

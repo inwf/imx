@@ -21,7 +21,7 @@
 - **Session prompt:** enable a configuration option to show `[dev]` before your existing Bash, Zsh, or Fish prompt.
 - **Creation time format:** choose how the `CREATED` column displays session creation times through the configuration file.
 - **Tab completion:** complete commands and current session names in Bash, Zsh, and Fish.
-- **Resource control:** one backend process with one thread manages all sessions for a user and waits for system events while idle.
+- **Session isolation:** each session has an independent backend process with one event loop thread. A paused or crashed backend leaves other sessions available.
 - **Direct installation:** releases contain static executables; the installer selects your architecture and verifies SHA256 checksums.
 
 ## Quick start
@@ -143,7 +143,7 @@ Install the latest published release:
 imx update
 ```
 
-The updater keeps the current installation directory, detects your architecture, and verifies SHA256 checksums. It prompts for `sudo` when system installation files require administrator permissions. You can run it inside or outside a session. Active sessions keep running; an existing backend continues using the version it started with, and a new backend uses the updated version after all sessions have ended. You can also update by running the installation command again.
+The updater keeps the current installation directory, detects your architecture, and verifies SHA256 checksums. It prompts for `sudo` when system installation files require administrator permissions. You can run it inside or outside a session. Active sessions keep their backends, programs, and history; newly created backends use the updated executable. When upgrading from v0.4.1, the existing shared backend serves its runtime directory until its sessions end; subsequent sessions use independent backends. You can also update by running the installation command again.
 
 ```bash
 imx uninstall
@@ -165,21 +165,23 @@ Uninstalling terminates the current user's imx sessions and removes the current 
 | `imx -v` | Print the version |
 | `imx help` | Print help |
 
-Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, and `CREATED`. Terminal output uses column widths calculated from the headings and session contents; pipes and redirected output use tabs. The `CREATED` column displays the creation time in the backend's local timezone, defaulting to `MM-DD HH:mm:ss`, such as `10-30 14:05:09`. Set `list.created_format` to customize its display. Reattaching preserves the creation time.
+Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, `CREATED`, and `STATUS`. Terminal output uses column widths calculated from the headings and session contents; pipes and redirected output use tabs. The `CREATED` column displays the creation time in the backend's local timezone, defaulting to `MM-DD HH:mm:ss`, such as `10-30 14:05:09`. Set `list.created_format` to customize its display. Reattaching preserves the creation time.
 
-Sessions and history are held in memory and are released when the machine restarts or the backend exits. Session name rules, history limits, and behavior with multiple terminals are described in the [usage guide](docs/usage.md).
+Listings query independent backends concurrently with a shared one-second deadline. `STATUS` shows `running`, `unresponsive`, or an explicit query error; unavailable fields show `-`. Completion uses a shared 250 ms deadline and retains the names of unresponsive backends. Attach and control requests report a timeout when a backend stops responding. Runtime files are named `session-<name>.sock`, `session-<name>.lock`, and `session-<name>.log`.
+
+Each backend owns its session's PTY, program, screen, history, and connections. It waits for events while idle and exits after its session and connections end. Sessions and history are held in memory; a backend exit releases its own session, and a machine restart releases all sessions. Session name rules, history limits, and behavior with multiple terminals are described in the [usage guide](docs/usage.md).
 
 ## Resource usage
 
-Measured with imx 0.2.0 on x86_64 WSL2 Linux, using the default build mode and an 80×24 terminal:
+Measured with the independent-backend development build on 2026-10-31, on x86_64 WSL2 Linux using the default build mode and an 80×24 terminal:
 
 | Idle sessions | Backend memory (PSS) | Backend processes | Backend threads |
 | --- | --- | --- | --- |
-| 1 | 1.47 MiB | 1 | 1 |
-| 10 | 2.02 MiB | 1 | 1 |
-| 100 | 6.38 MiB | 1 | 1 |
+| 1 | 1.85 MiB | 1 | 1 |
+| 10 | 3.96 MiB | 10 | 10 |
+| 100 | 25.09 MiB | 100 | 100 |
 
-The table covers the imx backend. Shells and session programs consume additional memory. Backend CPU time did not increase during each scenario's 5-second idle sample; the static executable was approximately 1.77 MiB.
+The table totals all imx backends. Shells and session programs consume additional memory. Backend CPU time did not increase during each scenario's 5-second idle sample; the static executable was approximately 2.11 MiB. While another session produced continuous output, 100 commands in the healthy session had a median response time of 1.00 ms and a maximum of 2.10 ms. With a paused backend, listing took approximately 1,003 ms and completion took 252 ms.
 
 See the [performance guide](docs/performance.md) for the measurement environment, sustained output results, capacity limits, and instructions for measuring on your own machine.
 

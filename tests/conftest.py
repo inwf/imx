@@ -95,9 +95,8 @@ class SessionEnvironment:
             self.run("kill", session["NAME"])
         for child in self.clients:
             child.close(force=True)
-        self.wait(lambda: not (self.runtime / "server.sock").exists())
-        log = self.runtime / "server.log"
-        if log.exists():
+        self.wait(lambda: not list(self.runtime.glob("*.sock")))
+        for log in self.runtime.glob("*.log"):
             assert log.read_text() == ""
 
 

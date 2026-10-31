@@ -3,6 +3,7 @@ const sys = @import("sys.zig");
 const config = @import("config.zig");
 const client = @import("client.zig");
 const settings = @import("settings.zig");
+const sessions = @import("sessions.zig");
 
 const commands = [_][]const u8{ "attach", "list", "ls", "cat", "detach", "kill", "update", "uninstall", "-v", "help" };
 
@@ -23,10 +24,9 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, kind: []const u8, prefix: [
     if (prefix.len > 64) return;
     var cfg = (try config.Config.openExisting(allocator, io)) orelse return;
     defer cfg.deinit();
-    try cfg.lock();
-    defer cfg.unlock() catch @panic("failed to release startup lock");
-    const fd = (try cfg.connect()) orelse return;
-    defer sys.close(fd);
-    try cfg.unlock();
-    return client.completeNames(allocator, fd, prefix);
+    if (try cfg.connect()) |legacy| {
+        defer sys.close(legacy);
+        return client.completeNames(allocator, legacy, prefix);
+    }
+    return sessions.list(allocator, io, &cfg, sys.default_created_format, prefix);
 }

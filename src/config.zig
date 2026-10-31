@@ -6,6 +6,10 @@ pub const Config = struct {
     allocator: std.mem.Allocator,
     path: [:0]u8,
     socket_path: [:0]u8,
+    session_name: ?[:0]u8,
+    socket_name: [:0]u8,
+    lock_name: [:0]u8,
+    log_name: [:0]u8,
     dir_fd: c_int,
     lock_fd: c_int,
 
@@ -16,16 +20,21 @@ pub const Config = struct {
     }
 
     pub fn initPath(allocator: std.mem.Allocator, io: std.Io, value: []const u8) !Config {
-        return (try openPath(allocator, io, value, true)).?;
+        return (try openPath(allocator, io, value, null, true)).?;
     }
 
     pub fn openExisting(allocator: std.mem.Allocator, io: std.Io) !?Config {
         const path = try runtimePath(allocator);
         defer allocator.free(path);
-        return openPath(allocator, io, path, false);
+        return openPath(allocator, io, path, null, false);
     }
 
-    fn openPath(allocator: std.mem.Allocator, io: std.Io, value: []const u8, create: bool) !?Config {
+    pub fn session(self: *const Config, io: std.Io, name: []const u8, create: bool) !?Config {
+        try validateName(name);
+        return openPath(self.allocator, io, self.path, name, create);
+    }
+
+    fn openPath(allocator: std.mem.Allocator, io: std.Io, value: []const u8, name: ?[]const u8, create: bool) !?Config {
         var initialized = false;
         const path = try allocator.dupeSentinel(u8, value, 0);
         defer if (!initialized) allocator.free(path);
@@ -37,11 +46,19 @@ pub const Config = struct {
             return sys.failure("open(runtime directory)");
         }
         defer if (!initialized) sys.close(dir_fd);
-        const socket_path = try std.fmt.allocPrintSentinel(allocator, "/proc/self/fd/{d}/server.sock", .{dir_fd}, 0);
+        const session_name = if (name) |text| try allocator.dupeSentinel(u8, text, 0) else null;
+        defer if (!initialized) if (session_name) |text| allocator.free(text);
+        const socket_name = if (name) |text| try std.fmt.allocPrintSentinel(allocator, "session-{s}.sock", .{text}, 0) else try allocator.dupeSentinel(u8, "server.sock", 0);
+        defer if (!initialized) allocator.free(socket_name);
+        const lock_name = if (name) |text| try std.fmt.allocPrintSentinel(allocator, "session-{s}.lock", .{text}, 0) else try allocator.dupeSentinel(u8, "startup.lock", 0);
+        defer if (!initialized) allocator.free(lock_name);
+        const log_name = if (name) |text| try std.fmt.allocPrintSentinel(allocator, "session-{s}.log", .{text}, 0) else try allocator.dupeSentinel(u8, "server.log", 0);
+        defer if (!initialized) allocator.free(log_name);
+        const socket_path = try std.fmt.allocPrintSentinel(allocator, "/proc/self/fd/{d}/{s}", .{ dir_fd, socket_name }, 0);
         defer if (!initialized) allocator.free(socket_path);
         var stat = try sys.stat(dir_fd);
         if (stat.uid != c.getuid() or stat.mode & 0o077 != 0) return error.UnsafeRuntimeDirectory;
-        const lock_fd = c.openat(dir_fd, "startup.lock", c.O_RDWR | c.O_NOFOLLOW | c.O_CLOEXEC | @as(c_int, if (create) c.O_CREAT else 0), @as(c_uint, 0o600));
+        const lock_fd = c.openat(dir_fd, lock_name, c.O_RDWR | c.O_NOFOLLOW | c.O_CLOEXEC | @as(c_int, if (create) c.O_CREAT else 0), @as(c_uint, 0o600));
         if (lock_fd < 0) {
             if (!create and c.__errno_location().* == c.ENOENT) return null;
             return sys.failure("open(startup lock)");
@@ -50,7 +67,7 @@ pub const Config = struct {
         stat = try sys.stat(lock_fd);
         if (stat.uid != c.getuid() or stat.mode & 0o077 != 0 or stat.mode & c.S_IFMT != c.S_IFREG or stat.nlink != 1) return error.UnsafeLockFile;
         initialized = true;
-        return .{ .allocator = allocator, .path = path, .socket_path = socket_path, .dir_fd = dir_fd, .lock_fd = lock_fd };
+        return .{ .allocator = allocator, .path = path, .socket_path = socket_path, .session_name = session_name, .socket_name = socket_name, .lock_name = lock_name, .log_name = log_name, .dir_fd = dir_fd, .lock_fd = lock_fd };
     }
 
     pub fn deinit(self: *Config) void {
@@ -58,11 +75,18 @@ pub const Config = struct {
         sys.close(self.dir_fd);
         self.allocator.free(self.path);
         self.allocator.free(self.socket_path);
+        if (self.session_name) |name| self.allocator.free(name);
+        self.allocator.free(self.socket_name);
+        self.allocator.free(self.lock_name);
+        self.allocator.free(self.log_name);
     }
 
     pub fn lock(self: *const Config) !void {
-        while (c.flock(self.lock_fd, c.LOCK_EX) < 0) {
-            if (c.__errno_location().* != c.EINTR) return sys.failure("flock");
+        const deadline = try sys.monotonicMilliseconds() + 2000;
+        while (c.flock(self.lock_fd, c.LOCK_EX | c.LOCK_NB) < 0) {
+            if (c.__errno_location().* != c.EINTR and c.__errno_location().* != c.EAGAIN) return sys.failure("flock");
+            if (try sys.monotonicMilliseconds() >= deadline) return error.SessionLockTimeout;
+            _ = c.poll(null, 0, 10);
         }
     }
 
@@ -80,6 +104,7 @@ pub const Config = struct {
     pub fn connect(self: *const Config) !?c_int {
         const fd = try sys.check(c.socket(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_CLOEXEC, 0), "socket");
         errdefer sys.close(fd);
+        try sys.socketTimeout(fd, 2000);
         var addr = self.address();
         if (c.connect(fd, @ptrCast(&addr), @sizeOf(c.struct_sockaddr_un)) < 0) {
             switch (c.__errno_location().*) {
@@ -87,6 +112,7 @@ pub const Config = struct {
                     sys.close(fd);
                     return null;
                 },
+                c.EAGAIN => return error.BackendTimeout,
                 else => return sys.failure("connect"),
             }
         }
@@ -102,6 +128,14 @@ pub fn runtimePath(allocator: std.mem.Allocator) ![:0]u8 {
         try std.fmt.allocPrintSentinel(allocator, "{s}/imx", .{value}, 0)
     else
         try std.fmt.allocPrintSentinel(allocator, "{s}/.local/state/imx/run", .{env("HOME") orelse return error.HomeNotSet}, 0);
+}
+
+pub fn fileSession(name: []const u8, suffix: []const u8) ?[]const u8 {
+    if (!std.mem.startsWith(u8, name, "session-") or !std.mem.endsWith(u8, name, suffix)) return null;
+    if (name.len <= 8 + suffix.len) return null;
+    const result = name[8 .. name.len - suffix.len];
+    validateName(result) catch return null;
+    return result;
 }
 
 pub fn env(name: [:0]const u8) ?[]const u8 {

@@ -3,7 +3,8 @@ const sys = @import("sys.zig");
 
 pub const max_payload = 128 * 1024;
 pub const max_queue = 256 * 1024;
-pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11 };
+pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11, info = 12 };
+pub const SessionInfo = struct { name: []const u8, pid: c_int, clients: usize, directory: []const u8, created: []const u8 };
 pub const Message = struct { tag: Tag, payload: []const u8 };
 pub const ListOptions = struct {
     table: bool = false,

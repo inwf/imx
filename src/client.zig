@@ -108,6 +108,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
         return error.RequestFailed;
     }
     if (response.tag != .ok or response.len != 0) return error.InvalidMessage;
+    try sys.socketTimeout(fd, 0);
     const signal = try sys.signalFd(&.{ c.SIGWINCH, c.SIGTERM, c.SIGHUP, c.SIGINT });
     defer sys.close(signal);
     defer sys.unblockSignals() catch @panic("failed to restore signal mask");

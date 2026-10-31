@@ -64,7 +64,15 @@ fish -n src/completions/fish.fish
 actionlint .github/workflows/release.yml
 ```
 
-讨论问题时，请附上 `imx -v`、系统和终端信息、复现命令，以及相关运行目录中的 `server.log`。性能测量方法见[性能说明](performance.md)。
+讨论问题时，请附上 `imx -v`、系统和终端信息、复现命令，以及相关运行目录中的 `session-<name>.log`。性能测量方法见[性能说明](performance.md)。
+
+`tests/test_isolation.py` 使用真实的 Linux 进程暂停、恢复、强制终止和持续输出，验证后台之间的隔离、查询期限及单线程运行。验证从 v0.4.1 升级时，可以将对应发布包解压到 `work/compat-v0.4.1/`，运行：
+
+```bash
+TMPDIR="$PWD/work/runtime" uv run --frozen --project tests python tests/legacy_upgrade.py --legacy-prefix work/compat-v0.4.1
+```
+
+该检查使用发布包中的可执行文件创建会话，验证替换可执行文件后重新连接、保留历史、切换到独立后台，以及卸载两种后台。
 
 ## GitHub Actions
 
