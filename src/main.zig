@@ -94,10 +94,11 @@ fn execute(init: std.process.Init.Minimal) !void {
         if (sys.c.isatty(0) == 0 or sys.c.isatty(1) == 0) return error.TerminalRequired;
         _ = try sys.Size.get(0);
     }
-    var preferences = if (tag == .attach or tag == .list) try settings.load(allocator, io) else settings.Settings{};
+    var preferences = if (tag == .attach or tag == .list) try settings.load(allocator, io, .{}) else settings.Settings{};
     defer preferences.deinit(allocator);
     var records = try registry.Registry.init(allocator, io, tag == .attach);
     defer records.deinit();
+    if (preferences.file_missing) preferences = try settings.load(allocator, io, .{ .create_default = true });
     if (tag == .attach) try shell.synchronize(allocator, io, &records, preferences.show_session, config.env("SHELL") orelse "/bin/sh");
     var cfg = try config.Config.init(allocator, io);
     defer cfg.deinit();

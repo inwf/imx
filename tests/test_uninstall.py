@@ -42,6 +42,7 @@ def assert_removed(environment):
     assert not environment.binary.exists()
     assert not state_directory(environment).exists()
     assert not environment.runtime.exists()
+    assert not configuration(environment).exists()
     assert BINARY.exists()
     assert (ROOT / "src/main.zig").exists()
 

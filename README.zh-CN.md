@@ -96,7 +96,9 @@ imx kill dev
 
 ### 在提示符中显示会话名称
 
-创建 `~/.config/imx/config.toml`，开启以下选项：
+执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含全部默认选项和注释的配置文件。已有配置文件保留原有内容。
+
+编辑生成的配置文件，开启以下选项：
 
 ```toml
 [prompt]

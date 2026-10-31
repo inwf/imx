@@ -8,7 +8,7 @@ const commands = [_][]const u8{ "attach", "list", "ls", "cat", "detach", "kill",
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io, kind: []const u8, prefix: []const u8) !void {
     if (!std.mem.eql(u8, kind, "commands") and !std.mem.eql(u8, kind, "sessions")) return error.InvalidArguments;
-    var preferences = try settings.load(allocator, io);
+    var preferences = try settings.load(allocator, io, .{});
     defer preferences.deinit(allocator);
     if (!preferences.completion_enabled) return;
     if (std.mem.eql(u8, kind, "commands")) {

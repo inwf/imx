@@ -1,13 +1,104 @@
+from concurrent.futures import ThreadPoolExecutor
 import csv
 from datetime import datetime, timedelta, timezone
 import io
 import json
 import socket
 import struct
+from threading import Barrier
+import tomllib
 
 import pytest
 
 from test_prompt import configuration, enter, settings, setup_shell
+
+
+DEFAULT_SETTINGS = {
+    "prompt": {"show_session": False},
+    "list": {"created_format": "%m-%d %H:%M:%S"},
+    "completion": {"enabled": True},
+}
+
+
+@pytest.mark.parametrize("arguments", [(), ("ls",), ("list",), ("attach",)])
+@pytest.mark.parametrize("location", ["home", "empty", "xdg"])
+def test_first_use_creates_default_configuration(sessions, arguments, location):
+    if location == "home":
+        sessions.environment.pop("XDG_CONFIG_HOME")
+    elif location == "empty":
+        sessions.environment["XDG_CONFIG_HOME"] = ""
+    else:
+        sessions.environment["XDG_CONFIG_HOME"] = str(sessions.path / "配置 with spaces")
+    path = configuration(sessions)
+    assert not path.exists()
+    if arguments == ("attach",):
+        sessions.spawn()
+    else:
+        assert sessions.run(*arguments).stdout == "No sessions.\n"
+    assert tomllib.loads(path.read_text()) == DEFAULT_SETTINGS
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+    assert list(path.parent.iterdir()) == [path]
+    if location == "xdg":
+        assert not (sessions.home / ".config/imx").exists()
+    assert sessions.run("__complete", "commands", "a").stdout == "attach\n"
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_existing_configuration_is_preserved(sessions, linked):
+    path = configuration(sessions)
+    path.parent.mkdir(parents=True)
+    target = sessions.path / "user-config.toml" if linked else path
+    contents = "# 用户配置\n[list]\ncreated_format = '%Y'\n[completion]\nenabled = false\n"
+    target.write_text(contents)
+    target.chmod(0o640)
+    if linked:
+        path.symlink_to(target)
+    before = target.stat()
+    sessions.run("ls")
+    sessions.spawn()
+    after = target.stat()
+    assert target.read_text() == contents
+    assert (after.st_ino, after.st_mode, after.st_mtime_ns) == (before.st_ino, before.st_mode, before.st_mtime_ns)
+    assert path.is_symlink() == linked
+    assert sessions.run("__complete", "commands", "a").stdout == ""
+
+
+def test_concurrent_first_use_creates_complete_configuration(sessions):
+    path = configuration(sessions)
+    barrier = Barrier(16)
+
+    def launch(_):
+        barrier.wait(timeout=10)
+        result = sessions.run("ls")
+        assert result.stdout == "No sessions.\n"
+        return tomllib.loads(path.read_text())
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(launch, range(16)))
+    assert all(value == DEFAULT_SETTINGS for value in results)
+    assert list(path.parent.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("arguments", [("help",), ("-v",), ("__complete", "commands", ""), ("__complete", "sessions", "")])
+def test_information_queries_do_not_create_configuration(sessions, arguments):
+    sessions.run(*arguments)
+    assert not configuration(sessions).parent.exists()
+
+
+def test_missing_configuration_symlink_target_is_preserved(sessions):
+    path = configuration(sessions)
+    path.parent.mkdir(parents=True)
+    target = sessions.path / "missing-config.toml"
+    path.symlink_to(target)
+    result = sessions.run("ls", check=False)
+    assert result.returncode == 1
+    assert "FileNotFound" in result.stderr
+    assert path.is_symlink()
+    assert not target.exists()
+    assert list(path.parent.iterdir()) == [path]
+    assert not sessions.runtime.exists()
+    path.unlink()
 
 
 def list_settings(environment, created_format):

@@ -22,9 +22,13 @@
 
 配置文件使用 `$XDG_CONFIG_HOME/imx/config.toml`；`XDG_CONFIG_HOME` 未设置或为空时，使用 `$HOME/.config/imx/config.toml`。路径需要为绝对路径。
 
+执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果配置文件不存在，程序会自动创建包含以下默认选项和注释的文件。新建目录使用 `0700` 权限，配置文件使用 `0600` 权限，并遵循当前用户的 umask。已有文件保留原有内容和权限；并发首次运行时，完整写入后才公开配置文件。创建或读取失败会立即报告错误。
+
+`imx help`、`imx -v` 和 Tab 补全查询保持只读。配置文件由执行命令的用户创建，系统安装后的各个用户分别管理自己的配置。
+
 ```toml
 [prompt]
-show_session = true
+show_session = false
 
 [list]
 created_format = "%m-%d %H:%M:%S"

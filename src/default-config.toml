@@ -1,0 +1,11 @@
+[prompt]
+# 在 Bash、Zsh 和 Fish 的原有提示符前显示会话名称。
+show_session = false
+
+[list]
+# CREATED 列使用 strftime 格式，按后台进程的本地时区显示。
+created_format = "%m-%d %H:%M:%S"
+
+[completion]
+# 在 Bash、Zsh 和 Fish 中补全命令和当前会话名称。
+enabled = true

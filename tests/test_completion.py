@@ -15,6 +15,7 @@ def test_completion_queries_leave_unused_runtime_untouched(sessions):
     assert sessions.run("__complete", "sessions", "").stdout == ""
     assert not sessions.runtime.exists()
     assert not (sessions.home / ".local/state/imx").exists()
+    assert not configuration(sessions).parent.exists()
     sessions.runtime.mkdir(mode=0o700)
     assert sessions.run("__complete", "sessions", "").stdout == ""
     assert not list(sessions.runtime.iterdir())
@@ -38,7 +39,6 @@ def test_completion_queries_return_current_filtered_names(sessions):
     assert sessions.run("__complete", "sessions", "missing").stdout == ""
     assert sessions.run("__complete", "sessions", "a" * 65).stdout == ""
     path = configuration(sessions)
-    path.parent.mkdir(parents=True)
     path.write_text("[list]\ncreated_format = '%Y年%m月%d日'\n")
     assert sessions.run("__complete", "sessions", "").stdout.splitlines() == sorted(names)
     sessions.spawn("new-live")
@@ -79,7 +79,6 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
         installation.run("kill", "gamma-live")
         assert terminal.complete("imx cat g\t") == "imx cat g"
         path = configuration(installation)
-        path.parent.mkdir(parents=True)
         path.write_text("[completion]\nenabled = false\n")
         assert terminal.complete("imx a\t") == "imx a"
         assert terminal.complete("imx attach b\t") == "imx attach b"

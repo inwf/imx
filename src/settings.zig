@@ -7,6 +7,7 @@ pub const Settings = struct {
     show_session: bool = false,
     completion_enabled: bool = true,
     created_format: ?[:0]u8 = null,
+    file_missing: bool = false,
 
     pub fn createdFormat(self: Settings) [:0]const u8 {
         return self.created_format orelse sys.default_created_format;
@@ -30,15 +31,34 @@ pub fn path(allocator: std.mem.Allocator) ![:0]u8 {
     return std.fmt.allocPrintSentinel(allocator, "{s}/.config/imx/config.toml", .{home}, 0);
 }
 
-pub fn load(allocator: std.mem.Allocator, io: std.Io) !Settings {
+pub fn load(allocator: std.mem.Allocator, io: std.Io, options: struct { create_default: bool = false }) !Settings {
     const filename = try path(allocator);
     defer allocator.free(filename);
-    const contents = std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024)) catch |err| {
-        if (err == error.FileNotFound) return .{};
-        return err;
+    const contents = std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024)) catch |err| blk: {
+        if (err != error.FileNotFound) return err;
+        if (!options.create_default) return .{ .file_missing = true };
+        try createDefault(io, filename);
+        break :blk try std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024));
     };
     defer allocator.free(contents);
     return parse(allocator, contents);
+}
+
+fn createDefault(io: std.Io, filename: []const u8) !void {
+    const parent = std.fs.path.dirname(filename).?;
+    _ = try std.Io.Dir.cwd().createDirPathStatus(io, parent, .fromMode(0o700));
+    const directory = try std.Io.Dir.openDirAbsolute(io, parent, .{ .iterate = true });
+    defer directory.close(io);
+    var file = try directory.createFileAtomic(io, std.fs.path.basename(filename), .{ .permissions = .fromMode(0o600) });
+    defer file.deinit(io);
+    try file.file.writeStreamingAll(io, @embedFile("default-config.toml"));
+    try file.file.sync(io);
+    // 完整写入后再公开文件；并发创建时读取已经存在的配置。
+    file.link(io) catch |err| {
+        if (err == error.PathAlreadyExists) return;
+        return err;
+    };
+    _ = try sys.check(sys.c.fsync(directory.handle), "fsync(configuration directory)");
 }
 
 fn parse(allocator: std.mem.Allocator, contents: []const u8) !Settings {
@@ -94,6 +114,16 @@ fn parse(allocator: std.mem.Allocator, contents: []const u8) !Settings {
         }
     }
     return preferences;
+}
+
+test "default configuration matches built-in settings" {
+    const allocator = std.testing.allocator;
+    var preferences = try parse(allocator, @embedFile("default-config.toml"));
+    defer preferences.deinit(allocator);
+    const defaults: Settings = .{};
+    try std.testing.expectEqual(defaults.show_session, preferences.show_session);
+    try std.testing.expectEqual(defaults.completion_enabled, preferences.completion_enabled);
+    try std.testing.expectEqualStrings(defaults.createdFormat(), preferences.createdFormat());
 }
 
 test "TOML prompt settings validate types and names" {

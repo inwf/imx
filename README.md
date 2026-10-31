@@ -96,7 +96,9 @@ imx kill dev
 
 ### Show the session name in your prompt
 
-Create `~/.config/imx/config.toml` and enable:
+Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing. The file contains all default settings with comments. Existing configuration files are preserved.
+
+Edit the generated file to enable:
 
 ```toml
 [prompt]

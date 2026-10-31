@@ -6,6 +6,7 @@ import pwd
 import subprocess
 import sys
 import time
+import tomllib
 import uuid
 
 import pexpect
@@ -165,7 +166,30 @@ def main():
             assert path.stat().st_mode & 0o777 == 0o644
             assert path.parent.stat().st_mode & 0o777 == 0o755
         assert f"imx {version}" in command(child, "imx -v")
+        configuration = home / ".config/imx/config.toml"
+        assert not configuration.exists()
+        if case == "config-permissions":
+            command(child, 'mkdir -p "$HOME/.config/imx"; chmod 500 "$HOME/.config/imx"')
+            variables = [f"{name}={value}" for name, value in environment.items()]
+            result = subprocess.run(
+                ["runuser", "--user", USERNAME, "--", "env", *variables, "imx", "ls"],
+                capture_output=True, text=True, timeout=10,
+            )
+            assert result.returncode == 1, result.stdout + result.stderr
+            assert "AccessDenied" in result.stderr
+            assert not configuration.exists()
+            assert not (home / "run").exists()
+            command(child, 'chmod 700 "$HOME/.config/imx"')
         assert "No sessions." in command(child, "imx ls")
+        assert configuration.stat().st_uid == account.pw_uid
+        assert configuration.stat().st_mode & 0o777 == 0o600
+        assert configuration.parent.stat().st_mode & 0o777 == 0o700
+        assert tomllib.loads(configuration.read_text()) == {
+            "prompt": {"show_session": False},
+            "list": {"created_format": "%m-%d %H:%M:%S"},
+            "completion": {"enabled": True},
+        }
+        assert list(configuration.parent.iterdir()) == [configuration]
         if case == "preserve-files":
             command(child, f"printf 'USER_DOCUMENT' | sudo tee {notes} > /dev/null")
         if case == "other-user":
@@ -256,6 +280,7 @@ def main():
         assert all(not path.exists() for path in completions)
         assert not (home / ".local/state/imx").exists()
         assert not (home / "run").exists()
+        assert not configuration.exists()
         assert not list((home / ".cache").glob("imx-install.*"))
         assert not list(binary.parent.glob(".imx-install.*"))
         if shell_pid is not None:
