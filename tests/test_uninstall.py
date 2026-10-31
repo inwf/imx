@@ -10,6 +10,7 @@ import psutil
 import pytest
 
 from conftest import BINARY, ROOT, SessionEnvironment
+from test_prompt import BEGIN, configuration, enter, settings, setup_shell
 
 
 @pytest.fixture
@@ -269,4 +270,38 @@ def test_uninstall_serializes_concurrent_attach(installation):
         assert process.wait(timeout=10) in (0, 1)
         os.close(master)
     child.expect(pexpect.EOF)
+    assert_removed(installation)
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+def test_uninstall_removes_prompt_integration(installation, shell):
+    path, original = setup_shell(installation, shell)
+    settings(installation, True)
+    child = enter(installation)
+    installation.run("uninstall")
+    child.expect(pexpect.EOF)
+    assert path.read_text() == original
+    assert not configuration(installation).exists()
+    assert not configuration(installation).parent.exists()
+    assert_removed(installation)
+
+
+def test_uninstall_reports_edited_shell_integration(installation):
+    path, original = setup_shell(installation, "bash")
+    settings(installation, True)
+    child = enter(installation)
+    installed = path.read_text()
+    edited = installed.replace(BEGIN, BEGIN + "# 用户修改的集成代码\n")
+    path.write_text(edited)
+    result = installation.run("uninstall", check=False)
+    assert result.returncode == 1
+    assert "ShellIntegrationChanged" in result.stderr
+    assert path.read_text() == edited
+    assert installation.binary.exists()
+    child.sendline("true")
+    child.expect_exact("[dev] BASE:~> ")
+    path.write_text(installed)
+    installation.run("uninstall")
+    child.expect(pexpect.EOF)
+    assert path.read_text() == original
     assert_removed(installation)

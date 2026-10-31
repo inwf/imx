@@ -5,6 +5,7 @@ const config = @import("config.zig");
 const registry = @import("registry.zig");
 const layout = @import("layout.zig");
 const settings = @import("settings.zig");
+const shell = @import("shell.zig");
 const Allocator = std.mem.Allocator;
 
 const File = struct {
@@ -347,6 +348,10 @@ fn stopServer(runtime: *const config.Config) !void {
 pub fn run(allocator: Allocator, io: std.Io, invocation: []const u8) !void {
     var records = try registry.Registry.init(allocator, io, true);
     defer records.deinit();
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    var integration = try shell.Cleanup.init(arena.allocator(), io, &records);
+    defer integration.deinit();
     var plan: Plan = .{ .allocator = allocator, .io = io };
     defer plan.deinit();
     try plan.registrations(&records);
@@ -367,6 +372,7 @@ pub fn run(allocator: Allocator, io: std.Io, invocation: []const u8) !void {
     try plan.addFile(configuration, false);
     try plan.addDirectory(std.fs.path.dirname(configuration).?, false);
     try plan.removePrivileged();
+    try integration.perform();
     // 独立的 Linux session 允许从正在卸载的会话内部完成清理。
     const pid = try sys.check(c.fork(), "fork(uninstall)");
     if (pid == 0) {

@@ -38,7 +38,7 @@ zig build -Dtarget=aarch64-linux-musl -Dcpu=baseline --prefix zig-out/aarch64
 
 ## 测试与贡献
 
-测试需要 uv、Python 3.12 或更新版本、Bash、Vim、curl、GNU tar、GNU coreutils、GNU findutils、sudo 和 util-linux。系统安装测试通过 `sudo` 创建独立的 Linux 挂载环境，使用真实普通用户和密码验证安装、升级和卸载；需要系统允许挂载文件系统。Python 依赖版本记录在 [`tests/uv.lock`](../tests/uv.lock)。提交改动前执行：
+测试需要 uv、Python 3.12 或更新版本、Bash、Zsh、Fish、Vim、curl、GNU tar、GNU coreutils、GNU findutils、sudo 和 util-linux。系统安装测试通过 `sudo` 创建独立的 Linux 挂载环境，使用真实普通用户和密码验证安装、升级和卸载；需要系统允许挂载文件系统。Python 依赖版本记录在 [`tests/uv.lock`](../tests/uv.lock)。提交改动前执行：
 
 ```bash
 zig fmt --check build.zig src
@@ -48,12 +48,13 @@ mkdir -p work/runtime
 TMPDIR="$PWD/work/runtime" uv run --frozen --project tests pytest -q
 ```
 
-集成测试启动真实 PTY、Bash、Vim 和会话程序，检查命令、历史、重新连接、终端尺寸、分离、进程清理、并发创建和终端查询。安装测试通过真实 HTTP 服务下载编译的软件包，检查安装、更新、卸载和下载失败。测试目录保存在 `work/`。
+集成测试启动真实 PTY、Bash、Zsh、Fish、Vim 和会话程序，检查命令、历史、重新连接、终端尺寸、分离、进程清理、并发创建和终端查询。安装测试通过真实 HTTP 服务下载编译的软件包，检查安装、更新、卸载和下载失败。测试目录保存在 `work/`。
 
 修改安装或发布脚本时，还需要 ShellCheck 和 actionlint：
 
 ```bash
 shellcheck install.sh scripts/*.sh
+shellcheck -s bash src/shell/bash.sh
 actionlint .github/workflows/release.yml
 ```
 

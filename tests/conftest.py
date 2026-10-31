@@ -24,6 +24,7 @@ class SessionEnvironment:
         self.environment = os.environ.copy()
         self.environment.pop("IMX_SESSION", None)
         self.environment.pop("ZMX_SESSION", None)
+        self.environment.pop("ZDOTDIR", None)
         self.environment.update(
             IMX_DIR=str(self.runtime),
             HOME=str(self.home),

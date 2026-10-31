@@ -18,9 +18,32 @@
 
 `CREATED` 按后台进程的本地时区记录会话创建日期，格式为 `YY-MM-DD`，例如 `26-10-30`。日期在创建会话时记录，分离和重新连接保持该日期。
 
-## 配置文件
+## 配置文件与会话提示符
 
 配置文件使用 `$XDG_CONFIG_HOME/imx/config.toml`；`XDG_CONFIG_HOME` 未设置或为空时，使用 `$HOME/.config/imx/config.toml`。路径需要为绝对路径。
+
+```toml
+[prompt]
+show_session = true
+```
+
+### 会话提示符
+
+`prompt.show_session` 默认为 `false`。开启后，在下一次执行 `imx attach <name>` 时安装 shell 集成。之后启动的 Bash、Zsh 和 Fish 会在原有提示符前显示 `[会话名称] `，保留原有路径、颜色和主题。首次启用时已经运行的 shell 需要重新启动，才能加载新加入的初始化代码。
+
+| Shell | 集成位置 |
+| --- | --- |
+| Bash | `$HOME/.bashrc`，以及按照 `.bash_profile`、`.bash_login`、`.profile` 顺序选择的首个可读登录文件；这些登录文件均不存在时创建 `.bash_profile` |
+| Zsh | 继承的 `$ZDOTDIR` 目录中的 `.zshrc` 和 `.zlogin`；未设置 `ZDOTDIR` 时使用 `$HOME` |
+| Fish | `$XDG_CONFIG_HOME/fish/config.fish`；未设置 `XDG_CONFIG_HOME` 或为空时使用 `$HOME/.config/fish/config.fish` |
+
+每个初始化文件中的集成片段使用通用的 `# BEGIN imx shell integration` 和 `# END imx shell integration` 注释。集成脚本和修改记录保存在 `$HOME/.local/state/imx/shell/`。多次进入会话会复用已有片段，普通终端保持原有提示符。Bash 支持字符串和数组形式的 `PROMPT_COMMAND`；Zsh 使用 `precmd_functions`；Fish 包装已有的 `fish_prompt`。
+
+将 `show_session` 改为 `false`，或者删除配置中的该选项，再执行 `imx attach <name>`，程序会移除记录中的完整片段和集成脚本，并删除由 imx 创建且已经为空的初始化文件和目录。已经加载集成的 shell 会在下一次显示提示符时移除会话名称。
+
+初始化文件按照原有符号链接修改实际目标，使用同一目录内的原子替换，保留所有者、权限和扩展属性。文件锁、内容与文件身份检查用于处理并发修改。配置语法、选项名称和类型错误会在 `imx attach` 或查看列表时报告；开启选项时，其他 shell 会报告 `UnsupportedPromptShell`。
+
+手动修改过的集成片段或脚本会保留，关闭选项或卸载会报告对应路径并终止操作。修改记录用于识别程序添加的内容，初始化文件中的其他用户内容会保留。
 
 ## 多个终端连接
 
@@ -49,7 +72,8 @@ imx cat dev
 | `IMX_SESSION` | imx 在会话内部设置的会话名称，供 `detach` 等命令使用 |
 | `IMX_DIR` | 指定绝对路径的运行目录，优先于 `XDG_RUNTIME_DIR` |
 | `XDG_RUNTIME_DIR` | 未设置 `IMX_DIR` 时，使用该目录下的 `imx/` |
-| `XDG_CONFIG_HOME` | 指定 imx 配置目录 |
+| `XDG_CONFIG_HOME` | 指定 imx 配置目录，并遵循 Fish 的初始化目录设置 |
+| `ZDOTDIR` | shell 为 Zsh 时，使用继承的绝对路径选择初始化文件 |
 
 安装脚本另支持 `IMX_PREFIX` 指定安装前缀。默认优先选择当前 `PATH` 中的 `/usr/local/bin`，安装前缀为 `/usr/local`；仅包含 `/usr/bin` 的环境使用 `/usr`。下载和解压目录位于 `${XDG_CACHE_HOME:-$HOME/.cache}`，安装结束后清理。写入系统目录时自动调用 `sudo`。
 
@@ -89,7 +113,7 @@ imx update
 imx uninstall
 ```
 
-卸载会终止当前用户在已记录运行目录中的全部 imx 会话和后台进程，删除 socket、启动锁、日志、目录记录、当前可执行文件、安装的许可证和 imx 配置文件，并清理属于当前用户的空目录。当前默认目录、`XDG_RUNTIME_DIR` 和 `IMX_DIR` 对应的运行文件也会清理。
+卸载会终止当前用户在已记录运行目录中的全部 imx 会话和后台进程，删除 socket、启动锁、日志、目录记录、当前可执行文件、安装的许可证、imx 配置文件及记录中的 shell 集成，并清理属于当前用户的空目录。当前默认目录、`XDG_RUNTIME_DIR` 和 `IMX_DIR` 对应的运行文件也会清理。
 
 通过符号链接运行时，卸载会删除实际可执行文件、调用使用的链接，以及 `PATH` 中指向该文件的 `imx` 链接。安装到 `bin/imx` 时，许可证从同一安装前缀的 `share/licenses/imx/` 清理；独立复制的可执行文件也支持卸载。
 
@@ -97,4 +121,4 @@ imx uninstall
 
 启动锁阻止并发连接重新创建运行文件。会话内部执行卸载时，独立清理进程会在会话关闭后继续完成运行文件删除。系统的共享目录保留。
 
-工作目录中的用户文件，以及运行目录、配置目录和许可证目录中的额外用户文件保留。用户自己添加的 shell 配置由用户管理。
+工作目录中的用户文件，以及运行目录、配置目录和许可证目录中的额外用户文件保留。shell 初始化文件保留原有用户内容；手动修改过的 imx 集成片段或脚本会在删除安装文件之前报告，并终止卸载。

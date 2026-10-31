@@ -18,6 +18,7 @@
 - **Screen restoration:** reattach to restore the screen and retained history, including full-screen terminal programs such as Vim.
 - **Readable output:** use `imx cat` from outside a session to read retained history and the active screen as text.
 - **Shared connections:** multiple terminals can attach to one session and share its input and output.
+- **Session prompt:** enable a configuration option to show `[dev]` before your existing Bash, Zsh, or Fish prompt.
 - **Resource control:** one backend process with one thread manages all sessions for a user and waits for system events while idle.
 - **Direct installation:** releases contain static executables; the installer selects your architecture and verifies SHA256 checksums.
 
@@ -89,6 +90,21 @@ Terminate a session when you are finished:
 imx kill dev
 ```
 
+### Show the session name in your prompt
+
+Create `~/.config/imx/config.toml` and enable:
+
+```toml
+[prompt]
+show_session = true
+```
+
+With `XDG_CONFIG_HOME` set, use `$XDG_CONFIG_HOME/imx/config.toml`. The option defaults to `false`.
+
+The next `imx attach dev` installs shell integration with `# BEGIN imx shell integration` and `# END imx shell integration` markers. Newly started Bash, Zsh, and Fish shells display `[dev] ` before the existing prompt, preserving its path, colors, and theme. A shell that was already running when integration was first enabled loads it when restarted. Ordinary terminals keep their existing prompt.
+
+Set `show_session` to `false` and run `imx attach <name>` to remove the recorded integration blocks and scripts. Shells that have loaded the integration remove the prefix at their next prompt. See [configuration details](docs/usage.md#配置文件与会话提示符) for startup files and file handling.
+
 ### Update and uninstall
 
 Install the latest published release:
@@ -103,7 +119,7 @@ The updater keeps the current installation directory, detects your architecture,
 imx uninstall
 ```
 
-Uninstalling terminates the current user's imx sessions and removes the current executable, installed licenses, configuration file, and recorded runtime files. It invokes `sudo` when removing system installation files. User files in working directories are preserved. See the [usage guide](docs/usage.md#卸载) for details.
+Uninstalling terminates the current user's imx sessions and removes the current executable, installed licenses, configuration file, shell integration, and recorded runtime files. It invokes `sudo` when removing system installation files. User files in working directories are preserved. A manually edited integration block causes uninstallation to stop and report its path. See the [usage guide](docs/usage.md#卸载) for details.
 
 ## Commands
 

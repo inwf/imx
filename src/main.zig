@@ -8,6 +8,7 @@ const registry = @import("registry.zig");
 const uninstall = @import("uninstall.zig");
 const update = @import("update.zig");
 const settings = @import("settings.zig");
+const shell = @import("shell.zig");
 const version = @import("build_options").version;
 pub const std_options: std.Options = .{ .log_level = .err };
 
@@ -90,8 +91,9 @@ fn execute(init: std.process.Init.Minimal) !void {
     }
     var preferences = if (tag == .attach or tag == .list) try settings.load(allocator, io) else settings.Settings{};
     defer preferences.deinit(allocator);
-    var records = try registry.Registry.init(allocator, io, false);
+    var records = try registry.Registry.init(allocator, io, tag == .attach);
     defer records.deinit();
+    if (tag == .attach) try shell.synchronize(allocator, io, &records, preferences.show_session, config.env("SHELL") orelse "/bin/sh");
     var cfg = try config.Config.init(allocator, io);
     defer cfg.deinit();
     try records.register(io, cfg.dir_fd);

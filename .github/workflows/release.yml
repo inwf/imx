@@ -54,7 +54,7 @@ jobs:
       - name: Install test tools
         run: |
           sudo --preserve-env=TMPDIR apt-get update
-          sudo --preserve-env=TMPDIR apt-get install -y vim shellcheck sudo util-linux passwd
+          sudo --preserve-env=TMPDIR apt-get install -y vim zsh fish shellcheck sudo util-linux passwd
       - name: Set up build tools
         run: uv run --frozen --project tests python scripts/setup_ci.py
       - name: Check, test and package
