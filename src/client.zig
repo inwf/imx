@@ -5,8 +5,19 @@ const protocol = @import("protocol.zig");
 const config = @import("config.zig");
 const registry = @import("registry.zig");
 
-pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8) !void {
-    try protocol.send(fd, tag, payload);
+pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8, created_format: [:0]const u8) !void {
+    const customized = tag == .list and !std.mem.eql(u8, created_format, sys.default_created_format);
+    const options: protocol.ListOptions = .{ .table = c.isatty(1) != 0, .created_format = created_format };
+    const formatted = if (customized) try std.json.Stringify.valueAlloc(allocator, .{ .table = options.table, .created_format = options.created_format }, .{}) else null;
+    defer if (formatted) |bytes| allocator.free(bytes);
+    const request = formatted orelse if (tag == .list and options.table and try sameBackendExecutable(fd)) "table" else payload;
+    try protocol.send(fd, tag, request);
+    return receive(allocator, fd, if (customized) .created_format else .normal);
+}
+
+const Response = enum { normal, created_format };
+
+fn receive(allocator: std.mem.Allocator, fd: c_int, context: Response) !void {
     var acknowledged = false;
     while (true) {
         var header: [8]u8 = undefined;
@@ -28,6 +39,12 @@ pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, paylo
                 try sys.writeAll(1, bytes, false);
             },
             .failure => {
+                if (std.mem.eql(u8, bytes, "InvalidMessage")) {
+                    switch (context) {
+                        .created_format => return error.CreatedFormatUnsupportedByBackend,
+                        .normal => {},
+                    }
+                }
                 try sys.writeAll(2, "imx: ", false);
                 try sys.writeAll(2, bytes, false);
                 try sys.writeAll(2, "\n", false);
@@ -36,6 +53,18 @@ pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, paylo
             else => return error.InvalidMessage,
         }
     }
+}
+
+fn sameBackendExecutable(fd: c_int) !bool {
+    const credentials = try config.peer(fd);
+    var path: [64]u8 = undefined;
+    const executable = try std.fmt.bufPrintSentinel(&path, "/proc/{d}/exe", .{credentials.pid}, 0);
+    var own: c.struct_statx = undefined;
+    var backend: c.struct_statx = undefined;
+    _ = try sys.check(c.statx(c.AT_FDCWD, "/proc/self/exe", 0, c.STATX_INO, &own), "statx(client executable)");
+    _ = try sys.check(c.statx(c.AT_FDCWD, executable, 0, c.STATX_INO, &backend), "statx(backend executable)");
+    if (own.stx_mask & backend.stx_mask & c.STATX_INO == 0) return error.IncompleteFileMetadata;
+    return own.stx_dev_major == backend.stx_dev_major and own.stx_dev_minor == backend.stx_dev_minor and own.stx_ino == backend.stx_ino;
 }
 
 pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const u8, records: *const registry.Registry) !void {

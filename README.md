@@ -19,6 +19,7 @@
 - **Readable output:** use `imx cat` from outside a session to read retained history and the active screen as text.
 - **Shared connections:** multiple terminals can attach to one session and share its input and output.
 - **Session prompt:** enable a configuration option to show `[dev]` before your existing Bash, Zsh, or Fish prompt.
+- **Creation time format:** choose how the `CREATED` column displays session creation times through the configuration file.
 - **Resource control:** one backend process with one thread manages all sessions for a user and waits for system events while idle.
 - **Direct installation:** releases contain static executables; the installer selects your architecture and verifies SHA256 checksums.
 
@@ -105,6 +106,19 @@ The next `imx attach dev` installs shell integration with `# BEGIN imx shell int
 
 Set `show_session` to `false` and run `imx attach <name>` to remove the recorded integration blocks and scripts. Shells that have loaded the integration remove the prefix at their next prompt. See [configuration details](docs/usage.md#配置文件与会话提示符) for startup files and file handling.
 
+### Change the creation time format
+
+Add this option to the same configuration file:
+
+```toml
+[list]
+created_format = "%m-%d %H:%M:%S"
+```
+
+Formats use `strftime` syntax. The default `%m-%d %H:%M:%S` displays `MM-DD HH:mm:ss`, such as `10-30 14:05:09`. Use `%Y-%m-%d %H:%M:%S` to include the year, or `%Y-%m-%d` to display the date.
+
+Each invocation of `imx`, `imx ls`, or `imx list` reads the current setting and formats the stored creation time in the backend's local timezone. Changes apply to existing sessions on the next listing. See [format options](docs/usage.md#created-时间格式) for supported fields and validation.
+
 ### Update and uninstall
 
 Install the latest published release:
@@ -135,7 +149,7 @@ Uninstalling terminates the current user's imx sessions and removes the current 
 | `imx -v` | Print the version |
 | `imx help` | Print help |
 
-Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, and `CREATED`. The `CREATED` column records the creation date in the backend's local timezone as `YY-MM-DD`, such as `26-10-30`, and stays the same when you reattach.
+Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, and `CREATED`. Terminal output uses column widths calculated from the headings and session contents; pipes and redirected output use tabs. The `CREATED` column displays the creation time in the backend's local timezone, defaulting to `MM-DD HH:mm:ss`, such as `10-30 14:05:09`. Set `list.created_format` to customize its display. Reattaching preserves the creation time.
 
 Sessions and history are held in memory and are released when the machine restarts or the backend exits. Session name rules, history limits, and behavior with multiple terminals are described in the [usage guide](docs/usage.md).
 

@@ -24,7 +24,7 @@ const Client = struct {
 const Session = struct {
     name: []u8,
     cwd: []u8,
-    created: [8]u8,
+    created: c.time_t,
     pid: c.pid_t,
     fd: c_int,
     id: u64,
@@ -138,7 +138,7 @@ const Server = struct {
 
     fn create(self: *Server, name: []const u8, cwd: []const u8, shell: []const u8, environment: []const u8, size: sys.Size) !*Session {
         if (!std.fs.path.isAbsolute(cwd) or !std.fs.path.isAbsolute(shell)) return error.InvalidMessage;
-        const created = try sys.localDate();
+        const created = try sys.timestamp();
         const session = try self.allocator.create(Session);
         errdefer self.allocator.destroy(session);
         const saved_name = try self.allocator.dupe(u8, name);
@@ -195,25 +195,66 @@ const Server = struct {
                 try self.respond(client, .ok, "");
             },
             .list => {
-                if (client.session != null or msg.payload.len != 0) return error.InvalidMessage;
+                if (client.session != null) return error.InvalidMessage;
+                var options: protocol.ListOptions = .{};
+                var parsed: ?std.json.Parsed(protocol.ListOptions) = null;
+                defer if (parsed) |value| value.deinit();
+                if (std.mem.eql(u8, msg.payload, "table")) {
+                    options.table = true;
+                } else if (msg.payload.len != 0) {
+                    parsed = std.json.parseFromSlice(protocol.ListOptions, self.allocator, msg.payload, .{}) catch |err| {
+                        if (err == error.OutOfMemory) return err;
+                        return error.InvalidMessage;
+                    };
+                    options = parsed.?.value;
+                    try sys.validateCreatedFormat(options.created_format);
+                }
+                const table = options.table;
                 var builder = std.Io.Writer.Allocating.init(self.allocator);
                 defer builder.deinit();
-                if (self.sessions.count() == 0) {
+                var names: std.ArrayList([]const u8) = .empty;
+                defer names.deinit(self.allocator);
+                var it = self.sessions.keyIterator();
+                while (it.next()) |name| try names.append(self.allocator, name.*);
+                std.mem.sort([]const u8, names.items, {}, struct {
+                    fn less(_: void, a: []const u8, b: []const u8) bool {
+                        return std.mem.lessThan(u8, a, b);
+                    }
+                }.less);
+                if (names.items.len == 0) {
                     try builder.writer.writeAll("No sessions.\n");
                 } else {
-                    var names: std.ArrayList([]const u8) = .empty;
-                    defer names.deinit(self.allocator);
-                    var it = self.sessions.keyIterator();
-                    while (it.next()) |name| try names.append(self.allocator, name.*);
-                    std.mem.sort([]const u8, names.items, {}, struct {
-                        fn less(_: void, a: []const u8, b: []const u8) bool {
-                            return std.mem.lessThan(u8, a, b);
+                    const headings = [_][]const u8{ "NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED" };
+                    var widths = [_]usize{ 4, 3, 7, 9, 7 };
+                    if (table) {
+                        for (names.items) |name| {
+                            const session = self.sessions.get(name).?;
+                            var pid: [20]u8 = undefined;
+                            var count: [20]u8 = undefined;
+                            var created: [sys.max_created_display]u8 = undefined;
+                            const fields = [_][]const u8{
+                                session.name,
+                                try std.fmt.bufPrint(&pid, "{d}", .{session.pid}),
+                                try std.fmt.bufPrint(&count, "{d}", .{session.clients.items.len}),
+                                session.cwd,
+                                try sys.formatDateTime(&created, session.created, options.created_format),
+                            };
+                            for (fields, &widths) |field, *width| width.* = @max(width.*, try displayWidth(field));
                         }
-                    }.less);
-                    try builder.writer.writeAll("NAME\tPID\tCLIENTS\tDIRECTORY\tCREATED\n");
+                    }
+                    try listRow(&builder.writer, headings, widths, table);
                     for (names.items) |name| {
                         const session = self.sessions.get(name).?;
-                        try builder.writer.print("{s}\t{d}\t{d}\t{s}\t{s}\n", .{ session.name, session.pid, session.clients.items.len, session.cwd, session.created });
+                        var pid: [20]u8 = undefined;
+                        var count: [20]u8 = undefined;
+                        var created: [sys.max_created_display]u8 = undefined;
+                        try listRow(&builder.writer, .{
+                            session.name,
+                            try std.fmt.bufPrint(&pid, "{d}", .{session.pid}),
+                            try std.fmt.bufPrint(&count, "{d}", .{session.clients.items.len}),
+                            session.cwd,
+                            try sys.formatDateTime(&created, session.created, options.created_format),
+                        }, widths, table);
                     }
                 }
                 client.snapshot = try builder.toOwnedSlice();
@@ -286,7 +327,7 @@ const Server = struct {
                         try signalClient(client);
                         return self.dropClient(client);
                     },
-                    error.SessionNotFound, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.ShellExecFailed => {
+                    error.SessionNotFound, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed => {
                         client.closing = true;
                         try self.respond(client, .failure, @errorName(err));
                     },
@@ -434,6 +475,26 @@ const Server = struct {
         }
     }
 };
+
+fn displayWidth(text: []const u8) !usize {
+    var iterator = (try std.unicode.Utf8View.init(text)).iterator();
+    var width: usize = 0;
+    while (iterator.nextCodepoint()) |codepoint| width += terminal.vt.unicode.codepointWidth(codepoint);
+    return width;
+}
+
+fn listRow(writer: *std.Io.Writer, fields: [5][]const u8, widths: [5]usize, table: bool) !void {
+    for (fields, widths, 0..) |field, width, index| {
+        try writer.writeAll(field);
+        if (index == fields.len - 1) {
+            try writer.writeByte('\n');
+        } else if (table) {
+            try writer.splatByteAll(' ', width - try displayWidth(field) + 2);
+        } else {
+            try writer.writeByte('\t');
+        }
+    }
+}
 
 fn writePty(handler: *Handler, data: []const u8) void {
     const session: *Session = @fieldParentPtr("term", handler.terminal);

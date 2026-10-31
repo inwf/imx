@@ -26,16 +26,6 @@ pub fn stat(fd: c_int) !std.os.linux.Statx {
     return result;
 }
 
-pub fn localDate() ![8]u8 {
-    var date = c.time(null);
-    if (date == -1) return failure("time");
-    var calendar: c.struct_tm = undefined;
-    if (c.localtime_r(&date, &calendar) == null) return failure("localtime_r");
-    var buffer: [9]u8 = undefined;
-    if (c.strftime(&buffer, buffer.len, "%y-%m-%d", &calendar) != 8) return error.InvalidDate;
-    return buffer[0..8].*;
-}
-
 pub const default_created_format: [:0]const u8 = "%m-%d %H:%M:%S";
 pub const max_created_format = 256;
 pub const max_created_display = 1024;

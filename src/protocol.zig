@@ -5,6 +5,10 @@ pub const max_payload = 128 * 1024;
 pub const max_queue = 256 * 1024;
 pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11 };
 pub const Message = struct { tag: Tag, payload: []const u8 };
+pub const ListOptions = struct {
+    table: bool = false,
+    created_format: [:0]const u8 = sys.default_created_format,
+};
 
 pub fn header(tag: Tag, length: usize) [8]u8 {
     std.debug.assert(length <= max_payload);

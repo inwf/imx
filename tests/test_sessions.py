@@ -4,11 +4,13 @@ from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
+import shutil
 import socket
 import struct
 import subprocess
 import sys
 import termios
+import unicodedata
 
 import pexpect
 import psutil
@@ -16,6 +18,7 @@ import pyte
 import pytest
 
 from conftest import BINARY, ROOT
+from test_prompt import configuration
 
 
 def test_commands_and_empty_list(sessions):
@@ -44,19 +47,21 @@ def test_attach_directory_environment_and_aliases(sessions):
 
 
 @pytest.mark.parametrize("hours", [0, 14, -12])
-def test_session_creation_date(sessions, hours):
+def test_session_creation_time(sessions, hours):
     sessions.environment["TZ"] = f"UTC{-hours:+d}"
     zone = timezone(timedelta(hours=hours))
-    before = datetime.now(zone).strftime("%y-%m-%d")
+    before = datetime.now(zone).replace(microsecond=0)
     child = sessions.spawn()
-    after = datetime.now(zone).strftime("%y-%m-%d")
+    after = datetime.now(zone).replace(microsecond=0)
     listing = sessions.run("ls").stdout
     reader = csv.DictReader(io.StringIO(listing), delimiter="\t")
     assert reader.fieldnames == ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED"]
     row = next(reader)
     created = row["CREATED"]
-    assert created in (before, after)
-    assert len(created) == 8
+    recorded = [datetime.strptime(f"{year} {created}", "%Y %m-%d %H:%M:%S").replace(tzinfo=zone)
+                for year in {before.year, after.year}]
+    assert any(before <= value <= after for value in recorded)
+    assert len(created) == 14
     assert row["NAME"] == "dev" and row["DIRECTORY"] == str(sessions.path)
     assert sessions.run("list").stdout == listing
     assert sessions.run().stdout == listing
@@ -69,6 +74,70 @@ def test_session_creation_date(sessions, hours):
     attached.expect_exact("IMX_PROMPT> ")
     assert sessions.sessions()[0]["CREATED"] == created
     assert sessions.sessions()[0]["PID"] == row["PID"]
+
+
+@pytest.mark.parametrize("created_format", [None, "%Y-%m-%d %H:%M:%S", "%Y年%m月%d日"])
+def test_terminal_session_list_columns(sessions, created_format):
+    if created_format is not None:
+        path = configuration(sessions)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"[list]\ncreated_format = '{created_format}'\n")
+    original = sessions.path
+    clients = []
+    for name, directory in [("a", "短目录"), ("session-with-a-long-name", "project with a longer directory"), ("combining", "cafe\u0301")]:
+        sessions.path = original / directory
+        sessions.path.mkdir()
+        clients.append(sessions.spawn(name=name, cols=240))
+    sessions.path = original
+    rows = sessions.sessions()
+    headings = ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED"]
+    baseline = None
+    for invocation in ("imx", "imx ls", "imx list"):
+        output = sessions.command(clients[0], invocation)
+        assert "\t" not in output
+        if baseline is None:
+            baseline = output
+        else:
+            assert output == baseline
+        screen = pyte.Screen(240, 24)
+        pyte.Stream(screen).feed(output)
+        header_line = next(index for index, line in enumerate(screen.display) if all(heading in line for heading in headings))
+        positions = [screen.display[header_line].index(heading) for heading in headings] + [240]
+        for line, row in enumerate(rows, start=header_line + 1):
+            for index, heading in enumerate(headings):
+                text = "".join(screen.buffer[line][column].data
+                               for column in range(positions[index], positions[index + 1])).rstrip()
+                assert text == unicodedata.normalize("NFC", row[heading])
+    assert sessions.run("ls").stdout.count("\t") == 4 * (len(rows) + 1)
+
+
+def test_session_list_after_executable_replacement(sessions):
+    installed = sessions.path / "bin/imx"
+    installed.parent.mkdir()
+    shutil.copy2(BINARY, installed)
+    sessions.binary = installed
+    sessions.environment["PATH"] = f"{installed.parent}:{sessions.environment['PATH']}"
+    child = sessions.spawn(cols=240)
+    original_pid = sessions.sessions()[0]["PID"]
+    replacement = installed.parent / "replacement"
+    shutil.copy2(BINARY, replacement)
+    replacement.replace(installed)
+    for invocation in ("imx", "imx ls", "imx list"):
+        output = sessions.command(child, invocation)
+        assert "NAME\tPID\tCLIENTS\tDIRECTORY\tCREATED" in output
+        assert original_pid in output
+        assert "imx: " not in output
+    assert sessions.sessions()[0]["PID"] == original_pid
+    path = configuration(sessions)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[list]\ncreated_format = '%Y-%m-%d %H:%M:%S'\n")
+    created = sessions.sessions()[0]["CREATED"]
+    assert len(created) == 19
+    for invocation in ("imx", "imx ls", "imx list"):
+        output = sessions.command(child, invocation)
+        assert "\t" not in output
+        assert created in output
+        assert original_pid in output
 
 
 def test_detach_and_reattach_preserves_shell_and_history(sessions):

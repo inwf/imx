@@ -110,7 +110,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     defer sys.close(fd);
     try cfg.unlock();
     if (tag == .attach) return client.attach(allocator, io, fd, name, &records);
-    return client.command(allocator, fd, tag, name);
+    return client.command(allocator, fd, tag, name, preferences.createdFormat());
 }
 
 test {
