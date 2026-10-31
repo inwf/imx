@@ -4,6 +4,10 @@
     .fingerprint = 0x36cac559d7d1d067,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
+        .tomlc17 = .{
+            .url = "git+https://github.com/cktan/tomlc17#4987cf895df61f702d19e3481f34b032ab29ed3a",
+            .hash = "N-V-__8AAIfmAwAC2wy1zGYHgUV8FPupt8yP3YqGCQ7xLNTM",
+        },
         .ghostty = .{
             .url = "git+https://github.com/ghostty-org/ghostty#22f100c6367045bb5fc86172f837047dee2f7670",
             .hash = "ghostty-1.3.2-dev-5UdBC57IhQX5QCxEHr_MlUcomZtBUMVoo9BwUBIAtkln",

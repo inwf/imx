@@ -27,6 +27,7 @@ class SessionEnvironment:
         self.environment.update(
             IMX_DIR=str(self.runtime),
             HOME=str(self.home),
+            XDG_CONFIG_HOME=str(self.home / ".config"),
             SHELL="/bin/bash",
             TERM="xterm-256color",
             PATH=f"{BINARY.parent}:{self.environment['PATH']}",

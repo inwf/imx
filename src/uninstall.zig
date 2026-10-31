@@ -4,6 +4,7 @@ const c = sys.c;
 const config = @import("config.zig");
 const registry = @import("registry.zig");
 const layout = @import("layout.zig");
+const settings = @import("settings.zig");
 const Allocator = std.mem.Allocator;
 
 const File = struct {
@@ -361,6 +362,10 @@ pub fn run(allocator: Allocator, io: std.Io, invocation: []const u8) !void {
         try plan.addRuntime(path);
     }
     try plan.installation(invocation);
+    const configuration = try settings.path(allocator);
+    defer allocator.free(configuration);
+    try plan.addFile(configuration, false);
+    try plan.addDirectory(std.fs.path.dirname(configuration).?, false);
     try plan.removePrivileged();
     // 独立的 Linux session 允许从正在卸载的会话内部完成清理。
     const pid = try sys.check(c.fork(), "fork(uninstall)");

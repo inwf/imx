@@ -30,7 +30,7 @@ class DownloadInstallation(SessionEnvironment):
         super().__init__()
         self.home.rename(self.path / "home with spaces")
         self.home = self.path / "home with spaces"
-        self.environment.update(HOME=str(self.home), XDG_CACHE_HOME=str(self.path / "cache"))
+        self.environment.update(HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / ".config"), XDG_CACHE_HOME=str(self.path / "cache"))
         self.environment.pop("IMX_PREFIX", None)
         self.binary = self.home / ".local/bin/imx"
         self.environment["IMX_PREFIX"] = str(self.binary.parent.parent)

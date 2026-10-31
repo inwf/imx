@@ -4,11 +4,21 @@ const manifest = @import("build.zig.zon");
 const layout = @import("src/layout.zig");
 
 pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{
+    var target_query = b.standardTargetOptionsQueryOnly(.{
         .default_target = .{ .os_tag = .linux, .abi = .musl },
     });
+    if (target_query.abi == null) target_query.abi = .musl;
+    const target = b.resolveTargetQuery(target_query);
     if (target.result.os.tag != .linux) @panic("imx supports Linux only");
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Optimization mode") orelse .safe;
+    const tomlc17 = b.dependency("tomlc17", .{});
+    const toml: Translator = .init(b.dependency("translate_c", .{}), .{
+        .name = "toml",
+        .c_source_file = tomlc17.path("src/tomlc17.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    toml.mod.addCSourceFile(.{ .file = tomlc17.path("src/tomlc17.c"), .flags = &.{"-std=c17"} });
     const translator: Translator = .init(b.dependency("translate_c", .{}), .{
         .c_source_file = b.path("src/system.h"),
         .target = target,
@@ -33,6 +43,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "c", .module = translator.mod },
             .{ .name = "ghostty-vt", .module = ghostty.module("ghostty-vt") },
+            .{ .name = "toml", .module = toml.mod },
         },
     });
     module.addOptions("build_options", options);

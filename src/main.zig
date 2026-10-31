@@ -7,6 +7,7 @@ const protocol = @import("protocol.zig");
 const registry = @import("registry.zig");
 const uninstall = @import("uninstall.zig");
 const update = @import("update.zig");
+const settings = @import("settings.zig");
 const version = @import("build_options").version;
 pub const std_options: std.Options = .{ .log_level = .err };
 
@@ -87,6 +88,8 @@ fn execute(init: std.process.Init.Minimal) !void {
         if (sys.c.isatty(0) == 0 or sys.c.isatty(1) == 0) return error.TerminalRequired;
         _ = try sys.Size.get(0);
     }
+    var preferences = if (tag == .attach or tag == .list) try settings.load(allocator, io) else settings.Settings{};
+    defer preferences.deinit(allocator);
     var records = try registry.Registry.init(allocator, io, false);
     defer records.deinit();
     var cfg = try config.Config.init(allocator, io);
@@ -111,4 +114,5 @@ fn execute(init: std.process.Init.Minimal) !void {
 test {
     _ = @import("terminal.zig");
     _ = @import("protocol.zig");
+    _ = @import("settings.zig");
 }

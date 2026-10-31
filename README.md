@@ -103,7 +103,7 @@ The updater keeps the current installation directory, detects your architecture,
 imx uninstall
 ```
 
-Uninstalling terminates the current user's imx sessions and removes the current executable, installed licenses, and recorded runtime files. It invokes `sudo` when removing system installation files. User files in working directories are preserved. See the [usage guide](docs/usage.md#卸载) for details.
+Uninstalling terminates the current user's imx sessions and removes the current executable, installed licenses, configuration file, and recorded runtime files. It invokes `sudo` when removing system installation files. User files in working directories are preserved. See the [usage guide](docs/usage.md#卸载) for details.
 
 ## Commands
 
@@ -155,7 +155,7 @@ The default build produces a static executable using musl. Build modes, cross-co
 | Looking for | Start here |
 | --- | --- |
 | 中文介绍与快速开始 | [简体中文 README](README.zh-CN.md) |
-| Session behavior, history, environment variables, and uninstalling | [Usage guide](docs/usage.md) |
+| Session behavior, configuration, history, environment variables, and uninstalling | [Usage guide](docs/usage.md) |
 | Resource limits, measurements, and benchmarking | [Performance guide](docs/performance.md) |
 | Building, testing, contributing, and publishing releases | [Development guide](docs/development.md) |
 
