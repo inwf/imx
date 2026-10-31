@@ -23,7 +23,6 @@ const Client = struct {
 
 const Session = struct {
     name: []u8,
-    cwd: []u8,
     created: c.time_t,
     pid: c.pid_t,
     fd: c_int,
@@ -132,7 +131,6 @@ const Server = struct {
         session.input.deinit(self.allocator);
         session.clients.deinit(self.allocator);
         self.allocator.free(session.name);
-        self.allocator.free(session.cwd);
         self.allocator.destroy(session);
     }
 
@@ -143,14 +141,11 @@ const Server = struct {
         errdefer self.allocator.destroy(session);
         const saved_name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(saved_name);
-        const saved_cwd = try self.allocator.dupe(u8, cwd);
-        errdefer self.allocator.free(saved_cwd);
         var term = try terminal.init(self.allocator, self.io, size);
         errdefer term.deinit(self.allocator);
         const process = try spawnShell(self.allocator, self.cfg, name, cwd, shell, environment, size);
         session.* = .{
             .name = saved_name,
-            .cwd = saved_cwd,
             .created = created,
             .pid = process.pid,
             .fd = process.fd,
@@ -165,6 +160,18 @@ const Server = struct {
         session.id = try self.add(session.fd, .{ .session = session });
         try self.sessions.put(session.name, session);
         return session;
+    }
+
+    fn currentDirectory(self: *Server, session: *const Session) ![]u8 {
+        if (session.exited) return error.SessionNotFound;
+        var path: [64]u8 = undefined;
+        const link = try std.fmt.bufPrint(&path, "/proc/{d}/cwd", .{session.pid});
+        var directory: [std.fs.max_path_bytes]u8 = undefined;
+        const length = std.Io.Dir.readLinkAbsolute(self.io, link, &directory) catch |err| {
+            if (err == error.FileNotFound) return error.SessionNotFound;
+            return err;
+        };
+        return std.fmt.allocPrint(self.allocator, "{f}", .{std.zig.fmtString(directory[0..length])});
     }
 
     fn respond(self: *Server, client: *Client, tag: protocol.Tag, payload: []const u8) !void {
@@ -204,12 +211,14 @@ const Server = struct {
                 defer options.deinit();
                 try sys.validateCreatedFormat(options.value.created_format);
                 const session = self.sessions.get(self.cfg.session_name.?) orelse return error.SessionNotFound;
+                const directory = if (options.value.names_only) null else try self.currentDirectory(session);
+                defer if (directory) |value| self.allocator.free(value);
                 var created: [sys.max_created_display]u8 = undefined;
                 const info: protocol.SessionInfo = .{
                     .name = session.name,
                     .pid = session.pid,
                     .clients = session.clients.items.len,
-                    .directory = session.cwd,
+                    .directory = directory orelse "",
                     .created = try sys.formatDateTime(&created, session.created, options.value.created_format),
                 };
                 client.snapshot = try std.json.Stringify.valueAlloc(self.allocator, info, .{});
@@ -232,6 +241,8 @@ const Server = struct {
                     try sys.validateCreatedFormat(options.created_format);
                 }
                 if (options.prefix.len > 64) return error.InvalidMessage;
+                const directory = if (options.names_only) null else if (self.sessions.get(self.cfg.session_name.?)) |session| try self.currentDirectory(session) else null;
+                defer if (directory) |value| self.allocator.free(value);
                 const table = options.table;
                 var builder = std.Io.Writer.Allocating.init(self.allocator);
                 defer builder.deinit();
@@ -263,7 +274,7 @@ const Server = struct {
                                 session.name,
                                 try std.fmt.bufPrint(&pid, "{d}", .{session.pid}),
                                 try std.fmt.bufPrint(&count, "{d}", .{session.clients.items.len}),
-                                session.cwd,
+                                directory.?,
                                 try sys.formatDateTime(&created, session.created, options.created_format),
                             };
                             for (fields, &widths) |field, *width| width.* = @max(width.*, try displayWidth(field));
@@ -279,7 +290,7 @@ const Server = struct {
                             session.name,
                             try std.fmt.bufPrint(&pid, "{d}", .{session.pid}),
                             try std.fmt.bufPrint(&count, "{d}", .{session.clients.items.len}),
-                            session.cwd,
+                            directory.?,
                             try sys.formatDateTime(&created, session.created, options.created_format),
                         }, widths, table);
                     }

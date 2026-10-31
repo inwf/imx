@@ -82,7 +82,7 @@ pub fn list(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config
     const available = try names(memory, io, root, ".sock");
     var queries: std.ArrayList(Query) = .empty;
     defer for (queries.items) |query| if (query.fd >= 0) sys.close(query.fd);
-    const request = try std.json.Stringify.valueAlloc(memory, protocol.ListOptions{ .created_format = created_format }, .{});
+    const request = try std.json.Stringify.valueAlloc(memory, protocol.ListOptions{ .created_format = created_format, .names_only = prefix != null }, .{});
     const deadline = try sys.monotonicMilliseconds() + @as(i64, if (prefix != null) 250 else 1000);
     for (available) |name| {
         if (prefix) |value| if (!std.mem.startsWith(u8, name, value)) continue;

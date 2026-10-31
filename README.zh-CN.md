@@ -165,7 +165,7 @@ imx uninstall
 | `imx -v` | 查看版本 |
 | `imx help` | 查看帮助 |
 
-会话列表包含 `NAME`、`PID`、`CLIENTS`、`DIRECTORY`、`CREATED` 和 `STATUS`。终端输出根据标题和会话内容计算列宽，管道和重定向输出使用制表符分隔。`CREATED` 按后台进程的本地时区显示创建时间，默认格式为 `MM-DD HH:mm:ss`，例如 `10-30 14:05:09`。通过 `list.created_format` 修改显示格式，重新进入会话时保留原来的创建时间。
+会话列表包含 `NAME`、`PID`、`CLIENTS`、`DIRECTORY`、`CREATED` 和 `STATUS`。终端输出根据标题和会话内容计算列宽，管道和重定向输出使用制表符分隔。`DIRECTORY` 显示会话 shell 当前的实际目录，随 `cd` 和目录重命名更新。控制字符、无效 UTF-8 字节、双引号和反斜线采用转义形式，已删除目录保留 Linux 的 ` (deleted)` 后缀。`CREATED` 按后台进程的本地时区显示创建时间，默认格式为 `MM-DD HH:mm:ss`，例如 `10-30 14:05:09`。通过 `list.created_format` 修改显示格式，重新进入会话时保留原来的创建时间。
 
 列表并发查询独立后台，共享一秒查询期限。`STATUS` 显示 `running`、`unresponsive` 或明确的查询错误，无法获取的字段显示 `-`。补全共享 250 毫秒查询期限，并保留无响应后台的会话名称。连接和控制请求在后台停止响应时报告超时。运行文件分别命名为 `session-<name>.sock`、`session-<name>.lock` 和 `session-<name>.log`。
 

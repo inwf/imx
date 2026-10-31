@@ -165,7 +165,7 @@ Uninstalling terminates the current user's imx sessions and removes the current 
 | `imx -v` | Print the version |
 | `imx help` | Print help |
 
-Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, `CREATED`, and `STATUS`. Terminal output uses column widths calculated from the headings and session contents; pipes and redirected output use tabs. The `CREATED` column displays the creation time in the backend's local timezone, defaulting to `MM-DD HH:mm:ss`, such as `10-30 14:05:09`. Set `list.created_format` to customize its display. Reattaching preserves the creation time.
+Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, `CREATED`, and `STATUS`. Terminal output uses column widths calculated from the headings and session contents; pipes and redirected output use tabs. `DIRECTORY` shows the session shell's current physical directory, reflecting `cd` and directory renames. Control characters, invalid UTF-8 bytes, quotes, and backslashes are escaped; deleted directories retain Linux's ` (deleted)` suffix. The `CREATED` column displays the creation time in the backend's local timezone, defaulting to `MM-DD HH:mm:ss`, such as `10-30 14:05:09`. Set `list.created_format` to customize its display. Reattaching preserves the creation time.
 
 Listings query independent backends concurrently with a shared one-second deadline. `STATUS` shows `running`, `unresponsive`, or an explicit query error; unavailable fields show `-`. Completion uses a shared 250 ms deadline and retains the names of unresponsive backends. Attach and control requests report a timeout when a backend stops responding. Runtime files are named `session-<name>.sock`, `session-<name>.lock`, and `session-<name>.log`.
 
