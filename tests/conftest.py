@@ -105,3 +105,10 @@ def sessions():
     environment = SessionEnvironment()
     yield environment
     environment.cleanup()
+
+
+@pytest.fixture
+def mouse_mode(sessions):
+    path = sessions.home / ".config/imx/config.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text("[panes]\nmouse = true\n")

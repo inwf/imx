@@ -9,8 +9,10 @@ import tty
 
 destination = Path(sys.argv[1])
 mode = sys.argv[2]
+mouse_mode = int(sys.argv[3]) if len(sys.argv) > 3 else 1000
 tty.setraw(0)
-os.write(1, b"\x1b[?1049h\x1b[44m\x1b[2J\x1b[H\x1b[1;33mPANE_APPLICATION\x1b[0m\x1b[?1000h\x1b[?1006h\x1b[?2004h")
+os.write(1, b"\x1b[?1049h\x1b[44m\x1b[2J\x1b[H\x1b[1;33mPANE_APPLICATION\x1b[0m")
+os.write(1, f"\x1b[?{mouse_mode}h\x1b[?1006h\x1b[?2004h".encode())
 if mode == "kitty":
     os.write(1, b"\x1b[>31u")
 elif mode == "modify":

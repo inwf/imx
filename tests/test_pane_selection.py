@@ -9,6 +9,9 @@ from conftest import ROOT
 from test_panes import PaneTerminal
 
 
+pytestmark = pytest.mark.usefixtures("mouse_mode")
+
+
 def copied(terminal, text, offset=0):
     sequence = "\x1b]52;c;" + base64.b64encode(text.encode()).decode() + "\x1b\\"
     terminal.wait(lambda: sequence in terminal.capture.getvalue()[offset:])

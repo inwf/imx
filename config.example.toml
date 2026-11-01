@@ -31,6 +31,20 @@ created_format = "%m-%d %H:%M:%S"
 enabled = true
 
 [panes]
+# 默认关闭 imx 的鼠标模式，普通 shell 中可以直接拖动选择文字，使用终端的复制快捷键。
+# imx mouse mode is disabled by default; drag to select text at shell prompts and use the terminal's copy shortcut.
+# 设为 true 启用鼠标点击聚焦、滚轮浏览历史、拖动分隔线调整大小和窗格内文字选择。
+# Set true to enable click-to-focus, history scrolling, separator resizing, and text selection within panes.
+# 开启时，窗格内选区在松开鼠标后通过 OSC 52 复制，需要终端支持并允许访问剪贴板。
+# When enabled, pane selections are copied on release via OSC 52; the terminal must support and allow clipboard access.
+# 关闭时通过 Alt+方向键或 Alt+数字切换窗格；终端本地选区可能跨越多个窗格。
+# When disabled, use Alt+Arrow or Alt+number to focus panes; native terminal selections may span multiple panes.
+# 窗格内程序主动请求的鼠标输入仍然有效；关闭时只传给当前聚焦的窗格。
+# Applications can still request mouse input; with this option disabled, only the focused pane receives it.
+# 修改后退出整个界面并重新 attach 生效；省略此项也默认关闭。
+# Exit the entire interface and attach again to apply changes; omitting this option also disables mouse mode.
+mouse = false
+
 # 设置当前聚焦窗格的边框和标题颜色，会话窗格和普通 shell 窗格均适用。
 # Set the focused pane's border and title color, for both attached sessions and plain shells.
 # 必须使用带引号的 "#RRGGBB" 字符串，十六进制字母不区分大小写。
@@ -109,6 +123,6 @@ focus_6 = { key = '6', alt = true }
 focus_7 = { key = '7', alt = true }
 focus_8 = { key = '8', alt = true }
 focus_9 = { key = '9', alt = true }
-# Alt+0 对应编号 10；更大编号的窗格可以通过方向快捷键或鼠标聚焦。
-# Alt+0 selects number 10; use directional shortcuts or the mouse for higher pane numbers.
+# Alt+0 对应编号 10；更大编号使用方向快捷键，开启鼠标模式后也可以点击聚焦。
+# Alt+0 selects number 10; use arrows for higher pane numbers, or click with mouse mode enabled.
 focus_10 = { key = '0', alt = true }

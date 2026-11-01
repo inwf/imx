@@ -16,6 +16,7 @@ const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Axis = enum { right, down };
 const Direction = enum { left, right, up, down };
+const MouseMode = @FieldType(vt.input.MouseEncodeOptions, "event");
 
 const CloseRequest = struct {
     fd: c_int,
@@ -293,6 +294,8 @@ const App = struct {
     root: *Node = undefined,
     focused: *Pane = undefined,
     mouse_pane: ?*Pane = null,
+    mouse_enabled: bool,
+    mouse_mode: MouseMode = .none,
     resize_drag: ?struct { node: ?*Node, grab_offset: i32 } = null,
     selection_drag: ?struct { pane: ?*Pane } = null,
     composed: bool = false,
@@ -352,6 +355,7 @@ const App = struct {
         if (self.focused == pane) return;
         self.cancelResize();
         self.cancelSelection();
+        if (!self.mouse_enabled) self.mouse_pane = null;
         if (self.focused.term.modes.get(.focus_event)) try self.focused.input.append(self.allocator, "\x1b[O");
         self.focused = pane;
         if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, "\x1b[I");
@@ -445,7 +449,7 @@ const App = struct {
         if (!self.composed) {
             self.composed = true;
             for (self.panes.items) |value| enableEffects(value);
-            try self.output.append(self.allocator, display.reset ++ "\x1b[?1049h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[>4;2m\x1b[>5u");
+            try self.output.append(self.allocator, display.reset ++ "\x1b[?1049h\x1b[?2004h\x1b[>4;2m\x1b[>5u");
             self.vx.state.alt_screen = true;
             var writer: std.Io.Writer.Allocating = .init(self.allocator);
             defer writer.deinit();
@@ -462,6 +466,19 @@ const App = struct {
     }
 
     fn draw(self: *App) !void {
+        const mouse_mode: MouseMode = if (self.mouse_enabled and self.focused.term.flags.mouse_event != .any) .button else self.focused.term.flags.mouse_event;
+        if (mouse_mode != self.mouse_mode) {
+            try self.output.append(self.allocator, "\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
+            try self.output.append(self.allocator, switch (mouse_mode) {
+                .none => "",
+                .x10 => "\x1b[?9h\x1b[?1006h",
+                .normal => "\x1b[?1000h\x1b[?1006h",
+                .button => "\x1b[?1002h\x1b[?1006h",
+                .any => "\x1b[?1003h\x1b[?1006h",
+            });
+            self.mouse_mode = mouse_mode;
+            if (mouse_mode == .none) self.mouse_pane = null;
+        }
         const flags = self.focused.term.screens.active.kitty_keyboard.current().int() | @as(u5, 5);
         if (flags != self.keyboard_flags) {
             var buffer: [16]u8 = undefined;
@@ -544,6 +561,7 @@ const App = struct {
                 if (event == .focus_out) {
                     self.cancelResize();
                     self.cancelSelection();
+                    if (!self.mouse_enabled) self.mouse_pane = null;
                 }
                 if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, result.bytes);
                 return;
@@ -581,6 +599,18 @@ const App = struct {
     fn handleMouse(self: *App, mouse: vaxis.Mouse) !void {
         const x: i32 = @as(i32, mouse.col) + self.offset[0];
         const y: i32 = @as(i32, mouse.row) + self.offset[1];
+        if (!self.mouse_enabled) {
+            const pane = self.focused;
+            if (pane.term.flags.mouse_event == .none) return;
+            const pressed = mouse.type == .press and (mouse.button == .left or mouse.button == .middle or mouse.button == .right);
+            if (pressed) self.mouse_pane = null;
+            const captured = self.mouse_pane == pane and (mouse.type == .drag or mouse.type == .release);
+            if ((mouse.type == .drag or mouse.type == .release) and !captured) return;
+            if (mouse.type == .release) self.mouse_pane = null;
+            if (!captured and (x <= pane.rect.x or y <= pane.rect.y or x >= pane.rect.x + pane.rect.width - 1 or y >= pane.rect.y + pane.rect.height - 1)) return;
+            if (pressed) self.mouse_pane = pane;
+            return self.forwardMouse(pane, mouse, x, y);
+        }
         if (mouse.type == .press and mouse.button == .left) {
             self.resize_drag = null;
             self.cancelSelection();
@@ -643,32 +673,35 @@ const App = struct {
                 self.dirty = true;
                 return;
             }
-            var writer: std.Io.Writer.Allocating = .init(self.allocator);
-            defer writer.deinit();
-            var options = vt.input.MouseEncodeOptions.fromTerminal(&pane.term, .{ .screen = .{ .width = pane.term.cols, .height = pane.term.rows }, .cell = .{ .width = 1, .height = 1 }, .padding = .{} });
-            options.any_button_pressed = mouse.type == .press or mouse.type == .drag;
-            try vt.input.encodeMouse(&writer.writer, .{
-                .action = switch (mouse.type) {
-                    .press => .press,
-                    .release => .release,
-                    .motion, .drag => .motion,
-                },
-                .button = switch (mouse.button) {
-                    .left => .left,
-                    .middle => .middle,
-                    .right => .right,
-                    .wheel_up => .four,
-                    .wheel_down => .five,
-                    .wheel_left => .six,
-                    .wheel_right => .seven,
-                    else => null,
-                },
-                .mods = .{ .shift = mouse.mods.shift, .ctrl = mouse.mods.ctrl, .alt = mouse.mods.alt },
-                .pos = .{ .x = @floatFromInt(x - pane.rect.x - 1), .y = @floatFromInt(y - pane.rect.y - 1) },
-            }, options);
-            try pane.input.append(self.allocator, writer.written());
-            return;
+            return self.forwardMouse(pane, mouse, x, y);
         }
+    }
+
+    fn forwardMouse(self: *App, pane: *Pane, mouse: vaxis.Mouse, x: i32, y: i32) !void {
+        var writer: std.Io.Writer.Allocating = .init(self.allocator);
+        defer writer.deinit();
+        var options = vt.input.MouseEncodeOptions.fromTerminal(&pane.term, .{ .screen = .{ .width = pane.term.cols, .height = pane.term.rows }, .cell = .{ .width = 1, .height = 1 }, .padding = .{} });
+        options.any_button_pressed = mouse.type == .press or mouse.type == .drag;
+        try vt.input.encodeMouse(&writer.writer, .{
+            .action = switch (mouse.type) {
+                .press => .press,
+                .release => .release,
+                .motion, .drag => .motion,
+            },
+            .button = switch (mouse.button) {
+                .left => .left,
+                .middle => .middle,
+                .right => .right,
+                .wheel_up => .four,
+                .wheel_down => .five,
+                .wheel_left => .six,
+                .wheel_right => .seven,
+                else => null,
+            },
+            .mods = .{ .shift = mouse.mods.shift, .ctrl = mouse.mods.ctrl, .alt = mouse.mods.alt },
+            .pos = .{ .x = @floatFromInt(x - pane.rect.x - 1), .y = @floatFromInt(y - pane.rect.y - 1) },
+        }, options);
+        try pane.input.append(self.allocator, writer.written());
     }
 };
 
@@ -786,13 +819,13 @@ fn encodeKey(writer: *std.Io.Writer, key: vaxis.Key, released: bool, term: *vt.T
     try vt.input.encodeKey(writer, .{ .action = if (released) .release else .press, .key = mapped, .mods = .{ .ctrl = key.mods.ctrl, .alt = key.mods.alt, .shift = key.mods.shift, .super = key.mods.super, .caps_lock = key.mods.caps_lock, .num_lock = key.mods.num_lock }, .consumed_mods = .{ .shift = true }, .utf8 = text, .unshifted_codepoint = codepoint }, options);
 }
 
-pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, name: []const u8, bindings: keyboard.Bindings, focused_border_color: ?vt.color.RGB) !void {
+pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, name: []const u8, preferences: @import("settings.zig").Settings) !void {
     _ = try sys.check(c.prctl(c.PR_SET_CHILD_SUBREAPER, @as(c_ulong, 1), @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)), "prctl(pane children)");
     var environment = try environ.createMap(allocator);
     defer environment.deinit();
     var executable: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &executable);
-    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .focused_border_color = if (focused_border_color) |rgb| .{ .rgb = .{ rgb.r, rgb.g, rgb.b } } else .{ .index = 6 }, .keys = .{ .bindings = bindings, .workspace = true, .report_events = true } };
+    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = if (preferences.focused_border_color) |rgb| .{ .rgb = .{ rgb.r, rgb.g, rgb.b } } else .{ .index = 6 }, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true } };
     defer {
         var writer: std.Io.Writer.Allocating = .init(allocator);
         defer writer.deinit();

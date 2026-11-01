@@ -38,6 +38,7 @@ pub const Settings = struct {
     show_session: bool = true,
     completion_enabled: bool = true,
     keybindings: keyboard.Bindings = .{},
+    mouse_enabled: bool = false,
     focused_border_color: ?vt.color.RGB = null,
     created_format: ?[:0]u8 = null,
     file_missing: bool = false,
@@ -164,7 +165,12 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
     if (panes.type != toml.TOML_UNKNOWN) {
         const field = context.child("panes");
         if (panes.type != toml.TOML_TABLE) return field.reject(error.InvalidPanesConfiguration, "expected a table");
-        try validateKeys(field, panes, &.{"focused_border_color"});
+        try validateKeys(field, panes, &.{ "mouse", "focused_border_color" });
+        const mouse = toml.toml_get(panes, "mouse");
+        if (mouse.type != toml.TOML_UNKNOWN) {
+            if (mouse.type != toml.TOML_BOOLEAN) return field.child("mouse").reject(error.PaneMouseMustBeBoolean, "expected a boolean (true or false)");
+            preferences.mouse_enabled = mouse.u.boolean;
+        }
         const color = toml.toml_get(panes, "focused_border_color");
         if (color.type != toml.TOML_UNKNOWN) {
             const entry = field.child("focused_border_color");
@@ -219,6 +225,7 @@ test "default configuration matches built-in settings" {
     try std.testing.expectEqual(defaults.show_session, preferences.show_session);
     try std.testing.expectEqual(defaults.completion_enabled, preferences.completion_enabled);
     try std.testing.expectEqualDeep(defaults.keybindings, preferences.keybindings);
+    try std.testing.expectEqual(defaults.mouse_enabled, preferences.mouse_enabled);
     try std.testing.expectEqualDeep(defaults.focused_border_color, preferences.focused_border_color);
     try std.testing.expectEqualStrings(defaults.createdFormat(), preferences.createdFormat());
 }
@@ -231,6 +238,15 @@ test "TOML prompt settings validate types and names" {
     try std.testing.expect(!(try parse(allocator, "prompt = { show_session = false }\n")).show_session);
     try std.testing.expectError(error.PromptShowSessionMustBeBoolean, parse(allocator, "[prompt]\nshow_session = 'true'\n"));
     try std.testing.expectError(error.UnknownConfigurationOption, parse(allocator, "[prompt]\nshow_sessions = true\n"));
+}
+
+test "TOML pane mouse mode defaults to disabled and validates types" {
+    const allocator = std.testing.allocator;
+    try std.testing.expect(!(try parse(allocator, "")).mouse_enabled);
+    try std.testing.expect(!(try parse(allocator, "[panes]\n")).mouse_enabled);
+    try std.testing.expect(!(try parse(allocator, "[panes]\nmouse = false\n")).mouse_enabled);
+    try std.testing.expect((try parse(allocator, "panes = { mouse = true }\n")).mouse_enabled);
+    try std.testing.expectError(error.PaneMouseMustBeBoolean, parse(allocator, "[panes]\nmouse = 'true'\n"));
 }
 
 test "TOML list settings preserve the format and prompt option" {

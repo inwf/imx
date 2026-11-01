@@ -81,15 +81,15 @@ def test_panes_inherit_directory_and_attach_independent_sessions(sessions):
     terminal.child.sendline("imx attach test")
     terminal.visible("2: test")
     terminal.command("printf '%s' \"$IMX_SESSION\"", "right-session", "test")
-    terminal.click(3)
+    terminal.focus(1)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "left-session", "dev")
-    terminal.click(55)
+    terminal.focus(2)
     terminal.child.send("\x1b\\")
     terminal.visible("2: shell")
     terminal.command("pwd", "detached-directory", f"{directory}\n")
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "test": "0"})
 
-    terminal.click(3)
+    terminal.focus(1)
     terminal.child.send("\x1b\\")
     terminal.visible("1: shell")
     terminal.command("pwd", "left-detached-directory", f"{directory}\n")
@@ -217,10 +217,11 @@ def test_configured_focus_shortcuts(sessions):
 
 
 @pytest.mark.parametrize("color", [None, "#33aAfF", "#000000", "#FFFFFF"])
-def test_configured_border_color_follows_focus(sessions, color):
+@pytest.mark.parametrize("mouse", [False, True])
+def test_configured_border_color_follows_focus(sessions, color, mouse):
     path = sessions.home / ".config/imx/config.toml"
     path.parent.mkdir(parents=True)
-    path.write_text("[panes]\n" if color is None else f'[panes]\nfocused_border_color = "{color}"\n')
+    path.write_text(f"[panes]\nmouse = {str(mouse).lower()}\n" + ("" if color is None else f'focused_border_color = "{color}"\n'))
     child = sessions.spawn(rows=30, cols=100)
     if color is None:
         expected = "\x1b[36m"
@@ -230,7 +231,8 @@ def test_configured_border_color_follows_focus(sessions, color):
     child.send("\x1bd")
     child.expect_exact(expected)
     child.expect_exact("2: shell")
-    for shortcut, title in [("\x1b1", "1: dev"), ("\x1b[<0;55;3M\x1b[<0;55;3m", "2: shell"), ("\x1b1", "1: dev")]:
+    second = "\x1b[<0;55;3M\x1b[<0;55;3m" if mouse else "\x1b2"
+    for shortcut, title in [("\x1b1", "1: dev"), (second, "2: shell"), ("\x1b1", "1: dev")]:
         child.send(shortcut)
         child.expect_exact(expected)
         child.expect_exact(title)
@@ -268,7 +270,7 @@ def test_close_shortcut_terminates_focused_session_and_jobs(sessions, initial, m
     terminal.visible("2: test")
     target, remaining, pane_id = ("dev", "test", 1) if initial else ("test", "dev", 2)
     if initial:
-        terminal.click(3)
+        terminal.focus(1)
     row = next(row for row in sessions.sessions() if row["NAME"] == target)
     shell_pid = int(row["PID"])
     backend_pid = psutil.Process(shell_pid).ppid()
@@ -297,7 +299,7 @@ def test_detach_then_close_in_one_write_preserves_session(sessions, initial):
     terminal.visible("2: test")
     target, remaining, pane_id = ("dev", "test", 1) if initial else ("test", "dev", 2)
     if initial:
-        terminal.click(3)
+        terminal.focus(1)
     pid = int(next(row for row in sessions.sessions() if row["NAME"] == target)["PID"])
     terminal.child.send("\x1b\\\x1bw")
     terminal.wait(lambda: all(f"{pane_id}:" not in row for row in terminal.screen.display))
@@ -434,7 +436,7 @@ def test_detaching_one_pane_preserves_other_connection_to_same_session(sessions)
     terminal.child.send("\x1b\\")
     terminal.visible("2: shell")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "1")
-    terminal.click(3)
+    terminal.focus(1)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "remaining-session", "dev")
 
 
@@ -486,7 +488,7 @@ def test_pane_detaches_while_its_backend_is_paused(sessions):
     try:
         terminal.child.send("\x1b\\")
         terminal.visible("2: shell")
-        terminal.click(3)
+        terminal.focus(1)
         terminal.command("printf responsive", "healthy-pane", "responsive")
     finally:
         backend.resume()
@@ -519,7 +521,7 @@ def test_switching_in_a_pane_updates_its_title_and_split_directory(sessions):
     terminal.visible("3: shell")
     terminal.command("pwd", "switched-directory", f"{directory}\n")
     assert {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "second": "0", "third": "1"}
-    terminal.click(55)
+    terminal.focus(2)
     terminal.child.send("\x1bw")
     terminal.wait(lambda: all("2:" not in row for row in terminal.screen.display))
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "second": "0"})
@@ -529,7 +531,7 @@ def test_switching_in_a_pane_updates_its_title_and_split_directory(sessions):
 def test_configured_detach_and_mouse_focus(sessions):
     path = sessions.home / ".config/imx/config.toml"
     path.parent.mkdir(parents=True)
-    path.write_text("[keybindings]\ndetach = { key = 'F12' }\n")
+    path.write_text("[panes]\nmouse = true\n[keybindings]\ndetach = { key = 'F12' }\n")
     terminal = PaneTerminal(sessions)
     terminal.split()
     terminal.visible("2: shell")
@@ -570,10 +572,10 @@ def test_output_in_one_pane_preserves_other_pane_input_and_close_cleanup(session
     terminal.child.sendline(f"sleep 600 & printf '%s' $! > {shlex.quote(str(path))}")
     terminal.wait(lambda: path.exists() and path.read_text().isdigit())
     job = psutil.Process(int(path.read_text()))
-    terminal.click(3)
+    terminal.focus(1)
     terminal.child.sendline("yes CONTINUOUS_OUTPUT")
     terminal.visible("CONTINUOUS_OUTPUT")
-    terminal.click(55)
+    terminal.focus(2)
     terminal.command("printf responsive", "output-responsive", "responsive")
     terminal.child.close(force=True)
     sessions.wait(lambda: not job.is_running())

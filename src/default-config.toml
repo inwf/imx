@@ -12,3 +12,12 @@ created_format = "%m-%d %H:%M:%S"
 # 在 Bash、Zsh 和 Fish 中按 Tab 补全 imx 命令和已有会话名称。
 # Enable Tab completion for imx commands and existing session names in Bash, Zsh, and Fish.
 enabled = true
+
+[panes]
+# 默认关闭鼠标模式，普通 shell 中由终端处理文字选择和复制。
+# Mouse mode is disabled by default; the terminal handles text selection and copying at shell prompts.
+# 设为 true 启用鼠标聚焦窗格、拖动分隔线调整大小和窗格内文字选择。
+# Set true to enable mouse focus, separator resizing, and text selection within panes.
+# 窗格内程序主动请求的鼠标输入仍然有效；修改后退出整个界面并重新 attach 生效。
+# Applications can still request mouse input; exit the entire interface and attach again to apply changes.
+mouse = false

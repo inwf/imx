@@ -70,7 +70,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     if (tag == .attach and config.env("IMX_SESSION") == null and config.env(@import("pane_context.zig").variable) == null) {
         records.finishSetup();
         try records.unlock();
-        return @import("workspace.zig").run(allocator, io, init.environ, name, preferences.keybindings, preferences.focused_border_color);
+        return @import("workspace.zig").run(allocator, io, init.environ, name, preferences);
     }
     var root = try config.Config.init(allocator, io);
     defer root.deinit();

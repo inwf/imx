@@ -8,6 +8,9 @@ from conftest import ROOT
 from test_panes import PaneTerminal
 
 
+pytestmark = pytest.mark.usefixtures("mouse_mode")
+
+
 def origin(terminal, number):
     for line, row in enumerate(terminal.screen.display):
         column = row.find(f" {number}: ")

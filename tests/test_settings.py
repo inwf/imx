@@ -18,6 +18,7 @@ DEFAULT_SETTINGS = {
     "prompt": {"show_session": True},
     "list": {"created_format": "%m-%d %H:%M:%S"},
     "completion": {"enabled": True},
+    "panes": {"mouse": False},
 }
 
 
@@ -192,6 +193,10 @@ def test_invalid_list_configuration_fails_before_creating_runtime(sessions, valu
 
 @pytest.mark.parametrize("value, error", [
     ("panes = false", "InvalidPanesConfiguration"),
+    ("[panes]\nmouse = 'true'", "PaneMouseMustBeBoolean"),
+    ("[panes]\nmouse = 1", "PaneMouseMustBeBoolean"),
+    ("[panes]\nmouse = {}", "PaneMouseMustBeBoolean"),
+    ("[panes]\nmouses = true", "UnknownConfigurationOption"),
     ("[panes]\nfocused_border_color = true", "FocusedBorderColorMustBeString"),
     ("[panes]\nfocused_border_colour = '#123456'", "UnknownConfigurationOption"),
     *[(f"[panes]\nfocused_border_color = '{color}'", "InvalidFocusedBorderColor") for color in [
@@ -208,6 +213,8 @@ def test_invalid_pane_configuration_fails_before_creating_runtime(sessions, valu
         child.close()
         assert child.exitstatus == 1
         assert error in child.before
+        if error == "PaneMouseMustBeBoolean":
+            assert "panes.mouse: expected a boolean" in child.before
         assert str(path) in child.before
         assert not sessions.runtime.exists()
         assert not (sessions.home / ".local/state/imx").exists()

@@ -189,6 +189,7 @@ def main():
             "prompt": {"show_session": True},
             "list": {"created_format": "%m-%d %H:%M:%S"},
             "completion": {"enabled": True},
+            "panes": {"mouse": False},
         }
         assert list(configuration.parent.iterdir()) == [configuration]
         inode = binary.stat().st_ino

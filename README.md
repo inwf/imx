@@ -161,21 +161,23 @@ To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal mo
 
 ### 4. Split panes
 
-While attached, press **Alt+D** to split the focused pane left and right, or **Alt+Shift+D** to split it top and bottom. Alt corresponds to Option on macOS. Each new pane starts a plain shell in the focused pane's current directory. Run `imx attach <name>` there to connect to another session. Click a pane to focus it; its border is highlighted. The detach shortcut affects only the focused pane's connection and returns that pane to its plain shell.
+While attached, press **Alt+D** to split the focused pane left and right, or **Alt+Shift+D** to split it top and bottom. Alt corresponds to Option on macOS. Each new pane starts a plain shell in the focused pane's current directory. Run `imx attach <name>` there to connect to another session. A highlighted border marks the focused pane. The detach shortcut affects only that pane's connection and returns it to its plain shell.
 
-Use **Alt+Arrow** to focus a neighboring pane. **Alt+1** through **Alt+9** select the number shown in a pane's title; **Alt+0** selects number 10. Pane numbers stay unchanged when another pane closes. A missing neighbor or number keeps the current focus. These shortcuts also select plain shell panes; use arrows or the mouse for numbers above 10.
+Use **Alt+Arrow** to focus a neighboring pane. **Alt+1** through **Alt+9** select the number shown in a pane's title; **Alt+0** selects number 10. Pane numbers stay unchanged when another pane closes. A missing neighbor or number keeps the current focus. These shortcuts also select plain shell panes; use arrows for numbers above 10, or click with mouse mode enabled.
 
-Drag a separator with the left mouse button to resize adjacent panes. Both edges of the separator accept dragging, including in nested splits. Programs receive their updated terminal dimensions while you drag. Each pane keeps at least 12 columns and 5 rows including its border; the adjusted proportions are retained when the terminal resizes.
+Mouse mode defaults to off (`panes.mouse = false`). At ordinary shell prompts, drag to make a native terminal selection and use the terminal's copy shortcut, such as Command+C in iTerm2. Native selections may span multiple panes. Set `panes.mouse = true` to enable clicking to focus panes, scrolling pane history, dragging separators, and selecting text within a pane. Exit the entire interface and attach again to apply changes. Applications that request mouse input still receive it; with mouse mode off, only the focused pane receives mouse events. In iTerm2, Option+drag makes a native selection while an application is using the mouse.
 
-Drag over text to highlight a selection within its pane and copy it when you release the mouse. Double-click selects a word; triple-click selects a line. Dragging beyond the top or bottom scrolls through history. Copying uses OSC 52, including over SSH, and requires a terminal that supports and permits clipboard access. Applications that handle mouse input keep receiving it; hold Shift while dragging to select text. Keyboard reporting follows the focused program, preserving normal input-method text entry at shell prompts.
+With mouse mode enabled, drag a separator with the left mouse button to resize adjacent panes. Both edges of the separator accept dragging, including in nested splits. Programs receive their updated terminal dimensions while you drag. Each pane keeps at least 12 columns and 5 rows including its border; the adjusted proportions are retained when the terminal resizes.
 
-Panes can be split repeatedly. Scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Press **Alt+W** to close the focused pane and terminate its attached session and programs. Other clients attached to that session are disconnected too. To keep the session running, detach first (default `Alt+\`), then press Alt+W. Closing a plain shell pane terminates its programs. At a plain shell prompt, `exit` or `Ctrl+D` on an empty command line also closes the pane. Closing the last pane exits the interface.
+With mouse mode enabled, drag over text to highlight a selection within its pane and copy it when you release the mouse. Double-click selects a word; triple-click selects a line. Dragging beyond the top or bottom scrolls through history. Copying uses OSC 52, including over SSH, and requires a terminal that supports and permits clipboard access. Applications that handle mouse input keep receiving it; hold Shift while dragging to select text. Keyboard reporting follows the focused program, preserving normal input-method text entry at shell prompts.
+
+Panes can be split repeatedly. With mouse mode enabled, scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Press **Alt+W** to close the focused pane and terminate its attached session and programs. Other clients attached to that session are disconnected too. To keep the session running, detach first (default `Alt+\`), then press Alt+W. Closing a plain shell pane terminates its programs. At a plain shell prompt, `exit` or `Ctrl+D` on an empty command line also closes the pane. Closing the last pane exits the interface.
 
 Closing the terminal discards the layout and terminates the plain pane shells while attached sessions keep running. Layouts are held only in the current client and are not saved. Set `keybindings.split_right`, `keybindings.split_down`, and `keybindings.close_pane` to use other shortcuts.
 
 ### 5. Make it yours
 
-Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with three settings for the session prompt, completion, and the `CREATED` format, and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
+Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with settings for the session prompt, completion, the `CREATED` format, and mouse mode, and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
 
 The generated file contains the following defaults:
 
@@ -188,6 +190,9 @@ created_format = "%m-%d %H:%M:%S"
 
 [completion]
 enabled = true
+
+[panes]
+mouse = false
 ```
 
 The [full configuration template](config.example.toml) documents every option, its default, and when changes take effect, with English and Chinese comments. Shortcuts use their built-in defaults; copy the `[keybindings]` entries you want to customize into your configuration. The template also explains `alt` (Option on macOS) and `super` (Command on macOS).
@@ -195,6 +200,7 @@ The [full configuration template](config.example.toml) documents every option, i
 - **`prompt.show_session`** shows `[dev] ` before the prompt of new Bash, Zsh, and Fish shells inside sessions, keeping the prompt's path, colors, and theme. The next `imx attach` installs the integration between `# BEGIN imx shell integration` and `# END imx shell integration` markers in your shell startup files. Set the option to `false` and attach again to remove it. The default is `true`, including when the option is omitted.
 - **`list.created_format`** formats the `CREATED` column with `strftime` fields. The default shows `10-30 14:05:09`; `%Y-%m-%d %H:%M:%S` adds the year.
 - **`completion.enabled`** switches Tab completion of commands and session names. The default is `true`.
+- **`panes.mouse`** enables imx mouse focus, separator resizing, history scrolling, and pane text selection. The default is `false`, including when omitted. At shell prompts, the terminal handles selection and copying while this option is off. Restart the interface to apply changes.
 - **`panes.focused_border_color`** sets the focused pane's border and title color with a `"#RRGGBB"` string, such as `"#33AAFF"`. Omit it to use the terminal's cyan color. It applies to attached sessions and plain shell panes. Restart the interface to apply changes.
 - **`keybindings.split_right`**, **`keybindings.split_down`** split the focused pane horizontally across the screen or vertically down it. Defaults are Alt+D and Alt+Shift+D; `alt` means Option on macOS. Each new pane starts a plain shell in the current directory. Restart the interface to apply changes to these bindings. Duplicate shortcuts are rejected.
 - **`keybindings.close_pane`** closes the focused pane and terminates its attached session and programs. The default is Alt+W. Detach first to preserve the session. Restart the interface to apply changes to this binding.
