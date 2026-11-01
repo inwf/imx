@@ -67,6 +67,7 @@ def authorize(child, text):
 
 def installed(child, invocation, prompt="SYSTEM_PROMPT> "):
     authorize(child, invocation)
+    assert "Administrator permissions are required to install in " in child.before
     child.expect_exact("\r\nSTATUS=0\r\n")
     assert "Installed imx" in child.before
     child.expect_exact(prompt)

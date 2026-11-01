@@ -89,6 +89,8 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | bas
 
 By default, the script installs under `/usr/local` whenever `PATH` includes `/usr/local/bin`. If that directory is absent from `PATH` and `/usr/bin` is present, it installs under `/usr`. It invokes `sudo` when system directories need administrator permissions. Confirm the installation with `imx -v`.
 
+Installation and `imx update` show English status messages for release lookup, downloading, verification, extraction, and installation. Package downloads display a progress bar with the actual percentage when standard error is connected to a terminal, including installation through `curl ... | bash`. Redirecting standard error to a log keeps the status messages as plain lines. A message announces required administrator permissions before `sudo` runs.
+
 Open a new shell afterwards to load completion. Bash 4.4 or newer needs `bash-completion` enabled, Zsh needs `compinit` initialized, and Fish loads the file automatically. The [usage guide](docs/usage.md#tab-补全) covers loading completion by hand and custom prefixes.
 
 <details>

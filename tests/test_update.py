@@ -23,8 +23,13 @@ def test_update_preserves_installation_and_running_session(downloaded, inside):
     requests = len(downloaded.requests)
     if inside:
         output = downloaded.command(child, "imx update")
+        assert "Downloading imx" in output
+        assert "100.0%" in output
     else:
-        output = downloaded.run("update").stdout
+        result = downloaded.run("update")
+        output = result.stdout
+        assert "Downloading imx" in result.stderr
+        assert "100.0%" not in result.stderr
     assert f"Installed imx {VERSION}: {downloaded.binary}" in output
     assert downloaded.binary.stat().st_ino != inode
     assert downloaded.run("-v").stdout == f"imx {VERSION}\n"

@@ -139,6 +139,11 @@ def downloaded(native_package):
 def test_download_install_and_uninstall(downloaded, tag):
     result = downloaded.install(tag)
     assert result.returncode == 0, result.stderr
+    assert "Fetching release information..." in result.stderr
+    assert f"Downloading imx {VERSION} ({ARCHITECTURE})..." in result.stderr
+    assert "Verifying SHA256 checksum..." in result.stderr
+    assert f"Installing imx {VERSION} to " in result.stderr
+    assert "100.0%" not in result.stderr
     assert downloaded.run("-v").stdout == f"imx {VERSION}\n"
     assert os.access(downloaded.binary, os.X_OK)
     assert f"Installed imx {VERSION}:" in result.stdout
@@ -227,6 +232,8 @@ def test_failed_download_preserves_installation(downloaded, failure):
         (downloaded.path / "releases/latest/download/VERSION").unlink()
     result = downloaded.install()
     assert result.returncode != 0
+    assert "Installed imx" not in result.stdout
+    assert "Installing imx" not in result.stderr
     assert downloaded.binary.stat().st_ino == original_inode
     assert downloaded.run("-v").stdout == f"imx {VERSION}\n"
     downloaded.assert_no_temporary_files()

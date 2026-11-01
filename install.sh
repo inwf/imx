@@ -55,10 +55,15 @@ cleanup() {
 trap cleanup EXIT
 
 download() {
-    curl --fail --silent --show-error --location --proto '=https,http' --proto-redir '=https' \
+    local progress=(--silent)
+    if [[ ${3:-false} == true && -t 2 ]]; then
+        progress=(--progress-bar)
+    fi
+    curl --fail --show-error --location "${progress[@]}" --proto '=https,http' --proto-redir '=https' \
         --connect-timeout 15 --max-time 300 "$1" --output "$2"
 }
 
+printf 'Fetching release information...\n' >&2
 if [[ $selector == latest ]]; then
     download "$base/latest/download/VERSION" "$stage/VERSION"
 else
@@ -77,12 +82,15 @@ case $prefix in
 esac
 mkdir -- "$stage/download" "$stage/tree"
 download "$release/SHA256SUMS" "$stage/SHA256SUMS"
-download "$release/$archive" "$stage/download/$archive"
+printf 'Downloading imx %s (%s)...\n' "$version" "$architecture" >&2
+download "$release/$archive" "$stage/download/$archive" true
+printf 'Verifying SHA256 checksum...\n' >&2
 # 校验目录仅包含当前架构的软件包，校验文件缺少该软件包时也会失败。
 (
     cd -- "$stage/download"
     sha256sum --check --strict --ignore-missing "$stage/SHA256SUMS"
 )
+printf 'Extracting package...\n' >&2
 tar --extract --gzip --file "$stage/download/$archive" --directory "$stage/tree" \
     --no-same-owner --no-same-permissions bin/imx share/licenses/imx "${completions[@]}"
 [[ $("$stage/tree/bin/imx" -v) == "imx $version" ]] || fail 'Downloaded executable has an unexpected version.'
@@ -110,11 +118,12 @@ if (( EUID != 0 )); then
 fi
 if [[ $needs_sudo == true ]]; then
     command -v sudo >/dev/null || fail 'sudo is required to install into the system directory.'
-    printf 'Installing to %s; sudo may ask for your password.\n' "$prefix"
+    printf 'Administrator permissions are required to install in %s. sudo may ask for your password.\n' "$prefix" >&2
     sudo --validate
     privileged=(sudo --)
 fi
 
+printf 'Installing imx %s to %s...\n' "$version" "$prefix" >&2
 "${privileged[@]}" install -d -m 755 -- "$prefix/bin" "$prefix/share/licenses/imx"
 find "$stage/tree/share/licenses/imx" -type f -print0 > "$stage/licenses"
 while IFS= read -r -d '' file; do

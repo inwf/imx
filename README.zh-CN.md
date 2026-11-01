@@ -88,6 +88,8 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | bas
 
 默认情况下，只要 `PATH` 包含 `/usr/local/bin`，脚本就安装到 `/usr/local`。当 `PATH` 缺少该目录且包含 `/usr/bin` 时，安装到 `/usr`。写入系统目录需要管理员权限时会调用 `sudo`。安装后执行 `imx -v` 确认版本。
 
+安装和 `imx update` 会以英文显示获取版本、下载、校验、解压和安装阶段的状态。标准错误输出连接终端时，软件包下载会显示实际百分比的进度条，通过 `curl ... | bash` 安装也可以显示。将标准错误输出重定向到日志时，状态消息使用普通文本行。需要管理员权限时，会在运行 `sudo` 前显示提示。
+
 安装后启动新的 shell 即可加载补全。Bash 4.4 或更新版本需要启用 `bash-completion`，Zsh 需要初始化 `compinit`，Fish 会自动加载。手动加载补全和自定义前缀的设置见[使用说明](docs/usage.md#tab-补全)。
 
 <details>
