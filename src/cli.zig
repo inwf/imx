@@ -1,12 +1,14 @@
 const std = @import("std");
 const clap = @import("clap");
 const sys = @import("sys.zig");
+const update = @import("update.zig");
 
 pub const Command = enum { attach, list, ls, cat, detach, kill, update, uninstall, help };
-pub const Invocation = struct { command: Command, name: []const u8 = "" };
+pub const Invocation = struct { command: Command, name: []const u8 = "", update_mode: update.Mode = .normal };
 pub const Result = union(enum) { help: ?Command, version, run: Invocation };
 pub const root_options = [_][]const u8{ "-h", "--help", "-v", "--version" };
 pub const help_options = [_][]const u8{ "-h", "--help" };
+pub const update_options = help_options ++ [_][]const u8{ "--check", "--force" };
 
 const root_params = clap.parseParamsComptime(
     \\-h, --help     Show help.
@@ -17,6 +19,12 @@ const root_params = clap.parseParamsComptime(
 
 fn parameters(comptime command: Command) []const clap.Param(clap.Help) {
     return switch (command) {
+        .update => &comptime clap.parseParamsComptime(
+            \\-h, --help  Show help for this command.
+            \\--check     Check the latest version without installing.
+            \\--force     Install the latest release even if this version is already installed or newer.
+            \\
+        ),
         .attach, .cat, .kill, .help => &comptime clap.parseParamsComptime(
             \\-h, --help  Show help for this command.
             \\<str>...
@@ -77,6 +85,10 @@ pub fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Resul
             }
             if (root.args.help != 0 or result.args.help != 0) return .{ .help = candidate };
             switch (candidate) {
+                .update => {
+                    if (result.args.check != 0 and result.args.force != 0) return fail(allocator, "Options '--check' and '--force' cannot be combined. Run 'imx update --help' for usage.", .{});
+                    return .{ .run = .{ .command = .update, .update_mode = if (result.args.check != 0) .check else if (result.args.force != 0) .force else .normal } };
+                },
                 .help => {
                     if (result.positionals[0].len == 0) return .{ .help = null };
                     const target = result.positionals[0][0];
@@ -101,7 +113,7 @@ fn description(command: Command) []const u8 {
         .cat => "Print retained history and the active screen as plain text.\nHistory uses a 10,000-line target and a 2 MiB scrollback budget.\nScrollback limits are applied in complete terminal pages.\n",
         .detach => "Detach all connections from the current session. Run this command inside a session.\nThe shell and its programs keep running. The detach shortcut affects only its own connection.\n",
         .kill => "Terminate the named session, including its shell, foreground jobs and background jobs.\n",
-        .update => "Install the latest published release in the current installation directory.\nRunning sessions keep their programs and history.\n",
+        .update => "Check for a newer published release and install it in the current installation directory.\nMatching versions report 'Already up to date'. Newer installed versions are preserved.\nUse --check to query the version, or --force to install the latest release again.\nRunning sessions keep their programs and history.\n",
         .uninstall => "Terminate the current user's sessions and remove the installation, configuration and shell integration.\n",
         .help => "Show general help or help for a named command.\n",
     };
@@ -119,7 +131,7 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
             else => "",
         } });
         inline for (std.enums.values(Command)) |candidate| {
-            if (value == candidate) try clap.help(writer, clap.Help, parameters(candidate)[0..1], .{ .description_on_new_line = false });
+            if (value == candidate) try clap.help(writer, clap.Help, parameters(candidate)[0..if (candidate == .update) 3 else 1], .{ .description_on_new_line = false });
         }
         if (value == .attach or value == .cat or value == .kill) try writer.writeAll("\nNames contain 1-64 ASCII letters, digits, dots, underscores or hyphens.\nUse '--' before names beginning with '-': imx attach -- -dash\n");
     } else {

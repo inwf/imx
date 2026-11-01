@@ -28,7 +28,7 @@ def wait_for_download_progress(child):
 def test_progress_follows_stderr_terminal(downloaded, operation, redirect):
     if operation == "update":
         assert downloaded.install().returncode == 0
-        invocation = shlex.join([str(downloaded.binary), "update"])
+        invocation = shlex.join([str(downloaded.binary), "update", "--force"])
     else:
         url = f"{downloaded.environment['IMX_RELEASE_BASE_URL']}/download/v{VERSION}/install.sh"
         invocation = f"curl -fsSL {shlex.quote(url)} | bash"
@@ -83,7 +83,7 @@ def test_cancel_download_preserves_installation_and_session(downloaded):
     limit_download_rate(downloaded)
     output = io.StringIO()
     child = pexpect.spawn(
-        str(downloaded.binary), ["update"], env=downloaded.environment,
+        str(downloaded.binary), ["update", "--force"], env=downloaded.environment,
         cwd=str(downloaded.path), encoding="utf-8", timeout=20,
     )
     child.logfile_read = output

@@ -17,7 +17,8 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, kind: []const u8, prefix: [
     defer preferences.deinit(allocator);
     if (!preferences.completion_enabled) return;
     if (options) {
-        for (cli.help_options) |option| try candidate(option, prefix);
+        const values = if (std.mem.eql(u8, kind[8..], "update")) &cli.update_options else &cli.help_options;
+        for (values) |option| try candidate(option, prefix);
         return;
     }
     if (std.mem.eql(u8, kind, "commands") or std.mem.eql(u8, kind, "help")) {

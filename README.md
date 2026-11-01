@@ -197,7 +197,7 @@ Syntax errors, unknown options, and wrong value types are reported when you atta
 | `imx cat dev`               | Print retained history and the active screen as text         |
 | `imx detach`                | Run inside a session to detach all of its connections        |
 | `imx kill dev`              | Terminate the session, including its shell, foreground jobs, and background jobs |
-| `imx update`                | Install the latest published release in the current installation directory |
+| `imx update`                | Check for and install a newer published release in the current installation directory |
 | `imx uninstall`             | Terminate the current user's sessions and remove the installation |
 | `imx -v`, `imx --version`    | Print the version                                            |
 | `imx help`, `imx --help`     | Print help; `imx -h` also works                              |
@@ -255,10 +255,14 @@ The runtime directory is chosen in this order: `$IMX_DIR`, then `$XDG_RUNTIME_DI
 
 ```bash
 imx update
+imx update --check
+imx update --force
 imx uninstall
 ```
 
-`imx update` installs the latest published release into the current installation prefix, detects the architecture, and verifies SHA256 checksums. It can run inside or outside a session. Existing backends keep running the version they started with, preserving their programs and history; newly created independent backends use the updated executable.
+`imx update` checks the latest published version and installs it when it is newer. Matching versions print `Already up to date`; an installed version newer than the published release is preserved. `imx update --check` only reports the result, without downloading a package, creating configuration or runtime files, or requesting administrator permissions. Successful checks exit with status 0, including when an update is available. `imx update --force` installs the latest published release even when the installed version is equal or newer. `--check` and `--force` cannot be combined.
+
+Installation uses the current installation prefix, detects the architecture, and verifies SHA256 checksums. The installer uses the exact release tag found during the version check. Updates can run inside or outside a session. Existing backends keep running the version they started with, preserving their programs and history; newly created independent backends use the updated executable.
 
 When upgrading from v0.4.1, the existing shared backend continues to manage its runtime directory until all of its sessions end. Sessions created afterwards use independent backends. See [updating](docs/usage.md#更新) for this transition and [session switching](docs/usage.md#切换会话) for client and backend version requirements.
 

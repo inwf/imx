@@ -136,7 +136,7 @@ def main():
         for path in completions:
             assert path.stat().st_mode & 0o777 == 0o644
         inode = binary.stat().st_ino
-        checked("imx", "update", env=environment)
+        checked("imx", "update", "--force", env=environment)
         assert binary.stat().st_ino != inode
         checked("imx", "uninstall", env=environment)
         assert not binary.exists()
@@ -192,6 +192,10 @@ def main():
             "keybindings": {"detach": {"key": "\\", "ctrl": True}},
         }
         assert list(configuration.parent.iterdir()) == [configuration]
+        inode = binary.stat().st_ino
+        assert "Already up to date" in command(child, "imx update --check")
+        assert "Already up to date" in command(child, "imx update")
+        assert binary.stat().st_ino == inode
         if case == "preserve-files":
             command(child, f"printf 'USER_DOCUMENT' | sudo tee {notes} > /dev/null")
         if case == "other-user":
@@ -229,7 +233,7 @@ def main():
                     assert completed == "imx attach ", f"{shell}: {completed!r}\n{terminal.log.getvalue()!r}"
                     assert terminal.complete("imx attach d\t") == "imx attach dev "
             command(child, "sudo -k")
-            installed(child, "imx update")
+            installed(child, "imx update --force")
             for shell in ("bash", "zsh", "fish"):
                 with CompletionShell(environment, shell, user=USERNAME, fixtures=Path("/mnt/tests/completion")) as terminal:
                     assert terminal.complete("imx c\t") == "imx cat "
@@ -238,7 +242,7 @@ def main():
             inode = binary.stat().st_ino
             prompt = "INNER_PROMPT> " if case == "update-inside" else "SYSTEM_PROMPT> "
             command(child, "sudo -k", prompt)
-            installed(child, download if case == "reinstall" else "imx update", prompt)
+            installed(child, download if case == "reinstall" else "imx update --force", prompt)
             assert binary.stat().st_ino != inode
             assert psutil.pid_exists(shell_pid)
             assert "SYSTEM_HISTORY" in command(child, "imx cat dev", prompt)
@@ -251,7 +255,7 @@ def main():
         if case in ("cancel-install", "cancel-uninstall", "cancel-update"):
             inode = binary.stat().st_ino
             command(child, "sudo -k")
-            invocation = download if case == "cancel-install" else "imx update" if case == "cancel-update" else "imx uninstall"
+            invocation = download if case == "cancel-install" else "imx update --force" if case == "cancel-update" else "imx uninstall"
             child.sendline(invocation)
             child.expect_exact(f"[sudo] password for {USERNAME}:")
             child.sendcontrol("c")

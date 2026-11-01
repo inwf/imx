@@ -77,6 +77,8 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
         assert terminal.complete("imx --ver\t") == "imx --version "
         assert terminal.complete("imx --he\t") == "imx --help "
         assert terminal.complete("imx attach --he\t") == "imx attach --help "
+        assert terminal.complete("imx update --ch\t") == "imx update --check "
+        assert terminal.complete("imx update --fo\t") == "imx update --force "
         assert terminal.complete("imx help at\t") == "imx help attach "
         assert terminal.complete("imx attach -- -d\t") == "imx attach -- -dash "
         assert terminal.complete("imx attach beta a\t") == "imx attach beta a"
@@ -109,7 +111,7 @@ def test_curl_install_update_and_uninstall_completion(downloaded, shell):
     with CompletionShell(downloaded.environment, shell, prefix) as terminal:
         assert terminal.complete("imx a\t") == "imx attach "
         assert terminal.complete("imx attach d\t") == "imx attach download-live "
-        downloaded.run("update")
+        downloaded.run("update", "--force")
         assert terminal.complete("imx cat d\t") == "imx cat download-live "
     downloaded.run("uninstall")
     session.expect(pexpect.EOF)

@@ -31,7 +31,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const args = try init.args.toSlice(arena.allocator());
-    var threaded = std.Io.Threaded.init(allocator, .{ .async_limit = .nothing, .concurrent_limit = .nothing });
+    var threaded = std.Io.Threaded.init(allocator, .{ .async_limit = .nothing, .concurrent_limit = .nothing, .environ = init.environ });
     defer threaded.deinit();
     const io = threaded.io();
     const command = if (args.len > 1) args[1] else "list";
@@ -46,7 +46,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     };
     const tag: protocol.Tag = switch (invocation.command) {
         .uninstall => return uninstall.run(allocator, io, args[0]),
-        .update => return update.run(allocator, io, init.environ),
+        .update => return update.run(allocator, io, init.environ, invocation.update_mode),
         .attach => .attach,
         .list, .ls => .list,
         .cat => .cat,
@@ -96,4 +96,5 @@ test {
     _ = @import("terminal.zig");
     _ = @import("protocol.zig");
     _ = @import("settings.zig");
+    _ = @import("update.zig");
 }
