@@ -166,7 +166,7 @@ fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.C
     return .{ .ready = fd };
 }
 
-pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name: []const u8, root: *const config.Config, records: *const registry.Registry) !void {
+pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name: []const u8, root: *const config.Config, records: *const registry.Registry, bindings: keyboard.Bindings) !void {
     var fd = initial_fd;
     defer sys.close(fd);
     const payload = try attachPayload(allocator, io, name);
@@ -206,14 +206,21 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
     defer reader.deinit(allocator);
     var connected = true;
     var detaching = false;
-    var keys: keyboard.Input = .{};
+    var keys: keyboard.Input = .{ .bindings = bindings };
     var prepared: ?c_int = null;
     defer if (prepared) |next| sys.close(next);
     var switch_deadline: i64 = 0;
     client_loop: while (connected or output.pending().len > 0) {
         if (connected) {
             if (keys.deadline) |deadline| {
-                if (try sys.monotonicMilliseconds() >= deadline) try input.message(allocator, .input, keys.takePending());
+                if (try sys.monotonicMilliseconds() >= deadline) {
+                    const result = keys.expire();
+                    if (result.bytes.len != 0) try input.message(allocator, .input, result.bytes);
+                    if (result.action != null) {
+                        detaching = true;
+                        if (input.pending().len == 0) return;
+                    }
+                }
             }
         }
         var pollfds = [_]c.struct_pollfd{
@@ -304,7 +311,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                         reader = .{};
                         input.deinit(allocator);
                         input = .{};
-                        keys = .{};
+                        keys = .{ .bindings = bindings };
                         output.deinit(allocator);
                         output = .{};
                         try output.append(allocator, display.reset);

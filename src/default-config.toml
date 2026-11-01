@@ -12,3 +12,10 @@ created_format = "%m-%d %H:%M:%S"
 # 在 Bash、Zsh 和 Fish 中按 Tab 补全 imx 命令和已有会话名称。
 # Enable Tab completion for imx commands and existing session names in Bash, Zsh, and Fish.
 enabled = true
+
+[keybindings]
+# 分离当前连接。key 指定字符或按键名称，ctrl、alt、shift、super 指定修饰键。
+# Detach this connection. Set key to a character or key name and use ctrl, alt, shift, super for modifiers.
+# 修改后重新连接生效。例如 { key = 'x', ctrl = true } 表示 Ctrl+x。
+# Reattach to apply changes. For example, { key = 'x', ctrl = true } means Ctrl+x.
+detach = { key = '\', ctrl = true }

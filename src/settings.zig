@@ -2,10 +2,12 @@ const std = @import("std");
 const config = @import("config.zig");
 const sys = @import("sys.zig");
 const toml = @import("toml");
+const keyboard = @import("keyboard.zig");
 
 pub const Settings = struct {
     show_session: bool = true,
     completion_enabled: bool = true,
+    keybindings: keyboard.Bindings = .{},
     created_format: ?[:0]u8 = null,
     file_missing: bool = false,
 
@@ -72,7 +74,7 @@ fn parse(allocator: std.mem.Allocator, contents: []const u8) !Settings {
     const root = result.toptab;
     for (0..@intCast(root.u.tab.size)) |index| {
         const key = std.mem.span(root.u.tab.key[index]);
-        if (!std.mem.eql(u8, key, "prompt") and !std.mem.eql(u8, key, "list") and !std.mem.eql(u8, key, "completion")) return error.UnknownConfigurationOption;
+        if (!std.mem.eql(u8, key, "prompt") and !std.mem.eql(u8, key, "list") and !std.mem.eql(u8, key, "completion") and !std.mem.eql(u8, key, "keybindings")) return error.UnknownConfigurationOption;
     }
     var preferences: Settings = .{};
     const prompt = toml.toml_get(root, "prompt");
@@ -99,6 +101,18 @@ fn parse(allocator: std.mem.Allocator, contents: []const u8) !Settings {
             preferences.completion_enabled = enabled.u.boolean;
         }
     }
+    const bindings = toml.toml_get(root, "keybindings");
+    if (bindings.type != toml.TOML_UNKNOWN) {
+        if (bindings.type != toml.TOML_TABLE) return error.InvalidKeybindingsConfiguration;
+        for (0..@intCast(bindings.u.tab.size)) |index| {
+            const name = std.mem.span(bindings.u.tab.key[index]);
+            if (std.meta.stringToEnum(keyboard.Action, name) == null) return error.UnknownConfigurationOption;
+        }
+        inline for (std.enums.values(keyboard.Action)) |action| {
+            const binding = toml.toml_get(bindings, @tagName(action));
+            if (binding.type != toml.TOML_UNKNOWN) @field(preferences.keybindings, @tagName(action)) = try parseBinding(binding);
+        }
+    }
     const listing = toml.toml_get(root, "list");
     if (listing.type != toml.TOML_UNKNOWN) {
         if (listing.type != toml.TOML_TABLE) return error.InvalidListConfiguration;
@@ -116,6 +130,32 @@ fn parse(allocator: std.mem.Allocator, contents: []const u8) !Settings {
     return preferences;
 }
 
+fn parseBinding(value: toml.toml_datum_t) !keyboard.Binding {
+    if (value.type != toml.TOML_TABLE) return error.KeybindingMustBeTable;
+    const modifiers = .{ "ctrl", "alt", "shift", "super" };
+    for (0..@intCast(value.u.tab.size)) |index| {
+        const field = std.mem.span(value.u.tab.key[index]);
+        if (std.mem.eql(u8, field, "key")) continue;
+        var known = false;
+        inline for (modifiers) |modifier| {
+            if (std.mem.eql(u8, field, modifier)) known = true;
+        }
+        if (!known) return error.UnknownConfigurationOption;
+    }
+    const key = toml.toml_get(value, "key");
+    if (key.type == toml.TOML_UNKNOWN) return error.KeybindingKeyRequired;
+    if (key.type != toml.TOML_STRING) return error.KeybindingKeyMustBeString;
+    var binding: keyboard.Binding = .{ .codepoint = try keyboard.Binding.keyCodepoint(key.u.str.ptr[0..@intCast(key.u.str.len)]) };
+    inline for (modifiers) |modifier| {
+        const enabled = toml.toml_get(value, modifier);
+        if (enabled.type != toml.TOML_UNKNOWN) {
+            if (enabled.type != toml.TOML_BOOLEAN) return error.KeybindingModifierMustBeBoolean;
+            @field(binding.mods, modifier) = enabled.u.boolean;
+        }
+    }
+    return binding;
+}
+
 test "default configuration matches built-in settings" {
     const allocator = std.testing.allocator;
     var preferences = try parse(allocator, @embedFile("default-config.toml"));
@@ -123,6 +163,7 @@ test "default configuration matches built-in settings" {
     const defaults: Settings = .{};
     try std.testing.expectEqual(defaults.show_session, preferences.show_session);
     try std.testing.expectEqual(defaults.completion_enabled, preferences.completion_enabled);
+    try std.testing.expectEqualDeep(defaults.keybindings, preferences.keybindings);
     try std.testing.expectEqualStrings(defaults.createdFormat(), preferences.createdFormat());
 }
 
@@ -157,4 +198,17 @@ test "TOML completion settings default to enabled and validate types" {
     try std.testing.expectError(error.InvalidCompletionConfiguration, parse(allocator, "completion = true\n"));
     try std.testing.expectError(error.CompletionEnabledMustBeBoolean, parse(allocator, "[completion]\nenabled = 'true'\n"));
     try std.testing.expectError(error.UnknownConfigurationOption, parse(allocator, "[completion]\nenable = true\n"));
+}
+
+test "TOML keybindings retain defaults and read explicit modifiers" {
+    const allocator = std.testing.allocator;
+    const defaults: Settings = .{};
+    try std.testing.expectEqualDeep(defaults.keybindings, (try parse(allocator, "")).keybindings);
+    try std.testing.expectEqualDeep(defaults.keybindings, (try parse(allocator, "[keybindings]\n")).keybindings);
+    const preferences = try parse(allocator, "[keybindings]\ndetach = { key = 'X', ctrl = true, alt = true, shift = true, super = true }\n");
+    try std.testing.expectEqual(@as(u21, 'x'), preferences.keybindings.detach.codepoint);
+    try std.testing.expectEqual(keyboard.Modifiers{ .ctrl = true, .alt = true, .shift = true, .super = true }, preferences.keybindings.detach.mods);
+    const plain = try parse(allocator, "[keybindings.detach]\nkey = 'F5'\n");
+    try std.testing.expectEqual(keyboard.Modifiers{}, plain.keybindings.detach.mods);
+    try std.testing.expectEqual(try keyboard.Binding.keyCodepoint("f5"), plain.keybindings.detach.codepoint);
 }

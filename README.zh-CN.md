@@ -57,7 +57,7 @@
   <tr>
     <td valign="top">
       <h3>一个配置文件</h3>
-      首次使用时自动创建包含默认值和注释的 TOML 文件，用于设置会话提示符、补全和 <code>CREATED</code> 列的时间格式。语法、选项名称和取值类型都会检查。
+      首次使用时自动创建包含默认值和注释的 TOML 文件，用于设置会话提示符、补全、快捷键和 <code>CREATED</code> 列的时间格式。语法、选项名称和取值类型都会检查。
     </td>
     <td valign="top">
       <h3>会话隔离</h3>
@@ -136,7 +136,7 @@ zig build
 imx attach dev
 ```
 
-照常运行命令。关闭终端、断开 SSH 连接或按下 **`Ctrl+\`** 会分离当前连接，shell 和其中的程序继续运行。
+照常运行命令。关闭终端、断开 SSH 连接或按下默认快捷键 **`Ctrl+\`** 会分离当前连接，shell 和其中的程序继续运行。可以通过配置文件中的 `keybindings.detach` 修改快捷键。
 
 应用启用 Kitty 键盘协议或 xterm 的 modifyOtherKeys 模式时，该快捷键同样有效。启用括号粘贴模式时，粘贴内容会原样传递，不会触发快捷键。
 
@@ -173,11 +173,15 @@ created_format = "%m-%d %H:%M:%S"
 
 [completion]
 enabled = true
+
+[keybindings]
+detach = { key = '\', ctrl = true }
 ```
 
 - **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
+- **`keybindings.detach`**：设置分离当前连接的快捷键。例如，`{ key = 'x', ctrl = true }` 表示 `Ctrl+x`，`{ key = 'F12' }` 表示 F12。`key` 接受单个字符或支持的按键名称；`ctrl`、`alt`、`shift`、`super` 使用布尔值，在显式配置的快捷键中默认为 `false`。ASCII 字母名称不区分大小写，需要 Shift 时设置 `shift = true`。修改后重新连接生效，同一连接切换会话时保留当前设置。支持的按键名称及终端编码行为见[快捷键配置](docs/usage.md#快捷键配置)。
 
 语法错误、未知选项和取值类型错误会在进入会话或查看列表时报告。初始化文件的位置和修改方式见使用说明的[配置部分](docs/usage.md#配置文件与会话提示符)。
 
@@ -200,7 +204,7 @@ enabled = true
 会话的生命周期：
 
 1. **进入。** 使用 `imx attach dev` 创建 `dev` 时，启动该会话的后台进程，并使用当前工作目录、环境变量和 `$SHELL` 运行 shell。进入已有会话时保留其状态。
-2. **分离。** 关闭终端、连接断开、按下 `Ctrl+\`，或在会话内部执行 `imx detach`，会话都继续运行。
+2. **分离。** 关闭终端、连接断开、按下配置的快捷键（默认 `Ctrl+\`），或在会话内部执行 `imx detach`，会话都继续运行。
 3. **返回或结束。** `imx attach dev` 恢复屏幕和历史；shell 退出或执行 `imx kill dev` 会结束会话。
 
 会话列表包含 `NAME`、`PID`、`CLIENTS`、`DIRECTORY`、`CREATED` 和 `STATUS`。终端输出根据标题和会话内容计算列宽，管道和重定向输出使用制表符分隔。`DIRECTORY` 显示会话 shell 当前的实际目录，随 `cd` 和目录重命名更新。特殊字符采用转义形式，以保持输出结构，详细规则见[会话列表](docs/usage.md#会话列表)。

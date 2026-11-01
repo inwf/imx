@@ -57,7 +57,7 @@ Each session has an independent backend process with one event loop thread. The 
   <tr>
     <td valign="top">
       <h3>One configuration file</h3>
-      A TOML file with commented defaults is created on first use. It sets the session prompt, completion, and the <code>CREATED</code> time format. Syntax, option names, and value types are checked.
+      A TOML file with commented defaults is created on first use. It sets the session prompt, completion, keybindings, and the <code>CREATED</code> time format. Syntax, option names, and value types are checked.
     </td>
     <td valign="top">
       <h3>Session isolation</h3>
@@ -137,7 +137,7 @@ The default build produces a static executable using musl and writes the complet
 imx attach dev
 ```
 
-Run commands as usual. Closing the terminal, losing the SSH connection, or pressing **`Ctrl+\`** detaches your connection while the shell and its programs keep running.
+Run commands as usual. Closing the terminal, losing the SSH connection, or pressing the default shortcut **`Ctrl+\`** detaches your connection while the shell and its programs keep running. Set `keybindings.detach` in the configuration file to change the shortcut.
 
 The shortcut also works in applications that enable the Kitty keyboard protocol or xterm's modifyOtherKeys mode. Pasted content is passed through without triggering shortcuts when bracketed paste is active.
 
@@ -174,11 +174,15 @@ created_format = "%m-%d %H:%M:%S"
 
 [completion]
 enabled = true
+
+[keybindings]
+detach = { key = '\', ctrl = true }
 ```
 
 - **`prompt.show_session`** shows `[dev] ` before the prompt of new Bash, Zsh, and Fish shells inside sessions, keeping the prompt's path, colors, and theme. The next `imx attach` installs the integration between `# BEGIN imx shell integration` and `# END imx shell integration` markers in your shell startup files. Set the option to `false` and attach again to remove it. The default is `true`, including when the option is omitted.
 - **`list.created_format`** formats the `CREATED` column with `strftime` fields. The default shows `10-30 14:05:09`; `%Y-%m-%d %H:%M:%S` adds the year.
 - **`completion.enabled`** switches Tab completion of commands and session names. The default is `true`.
+- **`keybindings.detach`** sets the shortcut that detaches the current connection. For example, `{ key = 'x', ctrl = true }` uses `Ctrl+x`, and `{ key = 'F12' }` uses F12. `key` accepts a single character or a supported key name; `ctrl`, `alt`, `shift`, and `super` are booleans and default to `false` within an explicit binding. ASCII letter names are case-insensitive; use `shift = true` to require Shift. Changes apply when you reconnect, and switching sessions keeps the current connection's binding. See [keybindings](docs/usage.md#快捷键配置) for supported names and terminal encoding behavior.
 
 Syntax errors, unknown options, and wrong value types are reported when you attach or list sessions. The [configuration section](docs/usage.md#配置文件与会话提示符) of the usage guide lists the startup files and describes how they are edited.
 
@@ -201,7 +205,7 @@ Syntax errors, unknown options, and wrong value types are reported when you atta
 A session's life:
 
 1. **Attach.** Creating `dev` with `imx attach dev` starts its backend and runs the shell selected by `$SHELL` with the current working directory and environment. Attaching to an existing session preserves its state.
-2. **Detach.** Closing the terminal, a dropped connection, `Ctrl+\`, or `imx detach` inside the session all leave the session running.
+2. **Detach.** Closing the terminal, a dropped connection, the configured shortcut (default `Ctrl+\`), or `imx detach` inside the session all leave the session running.
 3. **Return or finish.** `imx attach dev` restores the screen and history. The session ends when the shell exits or with `imx kill dev`.
 
 Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, `CREATED`, and `STATUS`. Terminal output uses column widths calculated from the headings and session contents; piped or redirected output is tab-separated. `DIRECTORY` shows the session shell's current actual directory, following `cd` and directory renames. Special characters are escaped to preserve the output structure; see [session lists](docs/usage.md#会话列表) for details.

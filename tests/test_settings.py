@@ -17,6 +17,7 @@ DEFAULT_SETTINGS = {
     "prompt": {"show_session": True},
     "list": {"created_format": "%m-%d %H:%M:%S"},
     "completion": {"enabled": True},
+    "keybindings": {"detach": {"key": "\\", "ctrl": True}},
 }
 
 
@@ -185,6 +186,34 @@ def test_invalid_list_configuration_fails_before_creating_runtime(sessions, valu
         assert result.returncode == 1
         assert error in result.stderr
         assert result.stdout == ""
+    assert not sessions.runtime.exists()
+    assert not (sessions.home / ".local/state/imx").exists()
+
+
+@pytest.mark.parametrize("value, error", [
+    ("keybindings = false", "InvalidKeybindingsConfiguration"),
+    ("[keybindings]\ndetach = 'Ctrl+x'", "KeybindingMustBeTable"),
+    ("[keybindings]\nunknown = { key = 'x' }", "UnknownConfigurationOption"),
+    ("[keybindings]\ndetach = {}", "KeybindingKeyRequired"),
+    ("[keybindings]\ndetach = { key = 1 }", "KeybindingKeyMustBeString"),
+    ("[keybindings]\ndetach = { key = '' }", "InvalidKeybindingKey"),
+    ("[keybindings]\ndetach = { key = 'unknown' }", "InvalidKeybindingKey"),
+    ("[keybindings]\ndetach = { key = 'F13' }", "InvalidKeybindingKey"),
+    ("[keybindings]\ndetach = { key = 'ab' }", "InvalidKeybindingKey"),
+    ('[keybindings]\ndetach = { key = "\\u0000" }', "InvalidKeybindingKey"),
+    ("[keybindings]\ndetach = { key = 'x', ctrl = 'true' }", "KeybindingModifierMustBeBoolean"),
+    ("[keybindings]\ndetach = { key = 'x', alt = 1 }", "KeybindingModifierMustBeBoolean"),
+    ("[keybindings]\ndetach = { key = 'x', control = true }", "UnknownConfigurationOption"),
+])
+def test_invalid_keybindings_fail_before_creating_runtime(sessions, value, error):
+    path = configuration(sessions)
+    path.parent.mkdir(parents=True)
+    path.write_text(value + "\n")
+    result = sessions.run("list", check=False)
+    path.unlink()
+    assert result.returncode == 1
+    assert error in result.stderr
+    assert result.stdout == ""
     assert not sessions.runtime.exists()
     assert not (sessions.home / ".local/state/imx").exists()
 

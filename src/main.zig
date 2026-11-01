@@ -54,7 +54,8 @@ fn execute(init: std.process.Init.Minimal) !void {
             \\  imx -v               Print version
             \\  imx help             Print help
             \\
-            \\Close the terminal or press Ctrl+\ to detach the current client.
+            \\Close the terminal or use the detach shortcut (default: Ctrl+\).
+            \\Configure it with keybindings.detach in config.toml.
             \\Inside a session, attach switches the active connection to the target session.
             \\Names contain 1-64 ASCII letters, digits, dots, underscores or hyphens.
             \\History uses a 10,000-line target and a 2 MiB scrollback budget.
@@ -121,7 +122,7 @@ fn execute(init: std.process.Init.Minimal) !void {
         }
     }
     const fd = try connection.open(allocator, io, &root, name, tag == .attach);
-    if (tag == .attach) return client.attach(allocator, io, fd, name, &root, &records);
+    if (tag == .attach) return client.attach(allocator, io, fd, name, &root, &records, preferences.keybindings);
     defer sys.close(fd);
     return client.command(allocator, fd, tag, name, preferences.createdFormat());
 }

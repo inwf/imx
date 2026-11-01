@@ -4,7 +4,7 @@
 
 `imx attach dev` 创建或进入 `dev` 会话。新会话使用创建时的工作目录、环境变量和 `$SHELL`；未设置 `$SHELL` 时使用 `/bin/sh`。进入会话需要交互式终端。
 
-关闭终端、断开 SSH 连接或按下 `Ctrl+\` 会分离当前连接。会话中的 shell 和程序继续运行，重新执行 `imx attach dev` 会恢复屏幕和保留的历史。
+关闭终端、断开 SSH 连接或按下配置的快捷键（默认 `Ctrl+\`）会分离当前连接。会话中的 shell 和程序继续运行，重新执行 `imx attach dev` 会恢复屏幕和保留的历史。
 
 在会话内部执行 `imx detach` 会分离该会话的全部连接。退出会话中的 shell 会结束会话。`imx kill dev` 会终止并删除指定会话。
 
@@ -22,7 +22,7 @@ imx attach dev2
 
 `dev2` 已经存在时恢复其屏幕、历史和程序状态；尚未存在时，使用执行命令时的工作目录、环境变量和 `$SHELL` 创建。`dev1` 的 shell、程序、环境变量和历史继续保留。在 `dev2` 中执行 `imx attach dev1` 可以返回。目标名称与当前会话相同时，命令直接成功返回。
 
-多个终端连接同一会话时，切换最近发送输入的终端，其他终端继续连接原会话。目标会话使用切换终端的实际尺寸。切换完成后，`Ctrl+\` 分离当前终端，`imx detach` 分离目标会话的全部连接。
+多个终端连接同一会话时，切换最近发送输入的终端，其他终端继续连接原会话。目标会话使用切换终端的实际尺寸。切换完成后，配置的快捷键分离当前终端，`imx detach` 分离目标会话的全部连接。
 
 目标名称无效、目标后台连接超时或者新会话的 shell 启动失败时，命令报告错误，当前终端继续连接原会话。切换命令需要在所属会话的 Linux session 内运行。
 
@@ -57,7 +57,27 @@ created_format = "%m-%d %H:%M:%S"
 
 [completion]
 enabled = true
+
+[keybindings]
+detach = { key = '\', ctrl = true }
 ```
+
+### 快捷键配置
+
+`keybindings.detach` 设置分离当前连接的快捷键，默认是 `Ctrl+\`。省略该选项时使用默认值。例如，改为 `Ctrl+x`：
+
+```toml
+[keybindings]
+detach = { key = 'x', ctrl = true }
+```
+
+`key` 为必填字符串，可以使用单个 Unicode 字符，或者 `Enter`、`Tab`、`Escape`、`Space`、`Backspace`、`Insert`、`Delete`、`Left`、`Right`、`Up`、`Down`、`Page_Up`、`Page_Down`、`Home`、`End`、`F1` 至 `F12`。ASCII 字母和按键名称不区分大小写。`ctrl`、`alt`、`shift`、`super` 为可选布尔值，在显式配置的快捷键中默认为 `false`；需要 Shift 时设置 `shift = true`。例如，`{ key = 'x', ctrl = true, shift = true }` 表示 `Ctrl+Shift+x`，`{ key = 'F12' }` 表示 F12。
+
+配置由客户端在建立连接时读取。修改后分离并重新连接即可生效，会话中的程序继续运行。同一连接切换会话时保留当前快捷键设置；同时连接的其他客户端继续使用各自建立连接时读取的设置。已有配置文件可以手动添加 `[keybindings]` 部分。
+
+快捷键支持普通终端、Kitty 键盘协议和 xterm 的 modifyOtherKeys 编码。终端需要能够发送所配置组合的编码；某些普通终端无法区分 `Ctrl+Shift+x` 与 `Ctrl+x`，此类组合需要扩展键盘协议。普通编码中的 `Ctrl+i` 与 Tab、`Ctrl+m` 与 Enter、`Ctrl+h` 与部分终端的 Backspace 共用字节，因此配置其中一个组合时，共用编码也会触发。单独的 Escape 等待 100 毫秒，以便识别以 Escape 开头的组合键。
+
+启用括号粘贴模式时，粘贴内容原样传递。未绑定的输入和按键释放事件原样传递。未知选项、无效按键名称、缺少 `key` 或类型错误会在进入会话或查看列表时报告。
 
 ### CREATED 时间格式
 
