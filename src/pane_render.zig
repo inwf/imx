@@ -36,6 +36,7 @@ pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal,
     for (corners, 0..) |grapheme, i| put(screen, @as(i32, rect.x) + (if (i % 2 == 0) @as(i32, 0) else rect.width - 1) - offset[0], @as(i32, rect.y) + (if (i < 2) @as(i32, 0) else rect.height - 1) - offset[1], .{ .char = .{ .grapheme = grapheme }, .style = border });
     for (title[0..@min(title.len, rect.width - 4)], 0..) |_, i| put(screen, @as(i32, rect.x) + 2 + @as(i32, @intCast(i)) - offset[0], @as(i32, rect.y) - offset[1], .{ .char = .{ .grapheme = title[i..][0..1] }, .style = border });
     const rows = state.row_data.items(.cells);
+    const selections = state.row_data.items(.selection);
     for (rows, 0..) |cells, y| {
         if (y >= rect.height - 2) break;
         for (0..cells.len) |x| {
@@ -53,6 +54,7 @@ pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal,
                 else => {},
             }
             const width: u8 = if (cell.raw.wide == .wide) 2 else 1;
+            const highlighted = if (selections[y]) |range| x >= range[0] and x <= range[1] else false;
             const sx = @as(i32, rect.x) + 1 + @as(i32, @intCast(x)) - offset[0];
             const sy = @as(i32, rect.y) + 1 + @as(i32, @intCast(y)) - offset[1];
             const value: vaxis.Cell = .{
@@ -65,7 +67,7 @@ pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal,
                     .dim = style.flags.faint,
                     .italic = style.flags.italic,
                     .blink = style.flags.blink,
-                    .reverse = style.flags.inverse != term.modes.get(.reverse_colors),
+                    .reverse = (style.flags.inverse != term.modes.get(.reverse_colors)) != highlighted,
                     .invisible = style.flags.invisible,
                     .strikethrough = style.flags.strikethrough,
                     .ul_style = switch (style.flags.underline) {

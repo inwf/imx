@@ -10,6 +10,7 @@ const terminal = @import("terminal.zig");
 const display = @import("display.zig");
 const context = @import("pane_context.zig");
 const render = @import("pane_render.zig");
+const selection = @import("pane_selection.zig");
 const Rect = render.Rect;
 const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
@@ -146,6 +147,7 @@ const Pane = struct {
     term: vt.Terminal,
     stream: Stream,
     state: vt.RenderState = .empty,
+    selection: selection.State = .{},
     hold_until: ?i64 = null,
     input: protocol.Queue = .{},
     detaching: bool = false,
@@ -161,6 +163,7 @@ const Pane = struct {
         if (self.closing) |*request| request.deinit(allocator);
         sys.close(self.listener);
         self.stream.deinit();
+        self.selection.deinit(&self.term);
         self.term.deinit(allocator);
         self.state.deinit(allocator);
         self.input.deinit(allocator);
@@ -291,6 +294,7 @@ const App = struct {
     focused: *Pane = undefined,
     mouse_pane: ?*Pane = null,
     resize_drag: ?struct { node: ?*Node, grab_offset: i32 } = null,
+    selection_drag: ?struct { pane: ?*Pane } = null,
     composed: bool = false,
     dirty: bool = false,
     offset: [2]u16 = .{ 0, 0 },
@@ -298,6 +302,7 @@ const App = struct {
     focused_border_color: vaxis.Color,
     output: protocol.Queue = .{ .limit = 16 * 1024 * 1024 },
     keys: keyboard.Input,
+    keyboard_flags: u5 = 5,
     status: ?[]u8 = null,
 
     fn create(self: *App, cwd: []const u8, size: sys.Size, session: ?[]const u8) !*Pane {
@@ -346,6 +351,7 @@ const App = struct {
     fn focus(self: *App, pane: *Pane) !void {
         if (self.focused == pane) return;
         self.cancelResize();
+        self.cancelSelection();
         if (self.focused.term.modes.get(.focus_event)) try self.focused.input.append(self.allocator, "\x1b[O");
         self.focused = pane;
         if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, "\x1b[I");
@@ -395,6 +401,7 @@ const App = struct {
 
     fn remove(self: *App, index: usize) !void {
         self.cancelResize();
+        self.cancelSelection();
         const pane = self.panes.items[index];
         if (self.panes.items.len > 1) _ = self.root.remove(self.allocator, pane);
         _ = self.panes.orderedRemove(index);
@@ -433,11 +440,12 @@ const App = struct {
         first.* = .{ .rect = rect, .content = .{ .pane = selected } };
         second.* = .{ .rect = rect, .content = .{ .pane = pane } };
         self.cancelResize();
+        self.cancelSelection();
         node.content = .{ .split = .{ .axis = axis, .first = first, .second = second } };
         if (!self.composed) {
             self.composed = true;
             for (self.panes.items) |value| enableEffects(value);
-            try self.output.append(self.allocator, display.reset ++ "\x1b[?1049h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[>4;2m\x1b[>31u");
+            try self.output.append(self.allocator, display.reset ++ "\x1b[?1049h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[>4;2m\x1b[>5u");
             self.vx.state.alt_screen = true;
             var writer: std.Io.Writer.Allocating = .init(self.allocator);
             defer writer.deinit();
@@ -454,6 +462,12 @@ const App = struct {
     }
 
     fn draw(self: *App) !void {
+        const flags = self.focused.term.screens.active.kitty_keyboard.current().int() | @as(u5, 5);
+        if (flags != self.keyboard_flags) {
+            var buffer: [16]u8 = undefined;
+            try self.output.append(self.allocator, try std.fmt.bufPrint(&buffer, "\x1b[={d}u", .{flags}));
+            self.keyboard_flags = flags;
+        }
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
         const frame = arena.allocator();
@@ -502,12 +516,23 @@ const App = struct {
         if (!self.composed) return pane.input.append(self.allocator, result.bytes);
         if (result.event) |event| switch (event) {
             .paste_start, .paste_end => {
+                if (event == .paste_start) {
+                    self.cancelSelection();
+                    pane.selection.cancel(&pane.term);
+                    pane.term.screens.active.clearSelection();
+                    self.dirty = true;
+                }
                 if (pane.term.modes.get(.bracketed_paste)) try pane.input.append(self.allocator, result.bytes);
                 return;
             },
             .key_press, .key_release => {
                 const key = if (event == .key_press) event.key_press else event.key_release;
-                pane.term.scrollViewport(.bottom);
+                if (event == .key_press) {
+                    self.cancelSelection();
+                    pane.selection.cancel(&pane.term);
+                    pane.term.screens.active.clearSelection();
+                    pane.term.scrollViewport(.bottom);
+                }
                 var writer: std.Io.Writer.Allocating = .init(self.allocator);
                 defer writer.deinit();
                 try encodeKey(&writer.writer, key, event == .key_release, &pane.term);
@@ -516,7 +541,10 @@ const App = struct {
                 return;
             },
             .focus_in, .focus_out => {
-                if (event == .focus_out) self.cancelResize();
+                if (event == .focus_out) {
+                    self.cancelResize();
+                    self.cancelSelection();
+                }
                 if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, result.bytes);
                 return;
             },
@@ -529,11 +557,34 @@ const App = struct {
         if (self.resize_drag) |*drag| drag.node = null;
     }
 
+    fn cancelSelection(self: *App) void {
+        if (self.selection_drag) |*drag| {
+            if (drag.pane) |pane| pane.selection.cancel(&pane.term);
+            drag.pane = null;
+        }
+    }
+
+    fn copySelection(self: *App, pane: *Pane) !void {
+        const screen = pane.term.screens.active;
+        const sel = screen.selection orelse return;
+        const text = try screen.selectionString(self.allocator, .{ .sel = sel });
+        defer self.allocator.free(text);
+        if (text.len == 0) return;
+        const encoder = std.base64.standard.Encoder;
+        const encoded = try self.allocator.alloc(u8, encoder.calcSize(text.len));
+        defer self.allocator.free(encoded);
+        try self.output.append(self.allocator, "\x1b]52;c;");
+        try self.output.append(self.allocator, encoder.encode(encoded, text));
+        try self.output.append(self.allocator, "\x1b\\");
+    }
+
     fn handleMouse(self: *App, mouse: vaxis.Mouse) !void {
         const x: i32 = @as(i32, mouse.col) + self.offset[0];
         const y: i32 = @as(i32, mouse.row) + self.offset[1];
         if (mouse.type == .press and mouse.button == .left) {
             self.resize_drag = null;
+            self.cancelSelection();
+            self.selection_drag = null;
             if (self.root.separator(x, y)) |node| {
                 const divider = node.content.split;
                 self.mouse_pane = null;
@@ -552,6 +603,22 @@ const App = struct {
             }
             return;
         }
+        if (self.selection_drag) |drag| {
+            const released = mouse.type == .release and (mouse.button == .left or mouse.button == .none);
+            if (drag.pane) |pane| {
+                const px = x - pane.rect.x - 1;
+                const py = y - pane.rect.y - 1;
+                const now = try sys.monotonicMilliseconds();
+                if (released) {
+                    if (try pane.selection.release(&pane.term, px, py, now)) try self.copySelection(pane);
+                } else if (mouse.type == .drag and mouse.button == .left) {
+                    try pane.selection.move(&pane.term, px, py, now);
+                }
+                self.dirty = true;
+            }
+            if (released) self.selection_drag = null;
+            return;
+        }
         const captured = if (mouse.type == .drag or mouse.type == .release) self.mouse_pane else null;
         if (mouse.type == .release) self.mouse_pane = null;
         for (self.panes.items) |pane| {
@@ -560,6 +627,17 @@ const App = struct {
             } else if (!pane.rect.contains(x, y)) continue;
             if (mouse.type == .press and (mouse.button == .left or mouse.button == .middle or mouse.button == .right)) self.mouse_pane = pane;
             if (mouse.type == .press and mouse.button == .left) try self.focus(pane);
+            if (mouse.type == .press and mouse.button == .left and (pane.term.flags.mouse_event == .none or mouse.mods.shift)) {
+                self.mouse_pane = null;
+                const px = x - pane.rect.x - 1;
+                const py = y - pane.rect.y - 1;
+                if (px >= 0 and py >= 0 and px < pane.term.cols and py < pane.term.rows) {
+                    try pane.selection.press(&pane.term, self.io, px, py);
+                    self.selection_drag = .{ .pane = pane };
+                    self.dirty = true;
+                }
+                return;
+            }
             if (pane.term.flags.mouse_event == .none and (mouse.button == .wheel_up or mouse.button == .wheel_down)) {
                 pane.term.scrollViewport(.{ .delta = if (mouse.button == .wheel_up) -3 else 3 });
                 self.dirty = true;
@@ -603,7 +681,7 @@ fn enableEffects(pane: *Pane) void {
 }
 
 fn paneSize(handler: *Handler) ?vt.size_report.Size {
-    const pane: *Pane = @fieldParentPtr("term", handler.terminal);
+    const pane: *Pane = @alignCast(@fieldParentPtr("term", handler.terminal));
     var size: c.struct_winsize = undefined;
     _ = sys.check(c.ioctl(0, c.TIOCGWINSZ, &size), "ioctl(pane geometry)") catch @panic("failed to read terminal geometry");
     return .{
@@ -615,7 +693,7 @@ fn paneSize(handler: *Handler) ?vt.size_report.Size {
 }
 
 fn renderHold(handler: *Handler, held: bool) void {
-    const pane: *Pane = @fieldParentPtr("term", handler.terminal);
+    const pane: *Pane = @alignCast(@fieldParentPtr("term", handler.terminal));
     if (held) {
         pane.state.update(pane.app.allocator, &pane.term) catch @panic("failed to capture synchronized frame");
         pane.hold_until = (sys.monotonicMilliseconds() catch @panic("failed to read render clock")) + 1000;
@@ -624,7 +702,7 @@ fn renderHold(handler: *Handler, held: bool) void {
 }
 
 fn writeClipboard(handler: *Handler, request: vt.clipboard.Write) void {
-    const pane: *Pane = @fieldParentPtr("term", handler.terminal);
+    const pane: *Pane = @alignCast(@fieldParentPtr("term", handler.terminal));
     var writer: std.Io.Writer.Allocating = .init(pane.app.allocator);
     defer writer.deinit();
     const destination: u8 = switch (request.location) {
@@ -654,7 +732,7 @@ fn writeClipboard(handler: *Handler, request: vt.clipboard.Write) void {
 }
 
 fn writePty(handler: *Handler, bytes: []const u8) void {
-    const pane: *Pane = @fieldParentPtr("term", handler.terminal);
+    const pane: *Pane = @alignCast(@fieldParentPtr("term", handler.terminal));
     pane.input.append(pane.app.allocator, bytes) catch @panic("pane terminal response buffer failed");
 }
 
@@ -767,11 +845,20 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         for (app.panes.items) |pane| if (pane.hold_until) |until| {
             deadline = @min(deadline orelse until, until);
         };
+        if (app.selection_drag) |drag| if (drag.pane) |pane| if (pane.selection.deadline) |until| {
+            deadline = @min(deadline orelse until, until);
+        };
         const timeout: c_int = if (deadline) |value| @intCast(@max(0, value - now)) else -1;
         const count = c.poll(fds.items.ptr, @intCast(fds.items.len), timeout);
         if (count < 0 and c.__errno_location().* == c.EINTR) continue;
         _ = try sys.check(count, "poll(workspace)");
         const after_poll = try sys.monotonicMilliseconds();
+        if (app.selection_drag) |drag| if (drag.pane) |pane| if (pane.selection.deadline) |until| {
+            if (after_poll >= until) {
+                try pane.selection.tick(&pane.term, after_poll);
+                app.dirty = true;
+            }
+        };
         for (app.panes.items) |pane| if (pane.hold_until) |until| {
             if (after_poll >= until) {
                 pane.hold_until = null;
@@ -789,6 +876,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
             while ((try sys.read(signals, std.mem.asBytes(&info))) != null) {
                 if (info.ssi_signo == c.SIGWINCH) {
                     app.cancelResize();
+                    app.cancelSelection();
                     app.size = try sys.Size.get(0);
                     if (app.composed) {
                         var writer: std.Io.Writer.Allocating = .init(allocator);
