@@ -137,7 +137,7 @@ The default build produces a static executable using musl and writes the complet
 imx attach dev
 ```
 
-Run commands as usual. Closing the terminal, losing the SSH connection, or pressing the default shortcut **`Ctrl+\`** detaches your connection while the shell and its programs keep running. Set `keybindings.detach` in the configuration file to change the shortcut.
+Run commands as usual. Closing the terminal, losing the SSH connection, or pressing the default shortcut **`Alt+\`** detaches your connection while the shell and its programs keep running. Set `keybindings.detach` in the configuration file to change the shortcut.
 
 The shortcut also works in applications that enable the Kitty keyboard protocol or xterm's modifyOtherKeys mode. Pasted content is passed through without triggering shortcuts when bracketed paste is active.
 
@@ -165,7 +165,7 @@ While attached, press **Alt+D** to split the focused pane left and right, or **A
 
 Use **Alt+Arrow** to focus a neighboring pane. **Alt+1** through **Alt+9** select the number shown in a pane's title; **Alt+0** selects number 10. Pane numbers stay unchanged when another pane closes. A missing neighbor or number keeps the current focus. These shortcuts also select plain shell panes; use arrows or the mouse for numbers above 10.
 
-Panes can be split repeatedly. Scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Press **Alt+W** to close the focused pane and terminate its attached session and programs. Other clients attached to that session are disconnected too. To keep the session running, detach first (default `Ctrl+\`), then press Alt+W. Closing a plain shell pane terminates its programs. At a plain shell prompt, `exit` or `Ctrl+D` on an empty command line also closes the pane. Closing the last pane exits the interface.
+Panes can be split repeatedly. Scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Press **Alt+W** to close the focused pane and terminate its attached session and programs. Other clients attached to that session are disconnected too. To keep the session running, detach first (default `Alt+\`), then press Alt+W. Closing a plain shell pane terminates its programs. At a plain shell prompt, `exit` or `Ctrl+D` on an empty command line also closes the pane. Closing the last pane exits the interface.
 
 Closing the terminal discards the layout and terminates the plain pane shells while attached sessions keep running. Layouts are held only in the current client and are not saved. Set `keybindings.split_right`, `keybindings.split_down`, and `keybindings.close_pane` to use other shortcuts.
 
@@ -222,7 +222,7 @@ Every command accepts `-h` and `--help`, including `imx attach --help` and `imx 
 A session's life:
 
 1. **Attach.** Creating `dev` with `imx attach dev` starts its backend and runs the shell selected by `$SHELL` with the current working directory and environment. Attaching to an existing session preserves its state.
-2. **Detach.** Closing the terminal, a dropped connection, the configured shortcut (default `Ctrl+\`), or `imx detach` inside the session all leave the session running.
+2. **Detach.** Closing the terminal, a dropped connection, the configured shortcut (default `Alt+\`), or `imx detach` inside the session all leave the session running.
 3. **Return or finish.** `imx attach dev` restores the screen and history. The session ends when the shell exits or with `imx kill dev`.
 
 Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, `CREATED`, and `STATUS`. Terminal output uses column widths calculated from the headings and session contents; piped or redirected output is tab-separated. `DIRECTORY` shows the session shell's current actual directory, following `cd` and directory renames. Special characters are escaped to preserve the output structure; see [session lists](docs/usage.md#会话列表) for details.

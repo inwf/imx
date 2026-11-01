@@ -252,7 +252,7 @@ def test_reinstall_preserves_running_session(downloaded):
     assert downloaded.sessions()[0]["PID"] == original_pid
     assert "REINSTALL_HISTORY" in downloaded.run("cat", "dev").stdout
     assert "retained" in downloaded.command(child, "printf '%s\\n' \"$INSTALL_MARKER\"")
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     attached = downloaded.spawn(initialize=False)
     attached.expect_exact("IMX_PROMPT> ")

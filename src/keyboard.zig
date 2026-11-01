@@ -56,7 +56,7 @@ pub const Binding = struct {
 };
 
 pub const Bindings = struct {
-    detach: Binding = .{ .codepoint = '\\', .mods = .{ .ctrl = true } },
+    detach: Binding = .{ .codepoint = '\\', .mods = .{ .alt = true } },
     split_right: Binding = .{ .codepoint = 'd', .mods = .{ .alt = true } },
     split_down: Binding = .{ .codepoint = 'd', .mods = .{ .alt = true, .shift = true } },
     close_pane: Binding = .{ .codepoint = 'w', .mods = .{ .alt = true } },
@@ -248,7 +248,7 @@ test "keyboard encodings produce consistent shortcut events" {
         try std.testing.expect(result.event.?.key_press.matchExact('p', .{ .ctrl = true }));
         try std.testing.expectEqual(null, (Bindings{}).action(result.event.?, bytes));
     }
-    const released = try decoder.decode("\x1b[92;5:3u");
+    const released = try decoder.decode("\x1b[92;3:3u");
     try std.testing.expect(released.event.? == .key_release);
-    try std.testing.expectEqual(null, (Bindings{}).action(released.event.?, "\x1b[92;5:3u"));
+    try std.testing.expectEqual(null, (Bindings{}).action(released.event.?, "\x1b[92;3:3u"));
 }

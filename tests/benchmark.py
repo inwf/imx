@@ -21,7 +21,7 @@ def measure_sessions(count):
                                     if process.exe() == str(BINARY) and process.name() != "imx-server"]
             assert len(clients) == 2
             frontend_pss = sum(process.memory_full_info().pss for process in clients)
-        child.sendcontrol("\\")
+        child.send("\x1b\\")
         child.expect(pexpect.EOF)
     rows = environment.sessions()
     backend_ids = {psutil.Process(int(row["PID"])).ppid() for row in rows}
@@ -61,7 +61,7 @@ def measure_output():
     started = time.monotonic()
     done_path = environment.path / "output.done"
     child.sendline(f"seq 1 500000; printf DONE > '{done_path}'")
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     environment.wait(done_path.exists, timeout=30)
     def completed_history():
@@ -123,7 +123,7 @@ def measure_isolation():
     backend = psutil.Process(psutil.Process(int(rows["noisy"]["PID"])).ppid())
     before_cpu = backend.cpu_times().user
     noisy.sendline("yes CONTINUOUS_OUTPUT")
-    noisy.sendcontrol("\\")
+    noisy.send("\x1b\\")
     noisy.expect(pexpect.EOF)
     environment.wait(lambda: backend.cpu_times().user - before_cpu >= 0.1)
     latencies = []

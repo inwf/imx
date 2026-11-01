@@ -57,11 +57,11 @@ enabled = true
 # 每个动作使用不同的快捷键。示例：{ key = 'x', ctrl = true } 表示 Ctrl+x。
 # Assign a different shortcut to each action. Example: { key = 'x', ctrl = true } means Ctrl+x.
 
-# 分离当前连接，默认 Ctrl+\。分屏时只分离当前聚焦窗格，随后返回普通 shell。
-# Detach the current connection, default Ctrl+\. In split mode, detach the focused pane and return to its plain shell.
+# 分离当前连接，默认 Alt+\（macOS 的 Option+\）。分屏时只分离当前聚焦窗格，随后返回普通 shell。
+# Detach the current connection, default Alt+\ (Option+\ on macOS). In split mode, detach the focused pane and return to its plain shell.
 # 会话和其中的程序继续运行。修改快捷键后，分离并重新 attach 生效。
 # The session and its programs keep running. Detach and reattach to apply a changed binding.
-detach = { key = '\', ctrl = true }
+detach = { key = '\', alt = true }
 
 # 左右分屏，在当前聚焦窗格的目录启动普通 shell，默认 Alt+D（macOS 的 Option+D）。
 # Split left and right, starting a plain shell in the focused pane's directory. Default: Alt+D (Option+D on macOS).
@@ -79,8 +79,8 @@ split_down = { key = 'd', alt = true, shift = true }
 # Close the focused pane, default Alt+W (Option+W on macOS). Closing the last pane exits the interface.
 # 如果窗格连接着会话，会自动终止该会话及其中的程序，其他连接到同一会话的客户端也会断开。
 # An attached session and its programs are terminated; other clients attached to that session are disconnected too.
-# 需要保留会话时，先 detach（默认 Ctrl+\），再按 Alt+W 关闭窗格。
-# To keep the session running, detach first (default Ctrl+\), then press Alt+W to close the pane.
+# 需要保留会话时，先 detach（默认 Alt+\），再按 Alt+W 关闭窗格。
+# To keep the session running, detach first (default Alt+\), then press Alt+W to close the pane.
 # 普通 shell 窗格关闭时，其中的程序也会终止。修改快捷键后退出整个界面并重新 attach 生效。
 # Closing a plain shell pane also terminates its programs. Exit the entire interface and attach again to apply changes.
 close_pane = { key = 'w', alt = true }

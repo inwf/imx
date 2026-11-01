@@ -25,7 +25,7 @@ def test_directory_tracks_cd_and_reattach(sessions, shell):
     assert current["DIRECTORY"] == str(directory)
     assert current["PID"] == original["PID"]
     assert current["CREATED"] == original["CREATED"]
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     sessions.path = sessions.home
     attached = sessions.spawn(initialize=False)

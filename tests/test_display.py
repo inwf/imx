@@ -41,7 +41,7 @@ def test_return_to_outer_shell_restores_display(sessions, action, modes):
         outer.sendline(f"printf '{modes}'; printf 'MODE_READY'; sleep 600")
         outer.expect_exact("MODE_READY")
         if action == "shortcut":
-            outer.sendcontrol("\\")
+            outer.send("\x1b\\")
         elif action == "kill":
             sessions.run("kill", "dev")
         else:
@@ -77,7 +77,7 @@ def test_return_to_outer_shell_restores_display(sessions, action, modes):
 def test_switch_redraws_target_after_source_display_modes(sessions, modes):
     target = sessions.spawn("target")
     sessions.command(target, "printf '\\033[2J\\033[H\\033[1;31mTARGET_FIRST\\033[0m\\r\\nTARGET_SECOND\\r\\n'")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     source = sessions.spawn("source")
     capture = io.StringIO()
@@ -103,7 +103,7 @@ def test_detach_uses_resized_terminal_dimensions(sessions, rows, cols):
     capture = io.StringIO()
     child.logfile_read = capture
     sessions.command(child, "printf '\\033[3;8r\\033[?6h\\033[?7l'")
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     screen = pyte.Screen(cols, rows)
     pyte.Stream(screen).feed(capture.getvalue())

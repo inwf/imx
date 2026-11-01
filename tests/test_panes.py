@@ -84,13 +84,13 @@ def test_panes_inherit_directory_and_attach_independent_sessions(sessions):
     terminal.click(3)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "left-session", "dev")
     terminal.click(55)
-    terminal.child.sendcontrol("\\")
+    terminal.child.send("\x1b\\")
     terminal.visible("2: shell")
     terminal.command("pwd", "detached-directory", f"{directory}\n")
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "test": "0"})
 
     terminal.click(3)
-    terminal.child.sendcontrol("\\")
+    terminal.child.send("\x1b\\")
     terminal.visible("1: shell")
     terminal.command("pwd", "left-detached-directory", f"{directory}\n")
     assert all(row["CLIENTS"] == "0" for row in sessions.sessions())
@@ -234,7 +234,7 @@ def test_configured_border_color_follows_focus(sessions, color):
         child.send(shortcut)
         child.expect_exact(expected)
         child.expect_exact(title)
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
     destination = sessions.path / "colored-shell"
     child.sendline(f"printf ready > {shlex.quote(str(destination))}")
@@ -299,7 +299,7 @@ def test_detach_then_close_in_one_write_preserves_session(sessions, initial):
     if initial:
         terminal.click(3)
     pid = int(next(row for row in sessions.sessions() if row["NAME"] == target)["PID"])
-    terminal.child.send("\x1c\x1bw")
+    terminal.child.send("\x1b\\\x1bw")
     terminal.wait(lambda: all(f"{pane_id}:" not in row for row in terminal.screen.display))
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {target: "0", remaining: "1"})
     assert psutil.pid_exists(pid)
@@ -418,7 +418,7 @@ def test_pane_terminal_modes_mouse_coordinates_and_detach(sessions, mode, encode
     terminal.child.send("\x1b[97;5u")
     terminal.wait(lambda: destination.read_bytes().endswith(encoded))
     assert {row["NAME"] for row in sessions.sessions()} == {"dev", "test"}
-    terminal.child.sendcontrol("\\")
+    terminal.child.send("\x1b\\")
     terminal.visible("2: shell")
     assert psutil.pid_exists(state["pid"])
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "test": "0"})
@@ -431,7 +431,7 @@ def test_detaching_one_pane_preserves_other_connection_to_same_session(sessions)
     terminal.child.sendline("imx attach dev")
     terminal.visible("2: dev")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "2")
-    terminal.child.sendcontrol("\\")
+    terminal.child.send("\x1b\\")
     terminal.visible("2: shell")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "1")
     terminal.click(3)
@@ -484,7 +484,7 @@ def test_pane_detaches_while_its_backend_is_paused(sessions):
     backend = psutil.Process(psutil.Process(int(rows["test"]["PID"])).ppid())
     backend.suspend()
     try:
-        terminal.child.sendcontrol("\\")
+        terminal.child.send("\x1b\\")
         terminal.visible("2: shell")
         terminal.click(3)
         terminal.command("printf responsive", "healthy-pane", "responsive")
@@ -595,7 +595,7 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
     terminal.visible("2: shell")
     outer.send(close)
     terminal.wait(lambda: all("2: shell" not in row for row in terminal.screen.display))
-    outer.sendcontrol("\\")
+    outer.send("\x1b\\")
     terminal.visible("1: shell")
     outer.send(close)
     outer.expect_exact("\r\nWORKSPACE_CLOSED\r\n")
@@ -609,7 +609,7 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
 def test_conflicting_shortcuts_report_configuration_option(sessions, binding):
     path = sessions.home / ".config/imx/config.toml"
     path.parent.mkdir(parents=True)
-    path.write_text(f"[keybindings]\n{binding} = {{ key = '\\', ctrl = true }}\n")
+    path.write_text(f"[keybindings]\n{binding} = {{ key = '\\', alt = true }}\n")
     try:
         result = sessions.run("list", check=False)
         assert result.returncode != 0

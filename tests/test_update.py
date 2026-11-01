@@ -44,7 +44,7 @@ def test_forced_update_preserves_installation_and_running_session(downloaded, in
     assert "/releases/latest/download/VERSION" in downloaded.requests[requests:]
     assert f"/releases/download/v{VERSION}/{ARCHIVE}" in downloaded.requests[requests:]
     downloaded.assert_no_temporary_files()
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     attached = downloaded.spawn(initialize=False)
     attached.expect_exact("IMX_PROMPT> ")

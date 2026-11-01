@@ -13,7 +13,7 @@ def backends(environment):
 def test_distinct_sessions_have_independent_single_thread_backends(sessions):
     def create(index):
         child = sessions.spawn(f"independent-{index}")
-        child.sendcontrol("\\")
+        child.send("\x1b\\")
         child.expect(pexpect.EOF)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -78,7 +78,7 @@ def test_backend_crash_preserves_other_session_program_and_history(sessions):
     assert "ISOLATED_HISTORY" in sessions.run("cat", "healthy").stdout
     assert sessions.run("__complete", "sessions", "").stdout == "healthy\n"
     assert [row["NAME"] for row in sessions.sessions()] == ["healthy"]
-    healthy.sendcontrol("\\")
+    healthy.send("\x1b\\")
     healthy.expect(pexpect.EOF)
     attached = sessions.spawn("healthy", initialize=False)
     attached.expect_exact("IMX_PROMPT> ")
@@ -95,7 +95,7 @@ def test_continuous_output_keeps_other_session_responsive(sessions):
     baseline = processes["noisy"].memory_full_info().pss
     initial_cpu = processes["noisy"].cpu_times().user
     noisy.sendline("yes CONTINUOUS_OUTPUT")
-    noisy.sendcontrol("\\")
+    noisy.send("\x1b\\")
     noisy.expect(pexpect.EOF)
     sessions.wait(lambda: processes["noisy"].cpu_times().user - initial_cpu >= 0.1)
     latencies = []

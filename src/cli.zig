@@ -108,7 +108,7 @@ pub fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Resul
 
 fn description(command: Command) []const u8 {
     return switch (command) {
-        .attach => "Create or attach to a session. Inside a session, switch the current connection.\nAlt+D splits left and right; Alt+Shift+D splits top and bottom. Alt is Option on macOS.\nNew panes start a plain shell in the focused pane's directory. Click a pane to focus it.\nAlt+Arrow focuses a neighbor; Alt+1 through Alt+9 select pane numbers, and Alt+0 selects 10.\nAlt+W closes the focused pane and terminates its attached session and programs.\nDetach first (default: Ctrl+\\), then close the pane to keep the session running.\nClosing the last pane exits the interface. Configure shortcuts in config.toml under [keybindings].\n",
+        .attach => "Create or attach to a session. Inside a session, switch the current connection.\nAlt+D splits left and right; Alt+Shift+D splits top and bottom. Alt is Option on macOS.\nNew panes start a plain shell in the focused pane's directory. Click a pane to focus it.\nAlt+Arrow focuses a neighbor; Alt+1 through Alt+9 select pane numbers, and Alt+0 selects 10.\nAlt+W closes the focused pane and terminates its attached session and programs.\nDetach first (default: Alt+\\), then close the pane to keep the session running.\nClosing the last pane exits the interface. Configure shortcuts in config.toml under [keybindings].\n",
         .list, .ls => "List sessions, including their shell PID, connections, directory, creation time and status.\nOutput is tab-separated when redirected. This is the default command.\n",
         .cat => "Print retained history and the active screen as plain text.\nHistory uses a 10,000-line target and a 2 MiB scrollback budget.\nScrollback limits are applied in complete terminal pages.\n",
         .detach => "Detach all connections from the current session. Run this command inside a session.\nThe shell and its programs keep running. The detach shortcut affects only its own connection.\n",
@@ -154,7 +154,7 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
             \\
         );
         try clap.help(writer, clap.Help, root_params[0..2], .{ .description_on_new_line = false });
-        try writer.writeAll("\nRun 'imx <command> --help' for command details.\nClose the terminal or use the detach shortcut (default: Ctrl+\\).\nConfigure it with keybindings.detach in config.toml.\nIMX_DIR selects an absolute private runtime directory.\n");
+        try writer.writeAll("\nRun 'imx <command> --help' for command details.\nClose the terminal or use the detach shortcut (default: Alt+\\).\nConfigure it with keybindings.detach in config.toml.\nIMX_DIR selects an absolute private runtime directory.\n");
     }
     try sys.writeAll(1, output.written(), false);
 }

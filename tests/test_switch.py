@@ -28,7 +28,7 @@ def switch(environment, child, destination):
 def test_switch_existing_session_preserves_programs_history_and_frontend(sessions):
     target = sessions.spawn("dev2")
     sessions.command(target, "export TARGET_VALUE=retained; printf 'TARGET_HISTORY\\n'")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     source = sessions.spawn("dev1")
     sessions.command(source, "export SOURCE_VALUE=retained; printf 'SOURCE_HISTORY\\n'; sleep 600 & printf '%s' \"$!\" > source-job.pid")
@@ -48,7 +48,7 @@ def test_switch_existing_session_preserves_programs_history_and_frontend(session
     switch(sessions, source, "dev1")
     assert "retained" in sessions.command(source, "printf '%s\\n' \"$SOURCE_VALUE\"")
     assert job.is_running()
-    source.sendcontrol("\\")
+    source.send("\x1b\\")
     source.expect(pexpect.EOF)
     assert all(row["CLIENTS"] == "0" for row in rows(sessions).values())
 
@@ -72,7 +72,7 @@ def test_switch_creates_target_with_current_directory_and_environment(sessions):
 @pytest.mark.parametrize("active", [0, 1])
 def test_switch_moves_only_the_terminal_that_sent_input(sessions, active):
     target = sessions.spawn("dev2")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     first = sessions.spawn("dev1", rows=24, cols=80)
     second = sessions.spawn("dev1", initialize=False, rows=40, cols=120)
@@ -105,7 +105,7 @@ def test_invalid_switch_keeps_source_session(sessions, destination):
 
 def test_paused_target_reports_timeout_and_keeps_source_connection(sessions):
     target = sessions.spawn("dev2")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     source = sessions.spawn("dev1")
     backend = psutil.Process(psutil.Process(int(rows(sessions)["dev2"]["PID"])).ppid())
@@ -136,7 +136,7 @@ def test_failed_target_shell_preserves_source_connection(sessions, shell, error)
 
 def test_repeated_switches_reuse_frontend_and_restore_terminal(sessions):
     target = sessions.spawn("dev2")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     source = sessions.spawn("dev1")
     process = psutil.Process(source.pid)
@@ -150,7 +150,7 @@ def test_repeated_switches_reuse_frontend_and_restore_terminal(sessions):
     assert all(item.num_threads() == 1 for item in processes)
     assert {child.pid for child in process.children()} == child_pids
     assert frontend.children() == []
-    source.sendcontrol("\\")
+    source.send("\x1b\\")
     source.expect(pexpect.EOF)
     assert rows(sessions)["dev1"]["CLIENTS"] == "0"
 
@@ -206,7 +206,7 @@ def test_external_process_cannot_switch_a_session_by_environment(sessions):
 
 def test_cancelled_switch_releases_source_connection(sessions):
     target = sessions.spawn("dev2")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     source = sessions.spawn("dev1")
     backend = psutil.Process(psutil.Process(int(rows(sessions)["dev2"]["PID"])).ppid())
@@ -233,7 +233,7 @@ def test_switch_restores_vim_screen(sessions):
     target = sessions.spawn("dev2")
     target.sendline("vim -u NONE -i NONE -n switch-document.txt")
     target.expect_exact("SWITCH_VIM_DOCUMENT")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     source = sessions.spawn("dev1")
     source.sendline("imx attach dev2")
@@ -254,7 +254,7 @@ def test_switch_and_detach_restore_original_terminal_attributes(sessions):
     outer.sendline("imx attach dev2")
     sessions.wait(lambda: "dev2" in rows(sessions) and rows(sessions)["dev1"]["CLIENTS"] == "0")
     outer.expect(r"[#$] ")
-    outer.sendcontrol("\\")
+    outer.send("\x1b\\")
     outer.expect(r"[#$] ")
     outer.sendline("stty -g > after-switch; printf '\\nOUTER_RESTORED\\n'")
     outer.expect_exact("\r\nOUTER_RESTORED\r\n")
@@ -263,7 +263,7 @@ def test_switch_and_detach_restore_original_terminal_attributes(sessions):
 
 def test_switch_with_pending_terminal_output(sessions):
     target = sessions.spawn("dev2")
-    target.sendcontrol("\\")
+    target.send("\x1b\\")
     target.expect(pexpect.EOF)
     source = sessions.spawn("dev1")
     gate = sessions.path / "switch-gate"

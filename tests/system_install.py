@@ -223,7 +223,7 @@ def main():
                 job_pid = int(next(line.removeprefix("JOB_PID=") for line in output.splitlines() if line.startswith("JOB_PID=")))
                 assert psutil.pid_exists(job_pid)
             if case not in ("inside", "update-inside"):
-                child.sendcontrol("\\")
+                child.send("\x1b\\")
                 child.expect_exact("SYSTEM_PROMPT> ")
         if case in ("completion", "completion-usr"):
             for shell in ("bash", "zsh", "fish"):
@@ -249,7 +249,7 @@ def main():
                 child.sendline("imx attach dev")
                 child.expect_exact("INNER_PROMPT> ")
             assert "retained" in command(child, "printf '%s\\n' \"$SYSTEM_MARKER\"", "INNER_PROMPT> ")
-            child.sendcontrol("\\")
+            child.send("\x1b\\")
             child.expect_exact("SYSTEM_PROMPT> ")
         if case in ("cancel-install", "cancel-uninstall", "cancel-update"):
             inode = binary.stat().st_ino

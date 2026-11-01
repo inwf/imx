@@ -72,7 +72,7 @@ def test_session_prompt_preserves_shell_and_directory(sessions, shell):
     child.sendline("exit")
     child.expect(pexpect.EOF)
     assert sessions.sessions()[0]["NAME"] == "other"
-    second.sendcontrol("\\")
+    second.send("\x1b\\")
     second.expect(pexpect.EOF)
 
 

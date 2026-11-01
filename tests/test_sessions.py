@@ -66,7 +66,7 @@ def test_session_creation_time(sessions, hours):
     assert sessions.run("list").stdout == listing
     assert sessions.run().stdout == listing
 
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
     sessions.environment["TZ"] = "UTC0"
@@ -145,7 +145,7 @@ def test_detach_and_reattach_preserves_shell_and_history(sessions):
     child = sessions.spawn()
     sessions.command(child, "export IMX_VALUE=retained; printf '历史输出\\n'")
     original_pid = sessions.sessions()[0]["PID"]
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
     assert "历史输出" in sessions.run("cat", "dev").stdout
@@ -188,7 +188,7 @@ def test_terminal_resize_and_multiple_clients(sessions):
     second.setwinsize(40, 120)
     assert "40 120" in sessions.command(second, "stty size")
     assert sessions.sessions()[0]["CLIENTS"] == "2"
-    second.sendcontrol("\\")
+    second.send("\x1b\\")
     second.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "1")
     first.expect_exact("IMX_PROMPT> ")
@@ -230,7 +230,7 @@ def test_snapshot_restores_active_screen(sessions):
     child = sessions.spawn()
     sessions.command(child, "printf '\\033[2J\\033[H\\033[31mSCREEN_MARKER\\033[0m\\033[5;8H定位内容'")
     before = sessions.run("cat", "dev").stdout
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     attached = sessions.spawn(initialize=False)
     restored = sessions.command(attached, "printf 'VIEW_CONNECTED\\n'")
@@ -254,7 +254,7 @@ def test_attach_and_detach_preserve_terminal_colors(sessions, alternate):
     if alternate:
         sessions.command(child, "printf '\\033[?1049h'")
     sessions.command(child, "printf '\\033[2J\\033[H\\033[1;31mINDEXED\\033[0m\\n\\033[38;2;18;52;86mRGB\\033[0m\\n'")
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
 
@@ -312,7 +312,7 @@ def test_detached_terminal_answers_queries(sessions):
     result_path = sessions.path / "query.json"
     command = f"{sys.executable} {ROOT / 'tests/terminal_query.py'} {result_path}"
     child.sendline(command)
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     sessions.wait(result_path.exists)
     result = json.loads(result_path.read_text())
@@ -347,7 +347,7 @@ def test_frontend_restores_terminal_attributes(sessions):
     sessions.clients.append(child)
     child.sendline("stty -g > before; imx attach attributes")
     child.expect(r"[#$] ")
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(r"[#$] ")
     child.sendline("stty -g > after; printf '\\nATTRIBUTES_SAVED\\n'")
     child.expect_exact("\r\nATTRIBUTES_SAVED\r\n")
@@ -361,7 +361,7 @@ def test_vim_survives_detach_and_restores_document(sessions):
     sessions.command(child, "printf 'BEFORE_VIM\\n'")
     child.sendline("vim -u NONE -i NONE -n document.txt")
     child.expect_exact("VIM_DOCUMENT_MARKER")
-    child.sendcontrol("\\")
+    child.send("\x1b\\")
     child.expect(pexpect.EOF)
     assert "VIM_DOCUMENT_MARKER" in sessions.run("cat", "dev").stdout
     attached = sessions.spawn(initialize=False)

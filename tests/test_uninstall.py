@@ -72,14 +72,14 @@ def test_uninstall_terminates_sessions_and_jobs(installation):
 def test_uninstall_cleans_all_registered_runtime_directories(installation):
     first_directory = installation.runtime
     first = installation.spawn("first")
-    first.sendcontrol("\\")
+    first.send("\x1b\\")
     first.expect(pexpect.EOF)
     first_pid = int(installation.sessions()[0]["PID"])
     installation.runtime = installation.path / "another-runtime"
     installation.environment["IMX_DIR"] = str(installation.runtime)
     second = installation.spawn("second")
     second_pid = int(installation.sessions()[0]["PID"])
-    second.sendcontrol("\\")
+    second.send("\x1b\\")
     second.expect(pexpect.EOF)
     installation.run("uninstall")
     installation.wait(lambda: not psutil.pid_exists(first_pid) and not psutil.pid_exists(second_pid))
