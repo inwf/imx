@@ -4,6 +4,35 @@ const sys = @import("sys.zig");
 const toml = @import("toml");
 const keyboard = @import("keyboard.zig");
 
+const Context = struct {
+    allocator: std.mem.Allocator,
+    filename: ?[]const u8 = null,
+    keys: [3][]const u8 = .{ "", "", "" },
+    depth: usize = 0,
+
+    fn child(self: Context, key: []const u8) Context {
+        var result = self;
+        result.keys[result.depth] = key;
+        result.depth += 1;
+        return result;
+    }
+
+    fn reject(self: Context, err: anyerror, message: []const u8) anyerror {
+        const filename = self.filename orelse return err;
+        var output = std.Io.Writer.Allocating.init(self.allocator);
+        defer output.deinit();
+        output.writer.print("imx: {s}: ", .{filename}) catch |failure| return failure;
+        for (self.keys[0..self.depth], 0..) |key, index| {
+            if (index != 0) output.writer.writeByte('.') catch |failure| return failure;
+            output.writer.writeAll(key) catch |failure| return failure;
+        }
+        if (self.depth != 0) output.writer.writeAll(": ") catch |failure| return failure;
+        output.writer.print("{s} ({s})\n", .{ message, @errorName(err) }) catch |failure| return failure;
+        sys.writeAll(2, output.written(), false) catch |failure| return failure;
+        return error.RequestFailed;
+    }
+};
+
 pub const Settings = struct {
     show_session: bool = true,
     completion_enabled: bool = true,
@@ -36,14 +65,15 @@ pub fn path(allocator: std.mem.Allocator) ![:0]u8 {
 pub fn load(allocator: std.mem.Allocator, io: std.Io, options: struct { create_default: bool = false }) !Settings {
     const filename = try path(allocator);
     defer allocator.free(filename);
+    const context: Context = .{ .allocator = allocator, .filename = filename };
     const contents = std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024)) catch |err| blk: {
-        if (err != error.FileNotFound) return err;
+        if (err != error.FileNotFound) return context.reject(err, "cannot read configuration");
         if (!options.create_default) return .{ .file_missing = true };
-        try createDefault(io, filename);
-        break :blk try std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024));
+        createDefault(io, filename) catch |failure| return context.reject(failure, "cannot create default configuration");
+        break :blk std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024)) catch |failure| return context.reject(failure, "cannot read configuration");
     };
     defer allocator.free(contents);
-    return parse(allocator, contents);
+    return parseDocument(context, contents);
 }
 
 fn createDefault(io: std.Io, filename: []const u8) !void {
@@ -64,92 +94,94 @@ fn createDefault(io: std.Io, filename: []const u8) !void {
 }
 
 fn parse(allocator: std.mem.Allocator, contents: []const u8) !Settings {
-    if (!std.unicode.utf8ValidateSlice(contents)) return error.InvalidConfigurationUtf8;
+    return parseDocument(.{ .allocator = allocator }, contents);
+}
+
+fn validateKeys(context: Context, table: toml.toml_datum_t, allowed: []const []const u8) !void {
+    for (0..@intCast(table.u.tab.size)) |index| {
+        const key = std.mem.span(table.u.tab.key[index]);
+        for (allowed) |known| {
+            if (std.mem.eql(u8, key, known)) break;
+        } else return context.child(key).reject(error.UnknownConfigurationOption, "unknown configuration option");
+    }
+}
+
+fn parseDocument(context: Context, contents: []const u8) !Settings {
+    if (!std.unicode.utf8ValidateSlice(contents)) return context.reject(error.InvalidConfigurationUtf8, "expected UTF-8 text");
     const result = toml.toml_parse(contents.ptr, @intCast(contents.len));
     defer toml.toml_free(result);
     if (!result.ok) {
-        std.log.err("config.toml: {s}", .{std.mem.sliceTo(&result.errmsg, 0)});
-        return error.InvalidConfiguration;
+        return context.reject(error.InvalidConfiguration, std.mem.sliceTo(&result.errmsg, 0));
     }
     const root = result.toptab;
-    for (0..@intCast(root.u.tab.size)) |index| {
-        const key = std.mem.span(root.u.tab.key[index]);
-        if (!std.mem.eql(u8, key, "prompt") and !std.mem.eql(u8, key, "list") and !std.mem.eql(u8, key, "completion") and !std.mem.eql(u8, key, "keybindings")) return error.UnknownConfigurationOption;
-    }
+    try validateKeys(context, root, &.{ "prompt", "list", "completion", "keybindings" });
     var preferences: Settings = .{};
     const prompt = toml.toml_get(root, "prompt");
     if (prompt.type != toml.TOML_UNKNOWN) {
-        if (prompt.type != toml.TOML_TABLE) return error.InvalidPromptConfiguration;
-        for (0..@intCast(prompt.u.tab.size)) |index| {
-            if (!std.mem.eql(u8, std.mem.span(prompt.u.tab.key[index]), "show_session")) return error.UnknownConfigurationOption;
-        }
+        const field = context.child("prompt");
+        if (prompt.type != toml.TOML_TABLE) return field.reject(error.InvalidPromptConfiguration, "expected a table");
+        try validateKeys(field, prompt, &.{"show_session"});
         const enabled = toml.toml_get(prompt, "show_session");
         if (enabled.type != toml.TOML_UNKNOWN) {
-            if (enabled.type != toml.TOML_BOOLEAN) return error.PromptShowSessionMustBeBoolean;
+            if (enabled.type != toml.TOML_BOOLEAN) return field.child("show_session").reject(error.PromptShowSessionMustBeBoolean, "expected a boolean (true or false)");
             preferences.show_session = enabled.u.boolean;
         }
     }
     const completion = toml.toml_get(root, "completion");
     if (completion.type != toml.TOML_UNKNOWN) {
-        if (completion.type != toml.TOML_TABLE) return error.InvalidCompletionConfiguration;
-        for (0..@intCast(completion.u.tab.size)) |index| {
-            if (!std.mem.eql(u8, std.mem.span(completion.u.tab.key[index]), "enabled")) return error.UnknownConfigurationOption;
-        }
+        const field = context.child("completion");
+        if (completion.type != toml.TOML_TABLE) return field.reject(error.InvalidCompletionConfiguration, "expected a table");
+        try validateKeys(field, completion, &.{"enabled"});
         const enabled = toml.toml_get(completion, "enabled");
         if (enabled.type != toml.TOML_UNKNOWN) {
-            if (enabled.type != toml.TOML_BOOLEAN) return error.CompletionEnabledMustBeBoolean;
+            if (enabled.type != toml.TOML_BOOLEAN) return field.child("enabled").reject(error.CompletionEnabledMustBeBoolean, "expected a boolean (true or false)");
             preferences.completion_enabled = enabled.u.boolean;
         }
     }
     const bindings = toml.toml_get(root, "keybindings");
     if (bindings.type != toml.TOML_UNKNOWN) {
-        if (bindings.type != toml.TOML_TABLE) return error.InvalidKeybindingsConfiguration;
+        const field = context.child("keybindings");
+        if (bindings.type != toml.TOML_TABLE) return field.reject(error.InvalidKeybindingsConfiguration, "expected a table");
         for (0..@intCast(bindings.u.tab.size)) |index| {
             const name = std.mem.span(bindings.u.tab.key[index]);
-            if (std.meta.stringToEnum(keyboard.Action, name) == null) return error.UnknownConfigurationOption;
+            if (std.meta.stringToEnum(keyboard.Action, name) == null) return field.child(name).reject(error.UnknownConfigurationOption, "unknown configuration option");
         }
         inline for (std.enums.values(keyboard.Action)) |action| {
             const binding = toml.toml_get(bindings, @tagName(action));
-            if (binding.type != toml.TOML_UNKNOWN) @field(preferences.keybindings, @tagName(action)) = try parseBinding(binding);
+            if (binding.type != toml.TOML_UNKNOWN) @field(preferences.keybindings, @tagName(action)) = try parseBinding(field.child(@tagName(action)), binding);
         }
     }
     const listing = toml.toml_get(root, "list");
     if (listing.type != toml.TOML_UNKNOWN) {
-        if (listing.type != toml.TOML_TABLE) return error.InvalidListConfiguration;
-        for (0..@intCast(listing.u.tab.size)) |index| {
-            if (!std.mem.eql(u8, std.mem.span(listing.u.tab.key[index]), "created_format")) return error.UnknownConfigurationOption;
-        }
+        const field = context.child("list");
+        if (listing.type != toml.TOML_TABLE) return field.reject(error.InvalidListConfiguration, "expected a table");
+        try validateKeys(field, listing, &.{"created_format"});
         const format = toml.toml_get(listing, "created_format");
         if (format.type != toml.TOML_UNKNOWN) {
-            if (format.type != toml.TOML_STRING) return error.ListCreatedFormatMustBeString;
+            const entry = field.child("created_format");
+            if (format.type != toml.TOML_STRING) return entry.reject(error.ListCreatedFormatMustBeString, "expected a string");
             const value = format.u.str.ptr[0..@intCast(format.u.str.len) :0];
-            try sys.validateCreatedFormat(value);
-            preferences.created_format = try allocator.dupeSentinel(u8, value, 0);
+            sys.validateCreatedFormat(value) catch |err| return entry.reject(err, "expected a valid, nonempty, single-line strftime format (for example '%Y-%m-%d %H:%M:%S')");
+            preferences.created_format = try context.allocator.dupeSentinel(u8, value, 0);
         }
     }
     return preferences;
 }
 
-fn parseBinding(value: toml.toml_datum_t) !keyboard.Binding {
-    if (value.type != toml.TOML_TABLE) return error.KeybindingMustBeTable;
+fn parseBinding(context: Context, value: toml.toml_datum_t) !keyboard.Binding {
+    if (value.type != toml.TOML_TABLE) return context.reject(error.KeybindingMustBeTable, "expected a table (for example { key = 'x', ctrl = true })");
     const modifiers = .{ "ctrl", "alt", "shift", "super" };
-    for (0..@intCast(value.u.tab.size)) |index| {
-        const field = std.mem.span(value.u.tab.key[index]);
-        if (std.mem.eql(u8, field, "key")) continue;
-        var known = false;
-        inline for (modifiers) |modifier| {
-            if (std.mem.eql(u8, field, modifier)) known = true;
-        }
-        if (!known) return error.UnknownConfigurationOption;
-    }
+    try validateKeys(context, value, &.{ "key", "ctrl", "alt", "shift", "super" });
     const key = toml.toml_get(value, "key");
-    if (key.type == toml.TOML_UNKNOWN) return error.KeybindingKeyRequired;
-    if (key.type != toml.TOML_STRING) return error.KeybindingKeyMustBeString;
-    var binding: keyboard.Binding = .{ .codepoint = try keyboard.Binding.keyCodepoint(key.u.str.ptr[0..@intCast(key.u.str.len)]) };
+    const field = context.child("key");
+    if (key.type == toml.TOML_UNKNOWN) return field.reject(error.KeybindingKeyRequired, "required key is missing");
+    if (key.type != toml.TOML_STRING) return field.reject(error.KeybindingKeyMustBeString, "expected a string");
+    const codepoint = keyboard.Binding.keyCodepoint(key.u.str.ptr[0..@intCast(key.u.str.len)]) catch |err| return field.reject(err, "expected one printable character or a supported key name (for example Enter, Escape or F1-F12)");
+    var binding: keyboard.Binding = .{ .codepoint = codepoint };
     inline for (modifiers) |modifier| {
         const enabled = toml.toml_get(value, modifier);
         if (enabled.type != toml.TOML_UNKNOWN) {
-            if (enabled.type != toml.TOML_BOOLEAN) return error.KeybindingModifierMustBeBoolean;
+            if (enabled.type != toml.TOML_BOOLEAN) return context.child(modifier).reject(error.KeybindingModifierMustBeBoolean, "expected a boolean (true or false)");
             @field(binding.mods, modifier) = enabled.u.boolean;
         }
     }

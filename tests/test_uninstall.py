@@ -233,7 +233,8 @@ def test_uninstall_validates_directories_before_termination(installation):
 def test_uninstall_rejects_extra_arguments(installation):
     result = installation.run("uninstall", "extra", check=False)
     assert result.returncode != 0
-    assert "InvalidArguments" in result.stderr
+    assert "Invalid argument 'extra'" in result.stderr
+    assert "imx uninstall --help" in result.stderr
     assert installation.binary.exists()
     assert not state_directory(installation).exists()
 

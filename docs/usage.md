@@ -1,5 +1,11 @@
 # 使用说明
 
+## 帮助与参数
+
+`imx help`、`imx -h` 和 `imx --help` 显示总体帮助；`imx -v` 和 `imx --version` 显示版本。每个命令支持 `-h`、`--help`，例如 `imx attach --help`；也可以使用 `imx help attach` 查看该命令的帮助。
+
+帮助和版本查询支持非交互环境，并在读取配置及执行操作之前处理。未知命令、未知选项、缺少名称和多余参数会报告具体错误及帮助入口。
+
 ## 会话生命周期
 
 `imx attach dev` 创建或进入 `dev` 会话。新会话使用创建时的工作目录、环境变量和 `$SHELL`；未设置 `$SHELL` 时使用 `/bin/sh`。进入会话需要交互式终端。
@@ -10,7 +16,7 @@
 
 每个会话在创建时启动独立的后台进程，内部使用一个事件循环线程，拥有该会话的 PTY、程序、屏幕、历史和连接。会话及其连接结束后，对应后台退出。会话和历史保存在内存中，后台退出会释放所属会话，机器重启会释放全部会话。某个后台暂停、崩溃或持续处理大量输出时，其他后台可以独立响应。
 
-会话名称允许 1–64 个 ASCII 字母、数字、句点、下划线和连字符。`.` 和 `..` 为保留名称。
+会话名称允许 1–64 个 ASCII 字母、数字、句点、下划线和连字符。`.` 和 `..` 为保留名称。以连字符开头的名称需要放在参数分隔符 `--` 后面，例如 `imx attach -- -dash`、`imx cat -- -dash` 和 `imx kill -- -dash`。
 
 ## 切换会话
 
@@ -47,6 +53,8 @@ imx attach dev2
 执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果配置文件不存在，程序会自动创建包含以下默认选项和中英文注释的文件。新建目录使用 `0700` 权限，配置文件使用 `0600` 权限，并遵循当前用户的 umask。已有文件保留原有内容和权限；并发首次运行时，完整写入后才公开配置文件。创建或读取失败会立即报告错误。
 
 `imx help`、`imx -v` 和 Tab 补全查询保持只读。配置文件由执行命令的用户创建，系统安装后的各个用户分别管理自己的配置。
+
+配置错误包含实际文件路径。选项校验还会显示完整名称及要求，例如 `keybindings.detach.ctrl: expected a boolean (true or false)`。TOML 语法错误使用解析库提供的具体原因，文件读取和创建错误也会显示对应路径。
 
 ```toml
 [prompt]
@@ -128,6 +136,8 @@ detach = { key = 'x', ctrl = true }
 
 `attach`、`cat` 和 `kill` 的首个参数支持会话名称补全。每次补全都并发查询当前用户所选运行目录中的独立后台，共享 250 毫秒查询期限。新增和删除会话会即时反映到候选中，无响应后台的会话名称仍然保留。候选按会话名称排序，名称查询独立于 `CREATED` 的显示格式。
 
+帮助和版本选项也支持补全，例如 `imx --ver`、`imx attach --he`。`imx help at` 可以补全命令名称；`imx attach -- -d` 可以补全以连字符开头的会话名称。
+
 `completion.enabled` 默认为 `true`。设置为 `false` 后，下一次按下 Tab 即可停止提供命令和会话候选；设置为 `true` 或删除该选项即可重新开启。
 
 | Shell | 安装前缀下的目录 | 加载条件 |
@@ -165,6 +175,7 @@ Zsh 在初始化 `compinit` 前添加搜索目录：
 fpath=("$HOME/apps/imx/share/zsh/site-functions" $fpath)
 autoload -Uz compinit
 compinit
+autoload -Uz "$HOME/apps/imx/share/zsh/site-functions/_imx"
 ```
 
 Fish 可以在启动新的 shell 前设置：

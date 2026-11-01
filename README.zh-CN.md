@@ -183,7 +183,7 @@ detach = { key = '\', ctrl = true }
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
 - **`keybindings.detach`**：设置分离当前连接的快捷键。例如，`{ key = 'x', ctrl = true }` 表示 `Ctrl+x`，`{ key = 'F12' }` 表示 F12。`key` 接受单个字符或支持的按键名称；`ctrl`、`alt`、`shift`、`super` 使用布尔值，在显式配置的快捷键中默认为 `false`。ASCII 字母名称不区分大小写，需要 Shift 时设置 `shift = true`。修改后重新连接生效，同一连接切换会话时保留当前设置。支持的按键名称及终端编码行为见[快捷键配置](docs/usage.md#快捷键配置)。
 
-语法错误、未知选项和取值类型错误会在进入会话或查看列表时报告。初始化文件的位置和修改方式见使用说明的[配置部分](docs/usage.md#配置文件与会话提示符)。
+语法错误、未知选项和取值类型错误会在进入会话或查看列表时报告。错误信息包含配置文件路径；选项错误还会说明完整配置项名称及其要求。初始化文件的位置和修改方式见使用说明的[配置部分](docs/usage.md#配置文件与会话提示符)。
 
 ## 工作方式
 
@@ -198,8 +198,10 @@ detach = { key = '\', ctrl = true }
 | `imx kill dev`              | 终止会话，包括 shell、前台作业和后台作业 |
 | `imx update`                | 在当前安装目录安装最新发布版本           |
 | `imx uninstall`             | 终止当前用户的会话并卸载                 |
-| `imx -v`                    | 查看版本                                 |
-| `imx help`                  | 查看帮助                                 |
+| `imx -v`、`imx --version`    | 查看版本                                 |
+| `imx help`、`imx --help`     | 查看帮助，也支持 `imx -h`                 |
+
+每个命令都支持 `-h` 和 `--help`，例如 `imx attach --help`、`imx update --help`；`imx help attach` 显示相同的命令帮助。帮助和版本查询可以在非交互环境使用，并且不会读取配置或启动会话。以连字符开头的会话名称需要放在 `--` 后面，例如 `imx attach -- -dash`、`imx cat -- -dash` 和 `imx kill -- -dash`。Tab 补全支持帮助、版本选项以及 `--` 后面的会话名称。
 
 会话的生命周期：
 
@@ -324,6 +326,7 @@ imx 用到的第三方项目：
 - [zmx](https://github.com/neurosnap/zmx)：终端历史格式化和状态恢复参考其实现，MIT 许可证。
 - [Ghostty](https://github.com/ghostty-org/ghostty)：终端处理使用其 `ghostty-vt` 库，MIT 许可证。
 - [tomlc17](https://github.com/cktan/tomlc17)：解析配置文件，MIT 许可证。
+- [zig-clap](https://github.com/Hejsil/zig-clap)：解析命令行参数，MIT 许可证。
 
 版权声明和全部第三方许可证见 [NOTICE](NOTICE) 和 [licenses/](licenses/)，其中包括 `ghostty-vt` 附带的库。
 

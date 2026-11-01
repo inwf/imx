@@ -3,6 +3,7 @@ const std = @import("std");
 pub const license_files = [_][]const u8{
     "LICENSE",
     "NOTICE",
+    "third-party/clap.txt",
     "third-party/Ghostty.txt",
     "third-party/Highway.txt",
     "third-party/UTF8.txt",

@@ -11,6 +11,7 @@ const settings = @import("settings.zig");
 const shell = @import("shell.zig");
 const completion = @import("completion.zig");
 const sessions = @import("sessions.zig");
+const cli = @import("cli.zig");
 const version = @import("build_options").version;
 pub const std_options: std.Options = .{ .log_level = .err };
 
@@ -38,60 +39,23 @@ fn execute(init: std.process.Init.Minimal) !void {
         if (args.len != 4) return error.InvalidArguments;
         return completion.run(allocator, io, args[2], args[3]);
     }
-    if (std.mem.eql(u8, command, "help")) {
-        if (args.len != 2) return error.InvalidArguments;
-        return sys.writeAll(1,
-            \\imx - persistent terminal sessions for Linux
-            \\
-            \\Usage:
-            \\  imx attach <name>    Create or attach to a session
-            \\  imx list | ls       List sessions (default command)
-            \\  imx cat <name>       Print retained history and the active screen
-            \\  imx detach           Detach clients from the current session
-            \\  imx kill <name>      Terminate and remove a session
-            \\  imx update           Install the latest published release
-            \\  imx uninstall        Terminate sessions and remove the installation
-            \\  imx -v               Print version
-            \\  imx help             Print help
-            \\
-            \\Close the terminal or use the detach shortcut (default: Ctrl+\).
-            \\Configure it with keybindings.detach in config.toml.
-            \\Inside a session, attach switches the active connection to the target session.
-            \\Names contain 1-64 ASCII letters, digits, dots, underscores or hyphens.
-            \\History uses a 10,000-line target and a 2 MiB scrollback budget.
-            \\Scrollback limits are applied in complete terminal pages.
-            \\IMX_DIR selects an absolute private runtime directory.
-            \\
-        , false);
-    }
-    if (std.mem.eql(u8, command, "-v")) {
-        if (args.len != 2) return error.InvalidArguments;
-        return sys.writeAll(1, "imx " ++ version ++ "\n", false);
-    }
-    if (std.mem.eql(u8, command, "uninstall")) {
-        if (args.len != 2) return error.InvalidArguments;
-        return uninstall.run(allocator, io, args[0]);
-    }
-    if (std.mem.eql(u8, command, "update")) {
-        if (args.len != 2) return error.InvalidArguments;
-        return update.run(allocator, io, init.environ);
-    }
-    const tag: protocol.Tag = if (std.mem.eql(u8, command, "attach")) .attach else if (std.mem.eql(u8, command, "list") or std.mem.eql(u8, command, "ls")) .list else if (std.mem.eql(u8, command, "cat")) .cat else if (std.mem.eql(u8, command, "detach")) .detach else if (std.mem.eql(u8, command, "kill")) .kill else return error.UnknownCommand;
-    const name: []const u8 = switch (tag) {
-        .list => blk: {
-            if (args.len > 2) return error.InvalidArguments;
-            break :blk "";
-        },
-        .detach => blk: {
-            if (args.len != 2) return error.InvalidArguments;
-            break :blk config.env("IMX_SESSION") orelse return error.NotInsideSession;
-        },
-        else => blk: {
-            if (args.len != 3) return error.InvalidArguments;
-            break :blk args[2];
-        },
+    const invocation = switch (try cli.parse(allocator, args[1..])) {
+        .help => |target| return cli.help(allocator, target),
+        .version => return sys.writeAll(1, "imx " ++ version ++ "\n", false),
+        .run => |value| value,
     };
-    if (tag != .list) try config.validateName(name);
+    const tag: protocol.Tag = switch (invocation.command) {
+        .uninstall => return uninstall.run(allocator, io, args[0]),
+        .update => return update.run(allocator, io, init.environ),
+        .attach => .attach,
+        .list, .ls => .list,
+        .cat => .cat,
+        .detach => .detach,
+        .kill => .kill,
+        .help => unreachable,
+    };
+    const name = if (tag == .detach) config.env("IMX_SESSION") orelse return cli.fail(allocator, "Run 'imx detach' inside a session (NotInsideSession).", .{}) else invocation.name;
+    if (tag != .list) config.validateName(name) catch |err| return cli.fail(allocator, "Invalid session name '{s}': use 1-64 ASCII letters, digits, dots, underscores or hyphens; '.' and '..' are reserved ({s}).", .{ name, @errorName(err) });
     if (tag == .attach) {
         if (sys.c.isatty(0) == 0 or sys.c.isatty(1) == 0) return error.TerminalRequired;
         _ = try sys.Size.get(0);

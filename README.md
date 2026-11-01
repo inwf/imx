@@ -184,7 +184,7 @@ detach = { key = '\', ctrl = true }
 - **`completion.enabled`** switches Tab completion of commands and session names. The default is `true`.
 - **`keybindings.detach`** sets the shortcut that detaches the current connection. For example, `{ key = 'x', ctrl = true }` uses `Ctrl+x`, and `{ key = 'F12' }` uses F12. `key` accepts a single character or a supported key name; `ctrl`, `alt`, `shift`, and `super` are booleans and default to `false` within an explicit binding. ASCII letter names are case-insensitive; use `shift = true` to require Shift. Changes apply when you reconnect, and switching sessions keeps the current connection's binding. See [keybindings](docs/usage.md#快捷键配置) for supported names and terminal encoding behavior.
 
-Syntax errors, unknown options, and wrong value types are reported when you attach or list sessions. The [configuration section](docs/usage.md#配置文件与会话提示符) of the usage guide lists the startup files and describes how they are edited.
+Syntax errors, unknown options, and wrong value types are reported when you attach or list sessions. Diagnostics include the configuration path and, for option errors, the full option name and its requirements. The [configuration section](docs/usage.md#配置文件与会话提示符) of the usage guide lists the startup files and describes how they are edited.
 
 ## How it works
 
@@ -199,8 +199,10 @@ Syntax errors, unknown options, and wrong value types are reported when you atta
 | `imx kill dev`              | Terminate the session, including its shell, foreground jobs, and background jobs |
 | `imx update`                | Install the latest published release in the current installation directory |
 | `imx uninstall`             | Terminate the current user's sessions and remove the installation |
-| `imx -v`                    | Print the version                                            |
-| `imx help`                  | Print help                                                   |
+| `imx -v`, `imx --version`    | Print the version                                            |
+| `imx help`, `imx --help`     | Print help; `imx -h` also works                              |
+
+Every command accepts `-h` and `--help`, including `imx attach --help` and `imx update --help`. `imx help attach` shows the same command help. Help and version queries work without an interactive terminal and do not read configuration or start sessions. Use `--` before session names beginning with a hyphen, for example `imx attach -- -dash`, `imx cat -- -dash`, and `imx kill -- -dash`. Tab completion includes help and version options and session names after `--`.
 
 A session's life:
 
@@ -327,6 +329,7 @@ Third-party projects used by imx:
 - [zmx](https://github.com/neurosnap/zmx): terminal history formatting and state restoration are adapted from it. MIT License.
 - [Ghostty](https://github.com/ghostty-org/ghostty): terminal processing uses its `ghostty-vt` library. MIT License.
 - [tomlc17](https://github.com/cktan/tomlc17): parses the configuration file. MIT License.
+- [zig-clap](https://github.com/Hejsil/zig-clap): parses command-line arguments. MIT License.
 
 Copyright notices and the complete set of third-party licenses are in [NOTICE](NOTICE) and [licenses/](licenses/), including those of the libraries bundled with `ghostty-vt`.
 

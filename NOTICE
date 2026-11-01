@@ -17,3 +17,7 @@ Dependency revision: 4987cf895df61f702d19e3481f34b032ab29ed3a.
 Terminal keyboard events are decoded with libvaxis,
 Copyright (c) 2023 Tim Culverhouse, MIT License.
 Dependency revision: 0620b34e091deaa6f64608922be3814147128dfb.
+
+Command-line arguments are parsed by zig-clap,
+Copyright (c) Jimmi Holst Christensen, MIT License.
+Dependency revision: 05faf3905e8548f5cc269a8836e154065e70128d.

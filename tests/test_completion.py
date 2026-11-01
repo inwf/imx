@@ -12,7 +12,7 @@ from test_uninstall import installation
 def test_completion_queries_leave_unused_runtime_untouched(sessions):
     assert sessions.run("__complete", "commands", "a").stdout == "attach\n"
     assert sessions.run("__complete", "commands", "l").stdout == "list\nls\n"
-    assert sessions.run("__complete", "commands", "-").stdout == "-v\n"
+    assert sessions.run("__complete", "commands", "-").stdout.splitlines() == ["-h", "--help", "-v", "--version"]
     assert sessions.run("__complete", "commands", "missing").stdout == ""
     assert sessions.run("__complete", "sessions", "").stdout == ""
     assert not sessions.runtime.exists()
@@ -63,7 +63,7 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
         assert terminal.complete("imx a\t") == "imx attach "
         assert terminal.complete("imx attach \t") == "imx attach "
         display = terminal.display()
-        for name in names:
+        for name in [value for value in names if not value.startswith("-")]:
             assert name in display
         terminal.child.send("b\t")
         assert terminal.buffer() == "imx attach beta "
@@ -71,9 +71,14 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
             assert terminal.complete(f"imx {command} d\t") == f"imx {command} docs.v1 "
             assert terminal.complete(f"imx {command} alpha-\t") == f"imx {command} alpha-"
             assert terminal.complete(f"imx {command} missing\t") == f"imx {command} missing"
-        for prefix_text, name in [("-d", "-dash"), (".h", ".hidden"), ("0", "0-start"), ("u", "upper_X")]:
+        for prefix_text, name in [(".h", ".hidden"), ("0", "0-start"), ("u", "upper_X")]:
             assert terminal.complete(f"imx attach {prefix_text}\t") == f"imx attach {name} "
-        assert terminal.complete("imx -\t") == "imx -v "
+        assert terminal.complete("imx attach -d\t") == "imx attach -d"
+        assert terminal.complete("imx --ver\t") == "imx --version "
+        assert terminal.complete("imx --he\t") == "imx --help "
+        assert terminal.complete("imx attach --he\t") == "imx attach --help "
+        assert terminal.complete("imx help at\t") == "imx help attach "
+        assert terminal.complete("imx attach -- -d\t") == "imx attach -- -dash "
         assert terminal.complete("imx attach beta a\t") == "imx attach beta a"
         assert terminal.complete("imx list a\t") == "imx list a"
         installation.spawn("gamma-live")

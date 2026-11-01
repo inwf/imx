@@ -57,7 +57,7 @@ class SessionEnvironment:
     def spawn(self, name="dev", initialize=True, rows=24, cols=80):
         child = pexpect.spawn(
             str(self.binary),
-            ["attach", name],
+            ["attach", "--", name],
             cwd=str(self.path),
             env=self.environment,
             dimensions=(rows, cols),
@@ -92,7 +92,7 @@ class SessionEnvironment:
 
     def cleanup(self):
         for session in self.sessions():
-            self.run("kill", session["NAME"])
+            self.run("kill", "--", session["NAME"])
         for child in self.clients:
             child.close(force=True)
         self.wait(lambda: not list(self.runtime.glob("*.sock")))

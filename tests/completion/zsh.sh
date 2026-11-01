@@ -4,6 +4,9 @@ if [[ -n $IMX_TEST_COMPLETION_PREFIX ]]; then
 fi
 autoload -Uz compinit
 compinit -D
+if [[ -n $IMX_TEST_COMPLETION_PREFIX ]]; then
+    autoload -Uz "$IMX_TEST_COMPLETION_PREFIX/share/zsh/site-functions/_imx"
+fi
 bindkey -e
 
 __imx_test_capture() {

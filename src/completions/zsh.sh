@@ -7,6 +7,20 @@ _imx() {
         2) kind=commands ;;
         3)
             case $words[2] in
+                attach|cat|kill)
+                    case $PREFIX in
+                        -*) kind=options-$words[2] ;;
+                        *) kind=sessions ;;
+                    esac
+                    ;;
+                help) kind=help ;;
+                list|ls|detach|update|uninstall) kind=options-$words[2] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        4)
+            [[ $words[3] == -- ]] || return 1
+            case $words[2] in
                 attach|cat|kill) kind=sessions ;;
                 *) return 1 ;;
             esac
@@ -16,6 +30,9 @@ _imx() {
     output=$(command imx __complete "$kind" "$PREFIX") || return
     [[ -n $output ]] || return 1
     candidates=("${(@f)output}")
+    if [[ $kind == sessions && $words[CURRENT-1] != -- ]]; then
+        candidates=("${(@)candidates:#-*}")
+    fi
     if [[ $kind == sessions && -z $PREFIX && $#candidates -gt 1 ]]; then
         compstate[list]=list
         compstate[insert]=''

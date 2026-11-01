@@ -34,6 +34,7 @@ pub fn build(b: *std.Build) void {
     });
     const options = b.addOptions();
     const vaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize });
+    const clap = b.dependency("clap", .{});
     options.addOption([]const u8, "version", manifest.version);
     const module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -46,6 +47,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ghostty-vt", .module = ghostty.module("ghostty-vt") },
             .{ .name = "toml", .module = toml.mod },
             .{ .name = "vaxis", .module = vaxis.module("vaxis") },
+            .{ .name = "clap", .module = clap.module("clap") },
         },
     });
     module.addOptions("build_options", options);
