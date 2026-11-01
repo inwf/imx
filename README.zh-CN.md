@@ -57,7 +57,7 @@
   <tr>
     <td valign="top">
       <h3>一个配置文件</h3>
-      首次使用时自动创建包含默认值和注释的 TOML 文件，用于设置会话提示符、补全、快捷键和 <code>CREATED</code> 列的时间格式。语法、选项名称和取值类型都会检查。
+      首次使用时自动创建包含会话提示符、补全和 <code>CREATED</code> 时间格式的 TOML 文件。<a href="config.example.toml">完整配置模板</a>还说明了自定义快捷键，各项均有中英文注释。语法、选项名称和取值类型都会检查。
     </td>
     <td valign="top">
       <h3>会话隔离</h3>
@@ -162,11 +162,13 @@ imx kill dev     # 终止会话
 
 进入会话后，按下 **Command+D** 将当前窗格左右分屏，按下 **Command+Shift+D** 将当前窗格上下分屏。新窗格在当前聚焦窗格的工作目录启动普通 shell，用户可以执行 `imx attach <name>` 连接其他会话。鼠标点击窗格即可聚焦，高亮边框表示当前输入目标。分离快捷键只断开当前聚焦窗格的会话连接，并返回该窗格的普通 shell。
 
-每个窗格都可以继续分屏。程序没有接管鼠标时，滚轮用于查看该窗格的历史。退出普通 shell 会关闭对应窗格，最后一个窗格关闭后退出分屏界面。关闭终端会丢弃布局并终止窗格中的普通 shell，已经连接的会话继续运行。布局只保留在当前客户端内存中，不会保存到文件。可以通过 `keybindings.split_right` 和 `keybindings.split_down` 修改快捷键。
+每个窗格都可以继续分屏。程序没有接管鼠标时，滚轮用于查看该窗格的历史。在普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`，即可关闭该窗格。需要保留已经连接的会话时，先按分离快捷键（默认 `Ctrl+\`），再在普通 shell 中输入 `exit`。最后一个窗格关闭后退出分屏界面。
+
+关闭终端会丢弃布局并终止窗格中的普通 shell，已经连接的会话继续运行。布局只保留在当前客户端内存中，不会保存到文件。可以通过 `keybindings.split_right` 和 `keybindings.split_down` 修改快捷键。
 
 ### 5. 按需配置
 
-执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含全部默认设置和中英文注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
+执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含会话名称提示、补全和 `CREATED` 格式这三项设置及中英文注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
 
 自动生成的配置文件包含以下默认设置：
 
@@ -179,12 +181,9 @@ created_format = "%m-%d %H:%M:%S"
 
 [completion]
 enabled = true
-
-[keybindings]
-detach = { key = '\', ctrl = true }
-split_right = { key = 'd', super = true }
-split_down = { key = 'd', super = true, shift = true }
 ```
+
+[完整配置模板](config.example.toml)使用中英文注释说明全部选项的用途、默认值和生效时机。快捷键使用内置默认值；需要自定义时，把对应的 `[keybindings]` 配置加入自己的文件即可。模板也说明了 `alt` 对应 macOS 的 Option，`super` 对应 macOS 的 Command。
 
 - **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。

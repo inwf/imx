@@ -26,6 +26,8 @@
 
 分离快捷键（默认 Ctrl+\\）只分离当前聚焦窗格的连接，随后回到该窗格的普通 shell。其他窗格保持连接，即使它们连接同一个会话。会话中的 shell 退出后，所在窗格返回普通 shell；普通 shell 退出后关闭窗格，剩余窗格重新分配空间。最后一个窗格关闭后退出整个界面。
 
+关闭某个窗格时，在它的普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`。需要保留会话时，先按分离快捷键返回普通 shell，再输入 `exit`。在会话的 shell 中直接执行 `exit` 会结束该会话。
+
 分屏布局只存在于当前客户端内存中。关闭终端或者断开 SSH 连接会释放布局，并终止窗格中的普通 shell 及其作业，已经进入的会话继续在各自后台运行。重新连接时自行分屏和 attach。窗口缩小时保留全部窗格，空间不足时显示聚焦窗格所在区域；重新扩大窗口后恢复完整布局。新分屏需要每个窗格至少 12 列、5 行（包括边框）。
 
 ```toml
@@ -38,7 +40,7 @@ split_right = { key = 'd', super = true }
 split_down = { key = 'd', super = true, shift = true }
 ```
 
-`super` 对应 macOS 的 Command。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。
+`super` 对应 macOS 的 Command，`alt` 对应 macOS 的 Option。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。
 
 ## 切换会话
 
@@ -72,7 +74,7 @@ imx attach dev2
 
 配置文件使用 `$XDG_CONFIG_HOME/imx/config.toml`；`XDG_CONFIG_HOME` 未设置或为空时，使用 `$HOME/.config/imx/config.toml`。路径需要为绝对路径。
 
-执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果配置文件不存在，程序会自动创建包含以下默认选项和中英文注释的文件。新建目录使用 `0700` 权限，配置文件使用 `0600` 权限，并遵循当前用户的 umask。已有文件保留原有内容和权限；并发首次运行时，完整写入后才公开配置文件。创建或读取失败会立即报告错误。
+执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果配置文件不存在，程序会自动创建包含会话名称提示、补全和 `CREATED` 格式这三项设置及中英文注释的文件。新建目录使用 `0700` 权限，配置文件使用 `0600` 权限，并遵循当前用户的 umask。已有文件保留原有内容和权限；并发首次运行时，完整写入后才公开配置文件。创建或读取失败会立即报告错误。
 
 `imx help`、`imx -v` 和 Tab 补全查询保持只读。配置文件由执行命令的用户创建，系统安装后的各个用户分别管理自己的配置。
 
@@ -87,12 +89,9 @@ created_format = "%m-%d %H:%M:%S"
 
 [completion]
 enabled = true
-
-[keybindings]
-detach = { key = '\', ctrl = true }
-split_right = { key = 'd', super = true }
-split_down = { key = 'd', super = true, shift = true }
 ```
+
+仓库根目录的 [config.example.toml](../config.example.toml) 提供完整配置模板，以中英文注释说明每项配置的用途、默认值和生效时机。可以将需要的选项合并到自己的配置文件，同一个分组只声明一次。快捷键使用内置默认值，需要自定义时添加对应的 `[keybindings]` 选项。
 
 ### 快捷键配置
 

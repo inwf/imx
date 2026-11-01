@@ -1,0 +1,68 @@
+# 将需要的配置项合并到 ~/.config/imx/config.toml，同一个配置分组只声明一次。
+# Merge the options you need into ~/.config/imx/config.toml; declare each section once.
+# 设置了非空的 XDG_CONFIG_HOME 时，使用 $XDG_CONFIG_HOME/imx/config.toml。
+# When XDG_CONFIG_HOME is nonempty, use $XDG_CONFIG_HOME/imx/config.toml.
+# 以下取值均为内置默认值，省略的选项也使用这些默认值。
+# The values below are the built-in defaults, which also apply to omitted options.
+
+[prompt]
+# 在会话内的 Bash、Zsh 和 Fish 提示符前显示会话名称，例如 [dev]。
+# Show the session name, such as [dev], before Bash, Zsh, and Fish prompts inside a session.
+# 保留提示符原来的路径、颜色和主题；设为 false 可以关闭名称显示。
+# Keep the prompt's existing path, colors, and theme; set false to hide the session name.
+# 下一次 imx attach 会安装或移除提示符集成，新启动的 shell 会加载对应设置。
+# The next imx attach installs or removes prompt integration; newly started shells load it.
+show_session = true
+
+[list]
+# 设置 imx、imx ls 和 imx list 输出中 CREATED 列的时间格式。
+# Set the CREATED time format in the output of imx, imx ls, and imx list.
+# 使用 strftime 格式及后台进程的本地时区；修改后在下一次查询时生效。
+# Use strftime formatting and the backend's local timezone; changes apply to the next query.
+# 默认显示月、日、时、分、秒；例如 "%Y-%m-%d %H:%M:%S" 可以增加年份。
+# The default shows month, day, hour, minute, and second; "%Y-%m-%d %H:%M:%S" adds the year.
+created_format = "%m-%d %H:%M:%S"
+
+[completion]
+# 在 Bash、Zsh 和 Fish 中按 Tab 补全 imx 命令及已有会话名称。
+# Complete imx commands and existing session names with Tab in Bash, Zsh, and Fish.
+# 设为 false 关闭补全；修改后在下一次按下 Tab 时生效。
+# Set false to disable completion; changes apply on the next Tab press.
+enabled = true
+
+[keybindings]
+# key 指定单个字符或按键名称；ASCII 字母和按键名称不区分大小写。
+# key names a single character or a key; ASCII letters and key names are case-insensitive.
+# 按键名称支持 Enter、Tab、Escape、Space、Backspace、Insert、Delete、Left、Right、Up、Down、
+# Supported names: Enter, Tab, Escape, Space, Backspace, Insert, Delete, Left, Right, Up, Down,
+# Page_Up、Page_Down、Home、End，以及 F1 至 F12。
+# Page_Up, Page_Down, Home, End, and F1 through F12.
+# ctrl 表示 Ctrl，alt 表示 Alt（macOS 的 Option），shift 表示 Shift，super 表示 macOS 的 Command。
+# ctrl means Ctrl, alt means Alt (Option on macOS), shift means Shift, and super means Command on macOS.
+# 显式配置的绑定中，省略的修饰键均为 false；需要 Shift 时设置 shift = true。
+# Omitted modifiers in an explicit binding default to false; set shift = true to require Shift.
+# 终端需要发送对应组合键；Option 组合需要终端发送 Alt/Meta 编码。
+# The terminal must forward the combination; Option combinations require Alt/Meta encoding.
+# 每个动作使用不同的快捷键。示例：{ key = 'x', ctrl = true } 表示 Ctrl+x。
+# Assign a different shortcut to each action. Example: { key = 'x', ctrl = true } means Ctrl+x.
+
+# 分离当前连接，默认 Ctrl+\。分屏时只分离当前聚焦窗格，随后返回普通 shell。
+# Detach the current connection, default Ctrl+\. In split mode, detach the focused pane and return to its plain shell.
+# 会话和其中的程序继续运行。修改快捷键后，分离并重新 attach 生效。
+# The session and its programs keep running. Detach and reattach to apply a changed binding.
+detach = { key = '\', ctrl = true }
+
+# 左右分屏，在当前聚焦窗格的目录启动普通 shell，默认 Command+D。
+# Split left and right, starting a plain shell in the focused pane's directory. Default: Command+D.
+# 修改分屏快捷键后，退出整个分屏界面并重新 attach 生效。
+# Exit the entire split interface and attach again to apply changed split bindings.
+split_right = { key = 'd', super = true }
+
+# 上下分屏，在当前聚焦窗格的目录启动普通 shell，默认 Command+Shift+D。
+# Split top and bottom, starting a plain shell in the focused pane's directory. Default: Command+Shift+D.
+# 修改后同样需要退出整个分屏界面并重新 attach。
+# Exit the entire split interface and attach again to apply this change too.
+split_down = { key = 'd', super = true, shift = true }
+
+# 使用 Option+D 和 Option+Shift+D 时，将两个分屏绑定中的 super = true 改为 alt = true。
+# For Option+D and Option+Shift+D, replace super = true with alt = true in both split bindings.

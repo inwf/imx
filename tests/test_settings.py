@@ -17,11 +17,6 @@ DEFAULT_SETTINGS = {
     "prompt": {"show_session": True},
     "list": {"created_format": "%m-%d %H:%M:%S"},
     "completion": {"enabled": True},
-    "keybindings": {
-        "detach": {"key": "\\", "ctrl": True},
-        "split_right": {"key": "d", "super": True},
-        "split_down": {"key": "d", "super": True, "shift": True},
-    },
 }
 
 

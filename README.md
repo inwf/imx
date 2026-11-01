@@ -57,7 +57,7 @@ Each session has an independent backend process with one event loop thread. The 
   <tr>
     <td valign="top">
       <h3>One configuration file</h3>
-      A TOML file with commented defaults is created on first use. It sets the session prompt, completion, keybindings, and the <code>CREATED</code> time format. Syntax, option names, and value types are checked.
+      First use creates a TOML file for the session prompt, completion, and the <code>CREATED</code> time format. The <a href="config.example.toml">full configuration template</a> also documents custom keybindings, with English and Chinese comments. Syntax, option names, and value types are checked.
     </td>
     <td valign="top">
       <h3>Session isolation</h3>
@@ -163,11 +163,13 @@ To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal mo
 
 While attached, press **Command+D** to split the focused pane left and right, or **Command+Shift+D** to split it top and bottom. Each new pane starts a plain shell in the focused pane's current directory. Run `imx attach <name>` there to connect to another session. Click a pane to focus it; its border is highlighted. The detach shortcut affects only the focused pane's connection and returns that pane to its plain shell.
 
-Panes can be split repeatedly. Scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Exiting a plain shell closes its pane; closing the last pane exits the interface. Closing the terminal discards the layout and terminates the plain pane shells while attached sessions keep running. Layouts are held only in the current client and are not saved. Set `keybindings.split_right` and `keybindings.split_down` to use other shortcuts.
+Panes can be split repeatedly. Scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. At a plain shell prompt, run `exit`, or press `Ctrl+D` with an empty command line, to close that pane. To keep an attached session running, detach first (default `Ctrl+\`), then run `exit` in the plain shell. Closing the last pane exits the interface.
+
+Closing the terminal discards the layout and terminates the plain pane shells while attached sessions keep running. Layouts are held only in the current client and are not saved. Set `keybindings.split_right` and `keybindings.split_down` to use other shortcuts.
 
 ### 5. Make it yours
 
-Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with all default settings and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
+Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with three settings for the session prompt, completion, and the `CREATED` format, and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
 
 The generated file contains the following defaults:
 
@@ -180,12 +182,9 @@ created_format = "%m-%d %H:%M:%S"
 
 [completion]
 enabled = true
-
-[keybindings]
-detach = { key = '\', ctrl = true }
-split_right = { key = 'd', super = true }
-split_down = { key = 'd', super = true, shift = true }
 ```
+
+The [full configuration template](config.example.toml) documents every option, its default, and when changes take effect, with English and Chinese comments. Shortcuts use their built-in defaults; copy the `[keybindings]` entries you want to customize into your configuration. The template also explains `alt` (Option on macOS) and `super` (Command on macOS).
 
 - **`prompt.show_session`** shows `[dev] ` before the prompt of new Bash, Zsh, and Fish shells inside sessions, keeping the prompt's path, colors, and theme. The next `imx attach` installs the integration between `# BEGIN imx shell integration` and `# END imx shell integration` markers in your shell startup files. Set the option to `false` and attach again to remove it. The default is `true`, including when the option is omitted.
 - **`list.created_format`** formats the `CREATED` column with `strftime` fields. The default shows `10-30 14:05:09`; `%Y-%m-%d %H:%M:%S` adds the year.

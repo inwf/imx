@@ -25,5 +25,5 @@
             .hash = "translate_c-2.0.2-Q_BUWvBNBwDnyehSiuAJmdFcMYHYGA-Jc3KiYdrV2Dqx",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", ".zig-version", "install.sh", "src", "tests", "README.md", "LICENSE", "NOTICE", "licenses" },
+    .paths = .{ "build.zig", "build.zig.zon", ".zig-version", "install.sh", "src", "tests", "README.md", "config.example.toml", "LICENSE", "NOTICE", "licenses" },
 }
