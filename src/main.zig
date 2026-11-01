@@ -127,6 +127,7 @@ fn execute(init: std.process.Init.Minimal) !void {
 }
 
 test {
+    _ = @import("keyboard.zig");
     _ = @import("terminal.zig");
     _ = @import("protocol.zig");
     _ = @import("settings.zig");

@@ -13,3 +13,7 @@ Third-party notices are included in licenses/ and installed alongside imx.
 Configuration files are parsed by tomlc17,
 Copyright (c) 2024-2026, CK Tan, MIT License.
 Dependency revision: 4987cf895df61f702d19e3481f34b032ab29ed3a.
+
+Terminal keyboard events are decoded with libvaxis,
+Copyright (c) 2023 Tim Culverhouse, MIT License.
+Dependency revision: 0620b34e091deaa6f64608922be3814147128dfb.

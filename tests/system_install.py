@@ -186,7 +186,7 @@ def main():
         assert configuration.stat().st_mode & 0o777 == 0o600
         assert configuration.parent.stat().st_mode & 0o777 == 0o700
         assert tomllib.loads(configuration.read_text()) == {
-            "prompt": {"show_session": False},
+            "prompt": {"show_session": True},
             "list": {"created_format": "%m-%d %H:%M:%S"},
             "completion": {"enabled": True},
         }

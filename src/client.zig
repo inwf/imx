@@ -5,6 +5,7 @@ const protocol = @import("protocol.zig");
 const config = @import("config.zig");
 const registry = @import("registry.zig");
 const connection = @import("connection.zig");
+const keyboard = @import("keyboard.zig");
 
 pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8, created_format: [:0]const u8) !void {
     const customized = tag == .list and !std.mem.eql(u8, created_format, sys.default_created_format);
@@ -204,27 +205,42 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
     defer reader.deinit(allocator);
     var connected = true;
     var detaching = false;
+    var keys: keyboard.Input = .{};
     var prepared: ?c_int = null;
     defer if (prepared) |next| sys.close(next);
     var switch_deadline: i64 = 0;
     client_loop: while (connected or output.pending().len > 0) {
+        if (connected) {
+            if (keys.deadline) |deadline| {
+                if (try sys.monotonicMilliseconds() >= deadline) try input.message(allocator, .input, keys.takePending());
+            }
+        }
         var pollfds = [_]c.struct_pollfd{
-            .{ .fd = if (connected and !detaching and prepared == null) 0 else -1, .events = if (input.pending().len < protocol.max_queue - 8192) c.POLLIN else 0, .revents = 0 },
+            .{ .fd = if (connected and !detaching and prepared == null) 0 else -1, .events = if (input.pending().len < protocol.max_queue - keyboard.Input.read_size * 2 - 16) c.POLLIN else 0, .revents = 0 },
             .{ .fd = if (connected) fd else -1, .events = @as(c_short, if (output.pending().len < protocol.max_queue - protocol.max_payload - 8) c.POLLIN else 0) | @as(c_short, if (input.pending().len > 0) c.POLLOUT else 0), .revents = 0 },
             .{ .fd = signal, .events = c.POLLIN, .revents = 0 },
             .{ .fd = if (output.pending().len > 0) 1 else -1, .events = c.POLLOUT, .revents = 0 },
         };
-        const timeout: c_int = if (prepared != null) blk: {
+        var timeout: c_int = if (prepared != null) blk: {
             const remaining = switch_deadline - try sys.monotonicMilliseconds();
             if (remaining <= 0) return error.SwitchTimeout;
             break :blk @intCast(remaining);
         } else if (connected) -1 else 100;
+        if (connected) {
+            if (keys.deadline) |deadline| {
+                const remaining: c_int = @intCast(@max(0, deadline - try sys.monotonicMilliseconds()));
+                timeout = if (timeout < 0) remaining else @min(timeout, remaining);
+            }
+        }
         const count = c.poll(&pollfds, pollfds.len, timeout);
         if (count < 0) {
             if (c.__errno_location().* == c.EINTR) continue;
             return sys.failure("poll(client)");
         }
-        if (count == 0) return if (prepared != null) error.SwitchTimeout else error.TerminalOutputBlocked;
+        if (count == 0) {
+            if (connected and keys.deadline != null) continue;
+            return if (prepared != null) error.SwitchTimeout else error.TerminalOutputBlocked;
+        }
         if (pollfds[2].revents & c.POLLIN != 0) {
             var info: c.struct_signalfd_siginfo = undefined;
             while ((try sys.read(signal, std.mem.asBytes(&info))) != null) {
@@ -235,14 +251,17 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
             }
         }
         if (pollfds[0].revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
-            var buffer: [4096]u8 = undefined;
+            var buffer: [keyboard.Input.read_size]u8 = undefined;
             if (try sys.readPty(0, &buffer)) |n| {
                 if (n == 0) return;
-                if (std.mem.indexOfScalar(u8, buffer[0..n], 0x1c)) |index| {
-                    if (index != 0) try input.message(allocator, .input, buffer[0..index]);
-                    detaching = true;
+                const result = try keys.feed(buffer[0..n], try sys.monotonicMilliseconds());
+                if (result.bytes.len != 0) try input.message(allocator, .input, result.bytes);
+                if (result.action) |action| {
+                    switch (action) {
+                        .detach => detaching = true,
+                    }
                     if (input.pending().len == 0) return;
-                } else try input.message(allocator, .input, buffer[0..n]);
+                }
             }
         }
         if (pollfds[1].revents & c.POLLIN != 0) {
@@ -255,6 +274,8 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                     .output => try output.append(allocator, msg.payload),
                     .switch_session => {
                         if (prepared != null) return error.InvalidMessage;
+                        const pending = keys.takePending();
+                        if (pending.len != 0) try input.message(allocator, .input, pending);
                         const attempt = prepareSwitch(allocator, io, root, msg.payload) catch |err| {
                             if (err == error.OutOfMemory) return err;
                             try input.message(allocator, .switch_result, @errorName(err));
@@ -282,6 +303,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                         reader = .{};
                         input.deinit(allocator);
                         input = .{};
+                        keys = .{};
                         output.deinit(allocator);
                         output = .{};
                         try output.append(allocator, reset_display);

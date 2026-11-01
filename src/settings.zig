@@ -4,7 +4,7 @@ const sys = @import("sys.zig");
 const toml = @import("toml");
 
 pub const Settings = struct {
-    show_session: bool = false,
+    show_session: bool = true,
     completion_enabled: bool = true,
     created_format: ?[:0]u8 = null,
     file_missing: bool = false,
@@ -128,7 +128,8 @@ test "default configuration matches built-in settings" {
 
 test "TOML prompt settings validate types and names" {
     const allocator = std.testing.allocator;
-    try std.testing.expect(!(try parse(allocator, "")).show_session);
+    try std.testing.expect((try parse(allocator, "")).show_session);
+    try std.testing.expect((try parse(allocator, "[prompt]\n")).show_session);
     try std.testing.expect((try parse(allocator, "[prompt]\nshow_session = true\n")).show_session);
     try std.testing.expect(!(try parse(allocator, "prompt = { show_session = false }\n")).show_session);
     try std.testing.expectError(error.PromptShowSessionMustBeBoolean, parse(allocator, "[prompt]\nshow_session = 'true'\n"));

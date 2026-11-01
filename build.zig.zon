@@ -4,6 +4,10 @@
     .fingerprint = 0x36cac559d7d1d067,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
+        .vaxis = .{
+            .url = "git+https://github.com/rockorager/libvaxis#0620b34e091deaa6f64608922be3814147128dfb",
+            .hash = "vaxis-0.6.0-BWNV_LoTDQCQSGhvBbu_-fOf3I2P3TIiGaUzCDniO12E",
+        },
         .tomlc17 = .{
             .url = "git+https://github.com/cktan/tomlc17#4987cf895df61f702d19e3481f34b032ab29ed3a",
             .hash = "N-V-__8AAIfmAwAC2wy1zGYHgUV8FPupt8yP3YqGCQ7xLNTM",

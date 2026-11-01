@@ -138,6 +138,8 @@ imx attach dev
 
 照常运行命令。关闭终端、断开 SSH 连接或按下 **`Ctrl+\`** 会分离当前连接，shell 和其中的程序继续运行。
 
+应用启用 Kitty 键盘协议或 xterm 的 modifyOtherKeys 模式时，该快捷键同样有效。启用括号粘贴模式时，粘贴内容会原样传递，不会触发快捷键。
+
 ### 3. 返回会话
 
 ```bash
@@ -156,9 +158,9 @@ imx kill dev     # 终止会话
 
 ### 4. 按需配置
 
-执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含全部默认设置和注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
+执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含全部默认设置和中英文注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
 
-编辑自动生成的配置文件，开启会话提示符并保留其他默认设置：
+自动生成的配置文件包含以下默认设置：
 
 ```toml
 [prompt]
@@ -171,7 +173,7 @@ created_format = "%m-%d %H:%M:%S"
 enabled = true
 ```
 
-- **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `false`。
+- **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
 

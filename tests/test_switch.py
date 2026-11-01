@@ -122,10 +122,14 @@ def test_paused_target_reports_timeout_and_keeps_source_connection(sessions):
     switch(sessions, source, "dev2")
 
 
-def test_failed_target_shell_preserves_source_connection(sessions):
+@pytest.mark.parametrize("shell, error", [
+    ("/missing/bash", "ShellExecFailed"),
+    ("/missing/imx-shell", "UnsupportedPromptShell"),
+])
+def test_failed_target_shell_preserves_source_connection(sessions, shell, error):
     source = sessions.spawn("dev1")
-    output = sessions.command(source, "SHELL=/missing/imx-shell imx attach broken; printf 'SWITCH_STATUS=%s\\n' \"$?\"")
-    assert "ShellExecFailed" in output and "SWITCH_STATUS=1" in output
+    output = sessions.command(source, f"SHELL={shell} imx attach broken; printf 'SWITCH_STATUS=%s\\n' \"$?\"")
+    assert error in output and "SWITCH_STATUS=1" in output
     sessions.wait(lambda: list(rows(sessions)) == ["dev1"])
     assert "SOURCE_ALIVE" in sessions.command(source, "printf 'SOURCE_ALIVE\\n'")
 

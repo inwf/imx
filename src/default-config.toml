@@ -1,11 +1,14 @@
 [prompt]
-# 在 Bash、Zsh 和 Fish 的原有提示符前显示会话名称。
-show_session = false
+# 在 Bash、Zsh 和 Fish 的提示符前显示当前会话名称，例如 [dev]。
+# Show the current session name, such as [dev], before the Bash, Zsh, or Fish prompt.
+show_session = true
 
 [list]
 # CREATED 列使用 strftime 格式，按后台进程的本地时区显示。
+# Format the CREATED column with strftime in the backend process's local timezone.
 created_format = "%m-%d %H:%M:%S"
 
 [completion]
-# 在 Bash、Zsh 和 Fish 中补全命令和当前会话名称。
+# 在 Bash、Zsh 和 Fish 中按 Tab 补全 imx 命令和已有会话名称。
+# Enable Tab completion for imx commands and existing session names in Bash, Zsh, and Fish.
 enabled = true

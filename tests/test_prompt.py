@@ -201,13 +201,27 @@ def test_ordinary_shell_keeps_original_prompt(sessions, shell):
     child.expect(pexpect.EOF)
 
 
-@pytest.mark.parametrize("enabled", [None, False])
-def test_prompt_is_disabled_by_default(sessions, enabled):
-    path, original = setup_shell(sessions, "bash")
-    if enabled is not None:
-        settings(sessions, enabled)
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+@pytest.mark.parametrize("contents", [None, "", "[prompt]\n"])
+def test_session_prompt_is_enabled_by_default(sessions, shell, contents):
+    path, original = setup_shell(sessions, shell)
+    if contents is not None:
+        config = configuration(sessions)
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(contents)
+    enter(sessions)
+    assert path.read_text().startswith(original)
+    assert path.read_text().count(BEGIN) == 1
+    assert (sessions.home / ".local/state/imx/shell").is_dir()
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+def test_explicitly_disabled_prompt_preserves_shell_files(sessions, shell):
+    path, original = setup_shell(sessions, shell)
+    settings(sessions, False)
     child = sessions.spawn(initialize=False)
     child.expect_exact("BASE:")
+    assert "[dev]" not in child.before
     assert path.read_text() == original
     assert not (sessions.home / ".local/state/imx/shell").exists()
 

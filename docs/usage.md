@@ -44,13 +44,13 @@ imx attach dev2
 
 配置文件使用 `$XDG_CONFIG_HOME/imx/config.toml`；`XDG_CONFIG_HOME` 未设置或为空时，使用 `$HOME/.config/imx/config.toml`。路径需要为绝对路径。
 
-执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果配置文件不存在，程序会自动创建包含以下默认选项和注释的文件。新建目录使用 `0700` 权限，配置文件使用 `0600` 权限，并遵循当前用户的 umask。已有文件保留原有内容和权限；并发首次运行时，完整写入后才公开配置文件。创建或读取失败会立即报告错误。
+执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果配置文件不存在，程序会自动创建包含以下默认选项和中英文注释的文件。新建目录使用 `0700` 权限，配置文件使用 `0600` 权限，并遵循当前用户的 umask。已有文件保留原有内容和权限；并发首次运行时，完整写入后才公开配置文件。创建或读取失败会立即报告错误。
 
 `imx help`、`imx -v` 和 Tab 补全查询保持只读。配置文件由执行命令的用户创建，系统安装后的各个用户分别管理自己的配置。
 
 ```toml
 [prompt]
-show_session = false
+show_session = true
 
 [list]
 created_format = "%m-%d %H:%M:%S"
@@ -86,7 +86,7 @@ enabled = true
 
 ### 会话提示符
 
-`prompt.show_session` 默认为 `false`。开启后，在下一次执行 `imx attach <name>` 时安装 shell 集成。之后启动的 Bash、Zsh 和 Fish 会在原有提示符前显示 `[会话名称] `，保留原有路径、颜色和主题。首次启用时已经运行的 shell 需要重新启动，才能加载新加入的初始化代码。
+`prompt.show_session` 默认为 `true`，省略该选项时也会启用。在执行 `imx attach <name>` 时安装 shell 集成。之后启动的 Bash、Zsh 和 Fish 会在原有提示符前显示 `[会话名称] `，保留原有路径、颜色和主题。首次启用时已经运行的 shell 需要重新启动，才能加载新加入的初始化代码。
 
 | Shell | 集成位置 |
 | --- | --- |
@@ -96,7 +96,7 @@ enabled = true
 
 每个初始化文件中的集成片段使用通用的 `# BEGIN imx shell integration` 和 `# END imx shell integration` 注释。集成脚本和修改记录保存在 `$HOME/.local/state/imx/shell/`。多次进入会话会复用已有片段，普通终端保持原有提示符。Bash 支持字符串和数组形式的 `PROMPT_COMMAND`；Zsh 使用 `precmd_functions`；Fish 包装已有的 `fish_prompt`。
 
-将 `show_session` 改为 `false`，或者删除配置中的该选项，再执行 `imx attach <name>`，程序会移除记录中的完整片段和集成脚本，并删除由 imx 创建且已经为空的初始化文件和目录。已经加载集成的 shell 会在下一次显示提示符时移除会话名称。
+将 `show_session` 改为 `false`，再执行 `imx attach <name>`，程序会移除记录中的完整片段和集成脚本，并删除由 imx 创建且已经为空的初始化文件和目录。已经加载集成的 shell 会在下一次显示提示符时移除会话名称。删除该选项会恢复默认启用状态。
 
 初始化文件按照原有符号链接修改实际目标，使用同一目录内的原子替换，保留所有者、权限和扩展属性。文件锁、内容与文件身份检查用于处理并发修改。配置语法、选项名称和类型错误会在 `imx attach` 或查看列表时报告；开启选项时，其他 shell 会报告 `UnsupportedPromptShell`。
 

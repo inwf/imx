@@ -319,10 +319,14 @@ def test_detached_terminal_answers_queries(sessions):
     assert result["response"] == "1b5b313b3152"
 
 
-def test_invalid_shell_fails_without_creating_session(sessions):
-    sessions.environment["SHELL"] = "/missing/imx-shell"
+@pytest.mark.parametrize("shell, error", [
+    ("/missing/bash", "ShellExecFailed"),
+    ("/missing/imx-shell", "UnsupportedPromptShell"),
+])
+def test_invalid_shell_fails_without_creating_session(sessions, shell, error):
+    sessions.environment["SHELL"] = shell
     child = sessions.spawn(initialize=False)
-    child.expect_exact("ShellExecFailed")
+    child.expect_exact(error)
     child.expect(pexpect.EOF)
     assert sessions.sessions() == []
 

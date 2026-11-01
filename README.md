@@ -139,6 +139,8 @@ imx attach dev
 
 Run commands as usual. Closing the terminal, losing the SSH connection, or pressing **`Ctrl+\`** detaches your connection while the shell and its programs keep running.
 
+The shortcut also works in applications that enable the Kitty keyboard protocol or xterm's modifyOtherKeys mode. Pasted content is passed through without triggering shortcuts when bracketed paste is active.
+
 ### 3. Come back
 
 ```bash
@@ -157,9 +159,9 @@ To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal mo
 
 ### 4. Make it yours
 
-Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with all default settings and comments. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
+Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with all default settings and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
 
-Edit the generated file to enable the session prompt while keeping the other defaults:
+The generated file contains the following defaults:
 
 ```toml
 [prompt]
@@ -172,7 +174,7 @@ created_format = "%m-%d %H:%M:%S"
 enabled = true
 ```
 
-- **`prompt.show_session`** shows `[dev] ` before the prompt of new Bash, Zsh, and Fish shells inside sessions, keeping the prompt's path, colors, and theme. The next `imx attach` installs the integration between `# BEGIN imx shell integration` and `# END imx shell integration` markers in your shell startup files. Set the option to `false` and attach again to remove it. The default is `false`.
+- **`prompt.show_session`** shows `[dev] ` before the prompt of new Bash, Zsh, and Fish shells inside sessions, keeping the prompt's path, colors, and theme. The next `imx attach` installs the integration between `# BEGIN imx shell integration` and `# END imx shell integration` markers in your shell startup files. Set the option to `false` and attach again to remove it. The default is `true`, including when the option is omitted.
 - **`list.created_format`** formats the `CREATED` column with `strftime` fields. The default shows `10-30 14:05:09`; `%Y-%m-%d %H:%M:%S` adds the year.
 - **`completion.enabled`** switches Tab completion of commands and session names. The default is `true`.
 

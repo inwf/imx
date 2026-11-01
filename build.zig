@@ -33,6 +33,7 @@ pub fn build(b: *std.Build) void {
         .@"emit-macos-app" = false,
     });
     const options = b.addOptions();
+    const vaxis = b.dependency("vaxis", .{ .target = target, .optimize = optimize });
     options.addOption([]const u8, "version", manifest.version);
     const module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -44,6 +45,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "c", .module = translator.mod },
             .{ .name = "ghostty-vt", .module = ghostty.module("ghostty-vt") },
             .{ .name = "toml", .module = toml.mod },
+            .{ .name = "vaxis", .module = vaxis.module("vaxis") },
         },
     });
     module.addOptions("build_options", options);

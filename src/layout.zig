@@ -12,6 +12,7 @@ pub const license_files = [_][]const u8{
     "third-party/translate-c.txt",
     "third-party/tomlc17.txt",
     "third-party/uucode.md",
+    "third-party/vaxis.txt",
     "third-party/zlib.txt",
     "third-party/zmx.txt",
 };

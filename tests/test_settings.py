@@ -14,7 +14,7 @@ from test_prompt import configuration, enter, settings, setup_shell
 
 
 DEFAULT_SETTINGS = {
-    "prompt": {"show_session": False},
+    "prompt": {"show_session": True},
     "list": {"created_format": "%m-%d %H:%M:%S"},
     "completion": {"enabled": True},
 }
