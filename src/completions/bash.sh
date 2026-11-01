@@ -16,7 +16,8 @@ __imx_complete() {
     [[ -n $output ]] || return 0
     mapfile -t COMPREPLY <<< "$output"
     if [[ $kind == sessions && -z $current && ${#COMPREPLY[@]} -gt 1 && $COMP_POINT -eq ${#COMP_LINE} ]]; then
-        printf '\n%s\n' "${COMPREPLY[@]}"
+        printf '\n'
+        printf '%s\n' "${COMPREPLY[@]}"
         printf '%s%s' "${PS1@P}" "$COMP_LINE"
         COMPREPLY=()
     fi

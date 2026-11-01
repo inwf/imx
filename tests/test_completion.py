@@ -1,3 +1,5 @@
+import re
+
 import pexpect
 import pytest
 
@@ -110,10 +112,34 @@ def test_curl_install_update_and_uninstall_completion(downloaded, shell):
     assert not prefix.exists()
 
 
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+@pytest.mark.parametrize("command", ["attach", "cat", "kill"])
+def test_session_candidates_display_without_empty_rows(installation, shell, command):
+    names = ["dev", "test", "worker"]
+    for name in names:
+        installation.spawn(name)
+    with CompletionShell(installation.environment, shell, installation.binary.parent.parent) as terminal:
+        assert terminal.complete(f"imx {command} \t") == f"imx {command} "
+        lines = terminal.display().splitlines()
+        candidate_rows = [
+            index for index, line in enumerate(lines)
+            if any(re.search(rf"\b{re.escape(name)}\b", line) for name in names)
+        ]
+        assert candidate_rows
+        for name in names:
+            assert any(re.search(rf"\b{re.escape(name)}\b", lines[index]) for index in candidate_rows)
+        assert all(line.strip() for line in lines[candidate_rows[0]:candidate_rows[-1] + 1])
+        terminal.child.send("t\t")
+        assert terminal.buffer() == f"imx {command} test "
+
+
 @pytest.mark.parametrize("columns", [32, 100])
-def test_bash_session_candidates_preserve_prompt_and_display(installation, columns):
-    installation.spawn("alpha")
-    installation.spawn("beta")
+@pytest.mark.parametrize("long_names", [False, True])
+def test_bash_session_candidates_preserve_prompt_and_display(installation, columns, long_names):
+    alpha = "alpha-" + "a" * 58 if long_names else "alpha"
+    beta = "beta-" + "b" * 59 if long_names else "beta"
+    installation.spawn(alpha)
+    installation.spawn(beta)
     with CompletionShell(installation.environment, "bash", installation.binary.parent.parent, columns=columns) as terminal:
         terminal.child.sendline("PS1='\\[\\e[32m\\]目录提示:\\w\\[\\e[0m\\]\\n会话> '")
         terminal.read()
@@ -121,8 +147,17 @@ def test_bash_session_candidates_preserve_prompt_and_display(installation, colum
         display = terminal.display()
         assert "alpha" in display and "beta" in display
         assert "会话> imx attach" in display
+        terminal.child.send("\t")
+        terminal.read()
         terminal.child.send("b\t")
-        display = terminal.display()
-        active = next(line for line in reversed(display.splitlines()) if "会话> imx attach" in line)
-        assert active.rstrip() == "会话> imx attach beta"
-        assert terminal.buffer() == "imx attach beta "
+        lines = terminal.display().splitlines()
+        active = max(index for index, line in enumerate(lines) if "会话> imx attach" in line)
+        assert "".join(lines[active:]).rstrip() == f"会话> imx attach {beta}"
+        assert terminal.buffer() == f"imx attach {beta} "
+        terminal.child.sendcontrol("h")
+        terminal.child.sendcontrol("h")
+        terminal.child.send("z")
+        assert terminal.buffer() == f"imx attach {beta[:-1]}z"
+        lines = terminal.display().splitlines()
+        active = max(index for index, line in enumerate(lines) if "会话> imx attach" in line)
+        assert "".join(lines[active:]).rstrip() == f"会话> imx attach {beta[:-1]}z"
