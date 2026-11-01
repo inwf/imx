@@ -165,6 +165,8 @@ While attached, press **Alt+D** to split the focused pane left and right, or **A
 
 Use **Alt+Arrow** to focus a neighboring pane. **Alt+1** through **Alt+9** select the number shown in a pane's title; **Alt+0** selects number 10. Pane numbers stay unchanged when another pane closes. A missing neighbor or number keeps the current focus. These shortcuts also select plain shell panes; use arrows or the mouse for numbers above 10.
 
+Drag a separator with the left mouse button to resize adjacent panes. Both edges of the separator accept dragging, including in nested splits. Programs receive their updated terminal dimensions while you drag. Each pane keeps at least 12 columns and 5 rows including its border; the adjusted proportions are retained when the terminal resizes.
+
 Panes can be split repeatedly. Scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Press **Alt+W** to close the focused pane and terminate its attached session and programs. Other clients attached to that session are disconnected too. To keep the session running, detach first (default `Alt+\`), then press Alt+W. Closing a plain shell pane terminates its programs. At a plain shell prompt, `exit` or `Ctrl+D` on an empty command line also closes the pane. Closing the last pane exits the interface.
 
 Closing the terminal discards the layout and terminates the plain pane shells while attached sessions keep running. Layouts are held only in the current client and are not saved. Set `keybindings.split_right`, `keybindings.split_down`, and `keybindings.close_pane` to use other shortcuts.

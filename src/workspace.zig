@@ -30,7 +30,15 @@ const CloseRequest = struct {
 
 const Node = struct {
     rect: Rect,
-    content: union(enum) { pane: *Pane, split: struct { axis: Axis, first: *Node, second: *Node } },
+    content: union(enum) {
+        pane: *Pane,
+        split: struct {
+            axis: Axis,
+            first: *Node,
+            second: *Node,
+            ratio: struct { first: u16 = 1, total: u16 = 2 } = .{},
+        },
+    },
 
     fn minimum(self: *const Node) sys.Size {
         return switch (self.content) {
@@ -53,11 +61,11 @@ const Node = struct {
                 const a = split.first.minimum();
                 const b = split.second.minimum();
                 if (split.axis == .right) {
-                    first.width = std.math.clamp(rect.width / 2, a.cols, rect.width - b.cols);
+                    first.width = std.math.clamp(@as(u16, @intCast(@as(u32, rect.width) * split.ratio.first / split.ratio.total)), a.cols, rect.width - b.cols);
                     second.x += first.width;
                     second.width -= first.width;
                 } else {
-                    first.height = std.math.clamp(rect.height / 2, a.rows, rect.height - b.rows);
+                    first.height = std.math.clamp(@as(u16, @intCast(@as(u32, rect.height) * split.ratio.first / split.ratio.total)), a.rows, rect.height - b.rows);
                     second.y += first.height;
                     second.height -= first.height;
                 }
@@ -65,6 +73,32 @@ const Node = struct {
                 split.second.arrange(second);
             },
         }
+    }
+
+    fn separator(self: *Node, x: i32, y: i32) ?*Node {
+        if (!self.rect.contains(x, y)) return null;
+        return switch (self.content) {
+            .pane => null,
+            .split => |split| blk: {
+                const coordinate = if (split.axis == .right) x else y;
+                const boundary = if (split.axis == .right) split.second.rect.x else split.second.rect.y;
+                if (coordinate == boundary or coordinate == @as(i32, boundary) - 1) break :blk self;
+                break :blk split.first.separator(x, y) orelse split.second.separator(x, y);
+            },
+        };
+    }
+
+    fn resizeTo(self: *Node, x: i32, y: i32, grab_offset: i32) bool {
+        const split = &self.content.split;
+        const horizontal = split.axis == .right;
+        const a = split.first.minimum();
+        const b = split.second.minimum();
+        const total = if (horizontal) self.rect.width else self.rect.height;
+        const desired = (if (horizontal) x - self.rect.x else y - self.rect.y) - grab_offset;
+        const first: u16 = @intCast(std.math.clamp(desired, if (horizontal) a.cols else a.rows, total - (if (horizontal) b.cols else b.rows)));
+        if (first == (if (horizontal) split.first.rect.width else split.first.rect.height)) return false;
+        split.ratio = .{ .first = first, .total = total };
+        return true;
     }
 
     fn find(self: *Node, pane: *Pane) ?*Node {
@@ -256,6 +290,7 @@ const App = struct {
     root: *Node = undefined,
     focused: *Pane = undefined,
     mouse_pane: ?*Pane = null,
+    resize_drag: ?struct { node: ?*Node, grab_offset: i32 } = null,
     composed: bool = false,
     dirty: bool = false,
     offset: [2]u16 = .{ 0, 0 },
@@ -293,9 +328,10 @@ const App = struct {
         const canvas: Rect = .{ .width = @max(self.size.cols, minimum.cols), .height = @max(self.size.rows, minimum.rows) };
         self.root.arrange(canvas);
         const active = self.focused.rect;
+        const dragging = if (self.resize_drag) |drag| drag.node != null else false;
         self.offset = .{
-            @min(active.x, canvas.width - self.size.cols),
-            @min(active.y, canvas.height - self.size.rows),
+            @min(if (dragging) self.offset[0] else active.x, canvas.width - self.size.cols),
+            @min(if (dragging) self.offset[1] else active.y, canvas.height - self.size.rows),
         };
         for (self.panes.items) |pane| {
             const size: sys.Size = .{ .cols = pane.rect.width - 2, .rows = pane.rect.height - 2 };
@@ -309,6 +345,7 @@ const App = struct {
 
     fn focus(self: *App, pane: *Pane) !void {
         if (self.focused == pane) return;
+        self.cancelResize();
         if (self.focused.term.modes.get(.focus_event)) try self.focused.input.append(self.allocator, "\x1b[O");
         self.focused = pane;
         if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, "\x1b[I");
@@ -357,6 +394,7 @@ const App = struct {
     }
 
     fn remove(self: *App, index: usize) !void {
+        self.cancelResize();
         const pane = self.panes.items[index];
         if (self.panes.items.len > 1) _ = self.root.remove(self.allocator, pane);
         _ = self.panes.orderedRemove(index);
@@ -394,6 +432,7 @@ const App = struct {
         const pane = try self.create(selected.cwd, .{ .cols = rect.width - 2, .rows = rect.height - 2 }, null);
         first.* = .{ .rect = rect, .content = .{ .pane = selected } };
         second.* = .{ .rect = rect, .content = .{ .pane = pane } };
+        self.cancelResize();
         node.content = .{ .split = .{ .axis = axis, .first = first, .second = second } };
         if (!self.composed) {
             self.composed = true;
@@ -477,6 +516,7 @@ const App = struct {
                 return;
             },
             .focus_in, .focus_out => {
+                if (event == .focus_out) self.cancelResize();
                 if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, result.bytes);
                 return;
             },
@@ -485,9 +525,33 @@ const App = struct {
         try pane.input.append(self.allocator, result.bytes);
     }
 
+    fn cancelResize(self: *App) void {
+        if (self.resize_drag) |*drag| drag.node = null;
+    }
+
     fn handleMouse(self: *App, mouse: vaxis.Mouse) !void {
         const x: i32 = @as(i32, mouse.col) + self.offset[0];
         const y: i32 = @as(i32, mouse.row) + self.offset[1];
+        if (mouse.type == .press and mouse.button == .left) {
+            self.resize_drag = null;
+            if (self.root.separator(x, y)) |node| {
+                const divider = node.content.split;
+                self.mouse_pane = null;
+                self.resize_drag = .{ .node = node, .grab_offset = if (divider.axis == .right) x - divider.second.rect.x else y - divider.second.rect.y };
+                return;
+            }
+        }
+        if (self.resize_drag) |drag| {
+            const released = mouse.type == .release and (mouse.button == .left or mouse.button == .none);
+            if ((mouse.type == .drag and mouse.button == .left) or released) {
+                if (drag.node) |node| if (node.resizeTo(x, y, drag.grab_offset)) try self.arrange();
+                if (released) {
+                    self.resize_drag = null;
+                    try self.arrange();
+                }
+            }
+            return;
+        }
         const captured = if (mouse.type == .drag or mouse.type == .release) self.mouse_pane else null;
         if (mouse.type == .release) self.mouse_pane = null;
         for (self.panes.items) |pane| {
@@ -724,6 +788,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
             var info: c.struct_signalfd_siginfo = undefined;
             while ((try sys.read(signals, std.mem.asBytes(&info))) != null) {
                 if (info.ssi_signo == c.SIGWINCH) {
+                    app.cancelResize();
                     app.size = try sys.Size.get(0);
                     if (app.composed) {
                         var writer: std.Io.Writer.Allocating = .init(allocator);
