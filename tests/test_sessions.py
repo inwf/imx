@@ -262,14 +262,14 @@ def test_attach_and_detach_preserve_terminal_colors(sessions, alternate):
     attached = sessions.spawn(initialize=False)
     attached.logfile_read = replay
     attached.expect_exact("IMX_PROMPT> ")
-    attached.sendline("imx detach")
-    attached.expect(pexpect.EOF)
-    restored = replay.getvalue()
     screen = pyte.Screen(80, 24)
-    pyte.Stream(screen).feed(restored)
+    pyte.Stream(screen).feed(replay.getvalue())
     assert screen.buffer[0][0].bold
     assert screen.buffer[0][0].fg != "default"
     assert screen.buffer[1][0].fg == "123456"
+    attached.sendline("imx detach")
+    attached.expect(pexpect.EOF)
+    restored = replay.getvalue()
     assert "INDEXED" in restored and "RGB" in restored
     for text in (initial.getvalue(), restored):
         for sequence in ("\x1b]4;", "\x1b]10;", "\x1b]11;", "\x1b]12;", "\x1b]104", "\x1b]110", "\x1b]111", "\x1b]112"):

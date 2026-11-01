@@ -6,6 +6,7 @@ const config = @import("config.zig");
 const registry = @import("registry.zig");
 const connection = @import("connection.zig");
 const keyboard = @import("keyboard.zig");
+const display = @import("display.zig");
 
 pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8, created_format: [:0]const u8) !void {
     const customized = tag == .list and !std.mem.eql(u8, created_format, sys.default_created_format);
@@ -306,7 +307,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                         keys = .{};
                         output.deinit(allocator);
                         output = .{};
-                        try output.append(allocator, reset_display);
+                        try output.append(allocator, display.reset);
                         connected = true;
                         continue :client_loop;
                     },
@@ -335,10 +336,22 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
     }
 }
 
-const reset_display = "\x1b[?2026l\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l\x1b[?2004l\x1b[>4;0m\x1b[<u\x1b[?25h\x1b[0m\x1b[0 q\r\n";
-
 fn resetDisplay() !void {
+    var buffer: [2048]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try display.finish(&writer, try sys.Size.get(0));
     const flags = try sys.nonblocking(1, true);
     defer _ = c.fcntl(1, c.F_SETFL, flags);
-    if (try sys.write(1, reset_display, false) != reset_display.len) return error.TerminalCleanupBlocked;
+    const bytes = writer.buffered();
+    var offset: usize = 0;
+    const deadline = try sys.monotonicMilliseconds() + 100;
+    while (offset < bytes.len) {
+        offset += try sys.write(1, bytes[offset..], false);
+        if (offset == bytes.len) break;
+        const remaining = deadline - try sys.monotonicMilliseconds();
+        if (remaining <= 0) return error.TerminalCleanupBlocked;
+        var pollfd: c.struct_pollfd = .{ .fd = 1, .events = c.POLLOUT, .revents = 0 };
+        if (c.poll(&pollfd, 1, @intCast(remaining)) < 0 and c.__errno_location().* != c.EINTR) return sys.failure("poll(terminal cleanup)");
+        if (pollfd.revents & (c.POLLHUP | c.POLLERR) != 0) return error.ConnectionClosed;
+    }
 }

@@ -152,6 +152,8 @@ imx kill dev     # terminate the session
 
 Reattaching restores the screen, colors, and retained history. Full-screen programs such as Vim return with the document as you left it.
 
+Exiting or detaching restores normal terminal display and input modes and places the outer shell prompt on a new line at the bottom of the screen.
+
 To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal moves to `dev2`, and both sessions keep their programs and history. If the target does not exist, it is created using the current directory, environment, and `$SHELL`. Run `imx attach dev1` to return. Other terminals attached to `dev1` stay connected. See [session switching](docs/usage.md#切换会话) for connection selection, error handling, and version requirements.
 
 > [!IMPORTANT]

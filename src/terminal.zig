@@ -1,6 +1,7 @@
 const std = @import("std");
 pub const vt = @import("ghostty-vt");
 const sys = @import("sys.zig");
+const display = @import("display.zig");
 
 pub const history_lines = 10_000;
 pub const history_bytes = 2 * 1024 * 1024;
@@ -51,13 +52,13 @@ pub fn restore(allocator: std.mem.Allocator, term: *vt.Terminal) ![]u8 {
     const synchronized = term.modes.get(.synchronized_output);
     term.modes.set(.synchronized_output, false);
     defer term.modes.set(.synchronized_output, synchronized);
-    try builder.writer.writeAll("\x1b[?2026l\x1b[?1049l\x1b[0m\x1b[2J\x1b[H");
+    try builder.writer.writeAll(display.reset ++ "\x1b[2J\x1b[H");
     if (term.screens.active_key == .alternate) {
         term.screens.switchTo(.primary);
         defer term.screens.switchTo(.alternate);
         try restoreScreen(&builder.writer, term, false);
         term.screens.switchTo(.alternate);
-        try builder.writer.writeAll("\x1b[?1049h\x1b[0m\x1b[2J\x1b[H");
+        try builder.writer.writeAll("\x1b[?1049h" ++ display.reset_screen ++ "\x1b[2J\x1b[H");
     }
     try restoreScreen(&builder.writer, term, true);
     if (term.getPwd()) |pwd| try builder.writer.print("\x1b]7;{s}\x1b\\", .{pwd});
@@ -91,16 +92,37 @@ fn restoreScreen(writer: *std.Io.Writer, term: *vt.Terminal, modes: bool) !void 
         pages.pin(.{ .active = .{ .x = @intCast(pages.cols - 1), .y = @intCast(pages.rows - 1) } }).?,
         false,
     ) };
+    visible.extra = .none;
+    visible.extra.tabstops = true;
+    try visible.format(writer);
+
+    // 绘制结束后恢复模式和光标，避免自动换行、插入及滚动区域影响屏幕内容。
+    // 屏幕切换已经完成，这些模式再次输出会清除内容或移动保存的光标。
+    const defaults = term.modes.default;
+    defer term.modes.default = defaults;
+    inline for (.{ .@"132_column", .alt_screen_legacy, .alt_screen, .save_cursor, .alt_screen_save_cursor_clear_enter }) |mode| {
+        @field(term.modes.default, @tagName(mode)) = term.modes.get(mode);
+    }
+    visible.content = .none;
     visible.extra = .{
         .palette = false,
         .modes = modes,
-        .scrolling_region = true,
-        .tabstops = true,
+        .scrolling_region = modes,
+        .tabstops = false,
         .pwd = false,
-        .keyboard = true,
+        .keyboard = modes,
         .screen = .all,
     };
+    visible.extra.screen.kitty_keyboard = false;
     try visible.format(writer);
+    // 按保存顺序恢复键盘设置，使程序退出时能够恢复上一层配置。
+    const keys = term.screens.active.kitty_keyboard;
+    var index = keys.idx +% 1;
+    try writer.print("\x1b[={d}u", .{keys.flags[index].int()});
+    for (1..keys.flags.len) |_| {
+        index +%= 1;
+        try writer.print("\x1b[>{d}u", .{keys.flags[index].int()});
+    }
 }
 
 test "restore preserves the receiving terminal colors and styled content" {
@@ -219,4 +241,102 @@ test "trim preserves colored text, graphemes, hyperlinks and subsequent output" 
     defer allocator.free(text);
     try std.testing.expect(std.mem.indexOf(u8, text, "COLOR e\xcc\x81 LINK") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "CONTINUED") != null);
+}
+
+test "restore redraws wrapped rows before applying session modes" {
+    const allocator = std.testing.allocator;
+    const scenarios = [_][]const u8{
+        "\x1b[?7l",
+        "\x1b[4h",
+        "\x1b[3;8r\x1b[?6h\x1b[2;3H",
+        "\x1b[?69h\x1b[3;16s\x1b[3;8r\x1b[?6h\x1b[2;3H",
+    };
+    for (scenarios) |modes| {
+        var source = try init(allocator, std.testing.io, .{ .rows = 10, .cols = 20 });
+        defer source.deinit(allocator);
+        var input = source.vtStream();
+        defer input.deinit();
+        input.nextSlice("ABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst1234567890\r\nLAST");
+        input.nextSlice(modes);
+        const snapshot = try restore(allocator, &source);
+        defer allocator.free(snapshot);
+        var target = try init(allocator, std.testing.io, .{ .rows = 10, .cols = 20 });
+        defer target.deinit(allocator);
+        var output = target.vtStream();
+        defer output.deinit();
+        output.nextSlice(snapshot);
+        try expectSameScreen(&source, &target);
+        try std.testing.expectEqual(source.modes.values, target.modes.values);
+        try std.testing.expectEqualDeep(source.scrolling_region, target.scrolling_region);
+    }
+}
+
+test "restore clears receiving terminal modes before painting both screens" {
+    const allocator = std.testing.allocator;
+    for ([_]bool{ false, true }) |alternate| {
+        var source = try init(allocator, std.testing.io, .{ .rows = 10, .cols = 20 });
+        defer source.deinit(allocator);
+        var input = source.vtStream();
+        defer input.deinit();
+        input.nextSlice("PRIMARY\r\nABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst");
+        if (alternate) input.nextSlice("\x1b[?1049hALTERNATE\r\nABCDEFGHIJKLMNOPQRSTabcdefghijklmnopqrst");
+        const snapshot = try restore(allocator, &source);
+        defer allocator.free(snapshot);
+        var target = try init(allocator, std.testing.io, .{ .rows = 10, .cols = 20 });
+        defer target.deinit(allocator);
+        var output = target.vtStream();
+        defer output.deinit();
+        output.nextSlice("\x1b[?1049h\x1b[3;8r\x1b[?6h\x1b[4h\x1b[?7l\x1b(0\x1b]8;;https://example.com\x1b\\\x1b[>5u");
+        output.nextSlice(snapshot);
+        try expectSameScreen(&source, &target);
+        try std.testing.expectEqual(source.modes.values, target.modes.values);
+        try std.testing.expectEqualDeep(source.scrolling_region, target.scrolling_region);
+        input.nextSlice("\r\nq#中文");
+        output.nextSlice("\r\nq#中文");
+        try expectSameScreen(&source, &target);
+        try std.testing.expectEqual(@as(u5, 0), target.screens.active.kitty_keyboard.current().int());
+        if (alternate) {
+            input.nextSlice("\x1b[?1049l");
+            output.nextSlice("\x1b[?1049l");
+            try expectSameScreen(&source, &target);
+        }
+    }
+}
+
+test "restore retains nested Kitty keyboard modes through subsequent pops" {
+    const allocator = std.testing.allocator;
+    var source = try init(allocator, std.testing.io, .{ .rows = 10, .cols = 20 });
+    defer source.deinit(allocator);
+    var input = source.vtStream();
+    defer input.deinit();
+    input.nextSlice("\x1b[=1u\x1b[>3u\x1b[>5u");
+    const snapshot = try restore(allocator, &source);
+    defer allocator.free(snapshot);
+    var target = try init(allocator, std.testing.io, .{ .rows = 10, .cols = 20 });
+    defer target.deinit(allocator);
+    var output = target.vtStream();
+    defer output.deinit();
+    output.nextSlice(snapshot);
+    for (0..4) |_| {
+        try std.testing.expectEqual(source.screens.active.kitty_keyboard.current().int(), target.screens.active.kitty_keyboard.current().int());
+        input.nextSlice("\x1b[<u");
+        output.nextSlice("\x1b[<u");
+    }
+}
+
+fn expectSameScreen(source: *vt.Terminal, target: *vt.Terminal) !void {
+    var expected = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer expected.deinit();
+    var actual = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer actual.deinit();
+    var source_formatter = vt.formatter.TerminalFormatter.init(source, .vt);
+    source_formatter.extra = .none;
+    var target_formatter = vt.formatter.TerminalFormatter.init(target, .vt);
+    target_formatter.extra = .none;
+    try source_formatter.format(&expected.writer);
+    try target_formatter.format(&actual.writer);
+    try std.testing.expectEqualStrings(expected.written(), actual.written());
+    try std.testing.expectEqual(source.screens.active.cursor.x, target.screens.active.cursor.x);
+    try std.testing.expectEqual(source.screens.active.cursor.y, target.screens.active.cursor.y);
+    try std.testing.expectEqual(source.screens.active.cursor.pending_wrap, target.screens.active.cursor.pending_wrap);
 }
