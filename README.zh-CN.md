@@ -103,10 +103,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-安装已经发布的指定版本，例如 `v0.7.0`：
+安装已经发布的指定版本，例如 `v0.8.0`：
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.7.0/install.sh | bash -s -- v0.7.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.8.0/install.sh | bash -s -- v0.8.0
 ```
 
 安装脚本把许可证和补全文件安装到相同前缀下，并在完成后删除下载和解压产生的临时文件。系统安装会同时在 `/usr/local` 和 `/usr` 下提供 Fish 补全文件。使用自定义前缀时，Bash 和 Fish 通过 `XDG_DATA_DIRS` 查找补全文件，Zsh 通过 `fpath` 查找。

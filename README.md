@@ -104,10 +104,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-Install a specific published version, such as `v0.7.0`:
+Install a specific published version, such as `v0.8.0`:
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.7.0/install.sh | bash -s -- v0.7.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.8.0/install.sh | bash -s -- v0.8.0
 ```
 
 The installer places the license and completion files under the same prefix and removes its temporary download and extraction files when it finishes. System installations provide the Fish completion file under both `/usr/local` and `/usr`. With a custom prefix, Bash and Fish find the completion files through `XDG_DATA_DIRS` and Zsh through `fpath`.
