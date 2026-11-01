@@ -189,6 +189,7 @@ def main():
             "prompt": {"show_session": True},
             "list": {"created_format": "%m-%d %H:%M:%S"},
             "completion": {"enabled": True},
+            "keybindings": {"detach": {"key": "\\", "ctrl": True}},
         }
         assert list(configuration.parent.iterdir()) == [configuration]
         if case == "preserve-files":
