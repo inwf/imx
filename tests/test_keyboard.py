@@ -169,7 +169,6 @@ def test_keyboard_detach_after_session_switch(sessions):
     ("F1", {}, "\x1bOP"),
     ("F5", {}, "\x1b[15~"),
     ("F12", {"ctrl": True}, "\x1b[24;5~"),
-    ("Up", {"alt": True}, "\x1b[1;3A"),
     ("Up", {}, "\x1bOA"),
     ("Tab", {"shift": True}, "\x1b[Z"),
     ("Enter", {}, "\r"),
@@ -194,6 +193,17 @@ def test_configured_shortcut_detaches_across_terminal_encodings(sessions, key, m
     child.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
     assert path.read_bytes() == b"before\x1c\x1b[92;5u"
+
+
+def test_detach_binding_can_reassign_a_focus_shortcut(sessions):
+    configuration_path = configuration(sessions)
+    configuration_path.parent.mkdir(parents=True)
+    configuration_path.write_text("[keybindings]\ndetach = { key = 'Up', alt = true }\nfocus_up = { key = 'F11' }\n")
+    child, path = input_reader(sessions)
+    child.send("before\x1b[1;3A")
+    child.expect(pexpect.EOF)
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    assert path.read_bytes() == b"before"
 
 
 def test_configured_shortcut_preserves_unbound_keys_releases_and_paste(sessions):

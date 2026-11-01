@@ -48,6 +48,16 @@ class PaneTerminal:
     def split(self, direction="right"):
         self.child.send("\x1bd" if direction == "right" else "\x1bD")
 
+    def focused(self, number):
+        self.wait(lambda: any(
+            (column := row.find(f" {number}: ")) >= 0 and self.screen.buffer[line][column].bold
+            for line, row in enumerate(self.screen.display)
+        ))
+
+    def focus(self, number):
+        self.child.send(f"\x1b{number % 10}")
+        self.focused(number)
+
     def click(self, col, row=3):
         self.child.send(f"\x1b[<0;{col};{row}M\x1b[<0;{col};{row}m")
 
@@ -131,6 +141,92 @@ def test_default_split_shortcuts_across_terminal_encodings(sessions, right, down
     terminal.child.send(down)
     terminal.visible("3: shell")
     terminal.command("stty size", "down-size", "13 48\n")
+
+
+def test_directional_focus_follows_pane_geometry_and_stays_at_edges(sessions):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("2: shell")
+    terminal.split("down")
+    terminal.visible("3: shell")
+    for direction, number in [("D", 1), ("C", 2), ("B", 3)]:
+        terminal.child.send(f"\x1b[1;3{direction}")
+        terminal.focused(number)
+    terminal.focus(1)
+    terminal.split("down")
+    terminal.visible("4: shell")
+    for direction, number in [("A", 1), ("C", 2), ("B", 3), ("D", 4), ("D", 4), ("B", 4), ("A", 1)]:
+        terminal.child.send(f"\x1b[1;3{direction}")
+        terminal.focused(number)
+    terminal.command("printf '%s' \"$IMX_SESSION\"", "focused-session", "dev")
+
+
+def test_numbered_focus_matches_titles_after_closing_panes(sessions):
+    terminal = PaneTerminal(sessions)
+    terminal.screen.resize(lines=90, columns=240)
+    terminal.child.setwinsize(90, 240)
+    terminal.split()
+    terminal.visible("2: shell")
+    for number, (source, direction) in enumerate([(2, "down"), (1, "down"), (1, "right"), (2, "right"), (3, "right"), (4, "right"), (1, "down"), (2, "down")], start=3):
+        terminal.focus(source)
+        terminal.split(direction)
+        terminal.visible(f"{number}: shell")
+    for number in range(1, 11):
+        terminal.focus(number)
+    terminal.focus(2)
+    terminal.child.send("\x1bw")
+    terminal.wait(lambda: all(" 2: " not in row for row in terminal.screen.display))
+    terminal.focus(10)
+    terminal.child.send("\x1b2")
+    terminal.command("printf ready", "missing-number", "ready")
+    terminal.focused(10)
+    terminal.focus(1)
+
+
+@pytest.mark.parametrize("mode, left, right, first, second", [
+    ("legacy", "\x1b[1;3D", "\x1b[1;3C", "\x1b1", "\x1b2"),
+    ("kitty", "\x1b[57350;3u", "\x1b[57351;3u", "\x1b[49;3u", "\x1b[50;3u"),
+    ("modify", "\x1b[1;3D", "\x1b[1;3C", "\x1b[27;3;49~", "\x1b[27;3;50~"),
+])
+def test_focus_shortcuts_in_fullscreen_applications(sessions, mode, left, right, first, second):
+    terminal = PaneTerminal(sessions)
+    destination = sessions.path / "focus-application.bin"
+    terminal.child.sendline(shlex.join([sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), mode]))
+    terminal.wait(destination.exists)
+    terminal.split()
+    terminal.visible("2: shell")
+    for shortcut, number in [(left, 1), (right, 2), (first, 1), (second, 2)]:
+        terminal.child.send(shortcut)
+        terminal.focused(number)
+    terminal.command("printf ready", "focused-shell", "ready")
+    assert destination.read_bytes() == b""
+
+
+def test_configured_focus_shortcuts(sessions):
+    path = sessions.home / ".config/imx/config.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text("[keybindings]\nfocus_1 = { key = 'F9' }\nfocus_left = { key = 'F10' }\n")
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("2: shell")
+    terminal.child.send("\x1b[20~")
+    terminal.focused(1)
+    terminal.focus(2)
+    terminal.child.send("\x1b[21~")
+    terminal.focused(1)
+
+
+def test_directional_focus_reveals_panes_in_a_small_terminal(sessions):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("2: shell")
+    terminal.screen.resize(lines=6, columns=15)
+    terminal.child.setwinsize(6, 15)
+    terminal.child.send("\x1b[1;3D")
+    terminal.focused(1)
+    terminal.command("printf '%s' \"$IMX_SESSION\"", "small-focused-session", "dev")
+    terminal.child.send("\x1b[1;3C")
+    terminal.focused(2)
 
 
 @pytest.mark.parametrize("initial", [False, True])
@@ -223,7 +319,7 @@ def test_closing_pane_waits_for_backend_without_blocking_other_panes(sessions):
     backend.suspend()
     try:
         terminal.child.send("\x1bw")
-        terminal.click(3)
+        terminal.child.send("\x1b[1;3D")
         terminal.command("printf responsive", "healthy-pane", "responsive")
     finally:
         backend.resume()
@@ -290,7 +386,7 @@ def test_pane_terminal_modes_mouse_coordinates_and_detach(sessions, mode, encode
     terminal.wait(lambda: b"\x1b[<0;4;2M\x1b[<0;4;2m" in destination.read_bytes())
     terminal.child.send("\x1b[<0;55;3M\x1b[<32;3;3M\x1b[<0;3;3m")
     terminal.wait(lambda: b"\x1b[<0;4;2M\x1b[<0;1;2m" in destination.read_bytes())
-    paste = "\x1b[200~pasted 中文\x1bw\x1bd\x1bD\x1b[119;3u\x1b[201~"
+    paste = "\x1b[200~pasted 中文\x1bw\x1bd\x1bD\x1b[119;3u\x1b1\x1b[1;3D\x1b[201~"
     terminal.child.send(paste)
     terminal.wait(lambda: paste.encode() in destination.read_bytes())
     terminal.child.send("\x1b[119;3:3u")
@@ -484,7 +580,7 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
     assert sessions.sessions()[0]["CLIENTS"] == "0"
 
 
-@pytest.mark.parametrize("binding", ["split_right", "split_down", "close_pane"])
+@pytest.mark.parametrize("binding", ["split_right", "split_down", "close_pane", "focus_left", "focus_1"])
 def test_conflicting_shortcuts_report_configuration_option(sessions, binding):
     path = sessions.home / ".config/imx/config.toml"
     path.parent.mkdir(parents=True)

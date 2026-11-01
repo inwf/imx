@@ -273,7 +273,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                 if (result.action) |action| {
                     switch (action) {
                         .detach => detaching = true,
-                        .split_right, .split_down, .close_pane => unreachable,
+                        else => unreachable,
                     }
                     if (input.pending().len == 0) return;
                 }

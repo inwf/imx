@@ -14,6 +14,7 @@ const Rect = render.Rect;
 const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Axis = enum { right, down };
+const Direction = enum { left, right, up, down };
 
 const CloseRequest = struct {
     fd: c_int,
@@ -313,6 +314,47 @@ const App = struct {
         try self.arrange();
     }
 
+    fn focusDirection(self: *App, direction: Direction) !void {
+        if (!self.composed) return;
+        const active = self.focused.rect;
+        const horizontal = direction == .left or direction == .right;
+        const backward = direction == .left or direction == .up;
+        const start: i32 = if (horizontal) active.x else active.y;
+        const end = start + @as(i32, if (horizontal) active.width else active.height);
+        const cross_start: i32 = if (horizontal) active.y else active.x;
+        const cross_end = cross_start + @as(i32, if (horizontal) active.height else active.width);
+        const center = cross_start + cross_end;
+        var target: ?*Pane = null;
+        var best: [3]u32 = @splat(std.math.maxInt(u32));
+        for (self.panes.items) |pane| {
+            if (pane == self.focused) continue;
+            const rect = pane.rect;
+            const other_start: i32 = if (horizontal) rect.x else rect.y;
+            const other_end = other_start + @as(i32, if (horizontal) rect.width else rect.height);
+            const gap = if (backward) start - other_end else other_start - end;
+            const other_cross_start: i32 = if (horizontal) rect.y else rect.x;
+            const other_cross_end = other_cross_start + @as(i32, if (horizontal) rect.height else rect.width);
+            if (gap < 0 or other_cross_start >= cross_end or other_cross_end <= cross_start) continue;
+            const score: [3]u32 = .{
+                @intCast(gap),
+                @intCast(@max(0, @max(other_cross_start * 2 - center, center - other_cross_end * 2))),
+                @abs(center - other_cross_start - other_cross_end),
+            };
+            if (std.mem.order(u32, &score, &best) == .lt) {
+                best = score;
+                target = pane;
+            }
+        }
+        if (target) |pane| try self.focus(pane);
+    }
+
+    fn focusNumber(self: *App, number: usize) !void {
+        if (!self.composed) return;
+        for (self.panes.items) |pane| {
+            if (pane.id == number) return self.focus(pane);
+        }
+    }
+
     fn remove(self: *App, index: usize) !void {
         const pane = self.panes.items[index];
         if (self.panes.items.len > 1) _ = self.root.remove(self.allocator, pane);
@@ -391,17 +433,26 @@ const App = struct {
     fn input(self: *App, result: keyboard.Input.Result) !void {
         const pane = self.focused;
         if (result.event) |event| if (event == .mouse and self.composed) return self.handleMouse(event.mouse);
-        if (pane.close_requested) return;
         if (result.action) |action| {
-            if (result.bytes.len != 0) try pane.input.append(self.allocator, result.bytes);
+            if (result.bytes.len != 0 and !pane.close_requested) try pane.input.append(self.allocator, result.bytes);
+            switch (action) {
+                .focus_left => return self.focusDirection(.left),
+                .focus_right => return self.focusDirection(.right),
+                .focus_up => return self.focusDirection(.up),
+                .focus_down => return self.focusDirection(.down),
+                .focus_1, .focus_2, .focus_3, .focus_4, .focus_5, .focus_6, .focus_7, .focus_8, .focus_9, .focus_10 => return self.focusNumber(@backingInt(action) - @backingInt(keyboard.Action.focus_1) + 1),
+                else => {},
+            }
+            if (pane.close_requested) return;
             switch (action) {
                 .split_right => try self.split(.right),
                 .split_down => try self.split(.down),
                 .close_pane => pane.close_requested = true,
-                .detach => unreachable,
+                else => unreachable,
             }
             return;
         }
+        if (pane.close_requested) return;
         if (result.event) |event| {
             if (event == .key_press and pane.attached != null and pane.attached.?.value.detach.matches(event.key_press, result.bytes)) {
                 pane.detaching = true;

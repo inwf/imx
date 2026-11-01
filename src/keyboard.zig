@@ -2,7 +2,26 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const vt = @import("ghostty-vt");
 
-pub const Action = enum { detach, split_right, split_down, close_pane };
+pub const Action = enum {
+    detach,
+    split_right,
+    split_down,
+    close_pane,
+    focus_left,
+    focus_right,
+    focus_up,
+    focus_down,
+    focus_1,
+    focus_2,
+    focus_3,
+    focus_4,
+    focus_5,
+    focus_6,
+    focus_7,
+    focus_8,
+    focus_9,
+    focus_10,
+};
 pub const Modifiers = vaxis.Key.Modifiers;
 
 pub const Binding = struct {
@@ -41,6 +60,20 @@ pub const Bindings = struct {
     split_right: Binding = .{ .codepoint = 'd', .mods = .{ .alt = true } },
     split_down: Binding = .{ .codepoint = 'd', .mods = .{ .alt = true, .shift = true } },
     close_pane: Binding = .{ .codepoint = 'w', .mods = .{ .alt = true } },
+    focus_left: Binding = .{ .codepoint = vaxis.Key.left, .mods = .{ .alt = true } },
+    focus_right: Binding = .{ .codepoint = vaxis.Key.right, .mods = .{ .alt = true } },
+    focus_up: Binding = .{ .codepoint = vaxis.Key.up, .mods = .{ .alt = true } },
+    focus_down: Binding = .{ .codepoint = vaxis.Key.down, .mods = .{ .alt = true } },
+    focus_1: Binding = .{ .codepoint = '1', .mods = .{ .alt = true } },
+    focus_2: Binding = .{ .codepoint = '2', .mods = .{ .alt = true } },
+    focus_3: Binding = .{ .codepoint = '3', .mods = .{ .alt = true } },
+    focus_4: Binding = .{ .codepoint = '4', .mods = .{ .alt = true } },
+    focus_5: Binding = .{ .codepoint = '5', .mods = .{ .alt = true } },
+    focus_6: Binding = .{ .codepoint = '6', .mods = .{ .alt = true } },
+    focus_7: Binding = .{ .codepoint = '7', .mods = .{ .alt = true } },
+    focus_8: Binding = .{ .codepoint = '8', .mods = .{ .alt = true } },
+    focus_9: Binding = .{ .codepoint = '9', .mods = .{ .alt = true } },
+    focus_10: Binding = .{ .codepoint = '0', .mods = .{ .alt = true } },
 
     fn action(self: Bindings, event: vaxis.Event, bytes: []const u8) ?Action {
         if (event != .key_press) return null;

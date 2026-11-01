@@ -73,3 +73,31 @@ split_down = { key = 'd', alt = true, shift = true }
 # 普通 shell 窗格关闭时，其中的程序也会终止。修改快捷键后退出整个界面并重新 attach 生效。
 # Closing a plain shell pane also terminates its programs. Exit the entire interface and attach again to apply changes.
 close_pane = { key = 'w', alt = true }
+
+# 按方向切换到相邻窗格，默认 Alt+方向键；该方向没有窗格时保持当前焦点。
+# Focus a neighboring pane with Alt+Arrow; keep focus when there is no pane in that direction.
+# 多个窗格位于同一方向时，优先选择边缘最近且靠近当前窗格中心的窗格。
+# Prefer the nearest edge, then the pane closest to the focused pane's center.
+# 普通 shell 窗格也可以聚焦。修改这些快捷键后退出整个界面并重新 attach 生效。
+# Plain shell panes can also receive focus. Restart the entire interface to apply changed bindings.
+focus_left = { key = 'Left', alt = true }
+focus_right = { key = 'Right', alt = true }
+focus_up = { key = 'Up', alt = true }
+focus_down = { key = 'Down', alt = true }
+
+# Alt+1 至 Alt+9 对应窗格标题中的编号 1 至 9；关闭窗格后其他编号保持不变。
+# Alt+1 through Alt+9 select title numbers 1 through 9; remaining panes keep their numbers after a pane closes.
+# 指定编号不存在时保持当前焦点；修改这些快捷键后重新启动整个界面生效。
+# Missing numbers keep the current focus; restart the entire interface to apply changed bindings.
+focus_1 = { key = '1', alt = true }
+focus_2 = { key = '2', alt = true }
+focus_3 = { key = '3', alt = true }
+focus_4 = { key = '4', alt = true }
+focus_5 = { key = '5', alt = true }
+focus_6 = { key = '6', alt = true }
+focus_7 = { key = '7', alt = true }
+focus_8 = { key = '8', alt = true }
+focus_9 = { key = '9', alt = true }
+# Alt+0 对应编号 10；更大编号的窗格可以通过方向快捷键或鼠标聚焦。
+# Alt+0 selects number 10; use directional shortcuts or the mouse for higher pane numbers.
+focus_10 = { key = '0', alt = true }
