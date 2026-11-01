@@ -1,6 +1,6 @@
 .{
     .name = .imx,
-    .version = "0.4.1",
+    .version = "0.5.0",
     .fingerprint = 0x36cac559d7d1d067,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
