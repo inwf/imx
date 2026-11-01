@@ -140,12 +140,16 @@ def test_repeated_switches_reuse_frontend_and_restore_terminal(sessions):
     target.expect(pexpect.EOF)
     source = sessions.spawn("dev1")
     process = psutil.Process(source.pid)
-    descriptor_count = process.num_fds()
+    frontend, = [child for child in process.children() if child.name() != "imx-server"]
+    processes = [process, frontend]
+    descriptor_counts = [item.num_fds() for item in processes]
+    child_pids = {child.pid for child in process.children()}
     for index in range(12):
         switch(sessions, source, "dev2" if index % 2 == 0 else "dev1")
-    assert process.num_fds() == descriptor_count
-    assert process.num_threads() == 1
-    assert process.children() == []
+    assert [item.num_fds() for item in processes] == descriptor_counts
+    assert all(item.num_threads() == 1 for item in processes)
+    assert {child.pid for child in process.children()} == child_pids
+    assert frontend.children() == []
     source.sendcontrol("\\")
     source.expect(pexpect.EOF)
     assert rows(sessions)["dev1"]["CLIENTS"] == "0"

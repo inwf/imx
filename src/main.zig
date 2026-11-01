@@ -67,6 +67,11 @@ fn execute(init: std.process.Init.Minimal) !void {
     if (tag == .attach) try records.lockIntegration();
     if (preferences.file_missing) preferences = try settings.load(allocator, io, .{ .create_default = true });
     if (tag == .attach) try shell.synchronize(allocator, io, &records, preferences.show_session, config.env("SHELL") orelse "/bin/sh");
+    if (tag == .attach and config.env("IMX_SESSION") == null and config.env(@import("pane_context.zig").variable) == null) {
+        records.finishSetup();
+        try records.unlock();
+        return @import("workspace.zig").run(allocator, io, init.environ, name, preferences.keybindings);
+    }
     var root = try config.Config.init(allocator, io);
     defer root.deinit();
     try records.register(io, root.dir_fd);
@@ -97,4 +102,5 @@ test {
     _ = @import("protocol.zig");
     _ = @import("settings.zig");
     _ = @import("update.zig");
+    _ = @import("pane_render.zig");
 }

@@ -21,3 +21,11 @@ enabled = true
 # 修改后重新连接生效。例如 { key = 'x', ctrl = true } 表示 Ctrl+x。
 # Reattach to apply changes. For example, { key = 'x', ctrl = true } means Ctrl+x.
 detach = { key = '\', ctrl = true }
+
+# 左右分屏，在当前目录启动普通 shell。默认快捷键是 Command+D。
+# Split left and right, starting a plain shell in the current directory. Default: Command+D.
+split_right = { key = 'd', super = true }
+
+# 上下分屏，在当前目录启动普通 shell。默认快捷键是 Command+Shift+D。
+# Split top and bottom, starting a plain shell in the current directory. Default: Command+Shift+D.
+split_down = { key = 'd', super = true, shift = true }

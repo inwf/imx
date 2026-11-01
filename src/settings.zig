@@ -150,6 +150,13 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
             const binding = toml.toml_get(bindings, @tagName(action));
             if (binding.type != toml.TOML_UNKNOWN) @field(preferences.keybindings, @tagName(action)) = try parseBinding(field.child(@tagName(action)), binding);
         }
+        inline for (std.enums.values(keyboard.Action), 0..) |action, index| {
+            const value = @field(preferences.keybindings, @tagName(action));
+            inline for (std.enums.values(keyboard.Action)[0..index]) |previous| {
+                const other = @field(preferences.keybindings, @tagName(previous));
+                if (value.codepoint == other.codepoint and value.mods.eql(other.mods)) return field.child(@tagName(action)).reject(error.DuplicateKeybinding, "shortcut conflicts with keybindings." ++ @tagName(previous));
+            }
+        }
     }
     const listing = toml.toml_get(root, "list");
     if (listing.type != toml.TOML_UNKNOWN) {

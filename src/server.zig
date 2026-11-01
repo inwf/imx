@@ -657,7 +657,7 @@ fn stopClients(self: *Server) !void {
     };
 }
 
-fn terminateSession(sid: c.pid_t) !void {
+pub fn terminateSession(sid: c.pid_t) !void {
     const allocator = std.heap.c_allocator;
     var descriptors: std.ArrayList(c_int) = .empty;
     defer {
@@ -726,6 +726,7 @@ fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8,
         if (std.mem.indexOfScalar(u8, entry, '=') == null) return error.InvalidMessage;
         if (std.mem.startsWith(u8, entry, "IMX_SESSION=") or std.mem.startsWith(u8, entry, "IMX_DIR=")) continue;
         if (std.mem.startsWith(u8, entry, protocol.client_marker_prefix)) continue;
+        if (std.mem.startsWith(u8, entry, @import("pane_context.zig").variable ++ "=")) continue;
         try envp.append(allocator, @ptrCast(entry.ptr));
     }
     const session_env = try std.fmt.allocPrintSentinel(allocator, "IMX_SESSION={s}", .{name}, 0);

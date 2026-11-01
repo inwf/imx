@@ -108,7 +108,7 @@ pub fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Resul
 
 fn description(command: Command) []const u8 {
     return switch (command) {
-        .attach => "Create or attach to a session. Inside a session, switch the current connection.\nClose the terminal or use the configured detach shortcut (default: Ctrl+\\).\nSet keybindings.detach in config.toml to change the shortcut.\n",
+        .attach => "Create or attach to a session. Inside a session, switch the current connection.\nCommand+D splits left and right; Command+Shift+D splits top and bottom.\nNew panes start a plain shell in the focused pane's directory. Click a pane to focus it.\nUse keybindings.split_right and keybindings.split_down to configure splitting.\nThe detach shortcut returns the focused pane to its plain shell (default: Ctrl+\\).\nSet keybindings.detach in config.toml to change it. Sessions keep running after disconnection.\n",
         .list, .ls => "List sessions, including their shell PID, connections, directory, creation time and status.\nOutput is tab-separated when redirected. This is the default command.\n",
         .cat => "Print retained history and the active screen as plain text.\nHistory uses a 10,000-line target and a 2 MiB scrollback budget.\nScrollback limits are applied in complete terminal pages.\n",
         .detach => "Detach all connections from the current session. Run this command inside a session.\nThe shell and its programs keep running. The detach shortcut affects only its own connection.\n",

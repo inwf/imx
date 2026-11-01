@@ -93,6 +93,7 @@ pub const Reader = struct {
 pub const Queue = struct {
     bytes: std.ArrayList(u8) = .empty,
     offset: usize = 0,
+    limit: usize = max_queue,
 
     pub fn deinit(self: *Queue, allocator: std.mem.Allocator) void {
         self.bytes.deinit(allocator);
@@ -104,8 +105,8 @@ pub const Queue = struct {
 
     pub fn append(self: *Queue, allocator: std.mem.Allocator, bytes: []const u8) !void {
         const left = self.pending().len;
-        if (left + bytes.len > max_queue) return error.SlowClient;
-        if (self.offset != 0 and self.bytes.items.len + bytes.len > max_queue) {
+        if (left + bytes.len > self.limit) return error.SlowClient;
+        if (self.offset != 0 and self.bytes.items.len + bytes.len > self.limit) {
             std.mem.copyForwards(u8, self.bytes.items[0..left], self.pending());
             self.bytes.items.len = left;
             self.offset = 0;
@@ -114,7 +115,7 @@ pub const Queue = struct {
     }
 
     pub fn message(self: *Queue, allocator: std.mem.Allocator, tag: Tag, payload: []const u8) !void {
-        if (self.pending().len + 8 + payload.len > max_queue) return error.SlowClient;
+        if (self.pending().len + 8 + payload.len > self.limit) return error.SlowClient;
         try self.append(allocator, &header(tag, payload.len));
         try self.append(allocator, payload);
     }

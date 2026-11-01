@@ -53,6 +53,8 @@ TMPDIR="$PWD/work/runtime" uv run --frozen --project tests pytest -q tests
 
 集成测试启动真实 PTY、Bash、Zsh、Fish、Vim 和会话程序，检查命令、历史、重新连接、终端尺寸、分离、进程清理、并发创建和终端查询。补全测试使用各个 shell 的原生加载机制和实际 Tab 按键，检查命令、当前会话名称、候选变化和配置开关。安装测试通过真实 HTTP 服务下载编译的软件包，检查安装、更新、卸载和下载失败，并验证默认系统目录中的补全加载。测试目录保存在 `work/`。
 
+`tests/test_panes.py` 验证分屏布局、目录继承、鼠标焦点、独立连接、会话切换、终端恢复和进程回收。`tests/pane_app.py` 在真实 PTY 中启用全屏、鼠标、括号粘贴及不同键盘协议，记录实际收到的输入，用于检查窗格坐标转换和按键编码。
+
 修改安装或发布脚本时，还需要 ShellCheck 和 actionlint：
 
 ```bash

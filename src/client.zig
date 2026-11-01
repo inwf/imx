@@ -7,6 +7,7 @@ const registry = @import("registry.zig");
 const connection = @import("connection.zig");
 const keyboard = @import("keyboard.zig");
 const display = @import("display.zig");
+const pane_context = @import("pane_context.zig");
 
 pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8, created_format: [:0]const u8) !void {
     const customized = tag == .list and !std.mem.eql(u8, created_format, sys.default_created_format);
@@ -173,6 +174,9 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
     defer allocator.free(payload);
     try protocol.send(fd, .attach, payload);
     try requireAcknowledgement(allocator, fd, false);
+    const pane = try pane_context.connect();
+    defer if (pane) |context| sys.close(context);
+    if (pane) |context| try pane_context.send(allocator, context, name, root.path, bindings.detach);
     try sys.socketTimeout(fd, 0);
     const signal = try sys.signalFd(&.{ c.SIGWINCH, c.SIGTERM, c.SIGHUP, c.SIGINT });
     defer sys.close(signal);
@@ -209,6 +213,8 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
     var keys: keyboard.Input = .{ .bindings = bindings };
     var prepared: ?c_int = null;
     defer if (prepared) |next| sys.close(next);
+    var prepared_name: ?[]u8 = null;
+    defer if (prepared_name) |value| allocator.free(value);
     var switch_deadline: i64 = 0;
     client_loop: while (connected or output.pending().len > 0) {
         if (connected) {
@@ -267,6 +273,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                 if (result.action) |action| {
                     switch (action) {
                         .detach => detaching = true,
+                        .split_right, .split_down => unreachable,
                     }
                     if (input.pending().len == 0) return;
                 }
@@ -292,6 +299,8 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                         switch (attempt) {
                             .ready => |next| {
                                 prepared = next;
+                                const request = try protocol.Attach.decode(msg.payload);
+                                prepared_name = try allocator.dupe(u8, request.name);
                                 switch_deadline = try sys.monotonicMilliseconds() + 2000;
                                 try input.message(allocator, .switch_result, "");
                             },
@@ -307,6 +316,9 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                         sys.close(fd);
                         fd = next;
                         prepared = null;
+                        if (pane) |context| try pane_context.send(allocator, context, prepared_name.?, root.path, bindings.detach);
+                        allocator.free(prepared_name.?);
+                        prepared_name = null;
                         reader.deinit(allocator);
                         reader = .{};
                         input.deinit(allocator);
@@ -322,6 +334,8 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                         if (msg.payload.len != 0) return error.InvalidMessage;
                         if (prepared) |next| sys.close(next);
                         prepared = null;
+                        if (prepared_name) |value| allocator.free(value);
+                        prepared_name = null;
                     },
                     .failure => return error.RequestFailed,
                     else => return error.InvalidMessage,
@@ -343,7 +357,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
     }
 }
 
-fn resetDisplay() !void {
+pub fn resetDisplay() !void {
     var buffer: [2048]u8 = undefined;
     var writer: std.Io.Writer = .fixed(&buffer);
     try display.finish(&writer, try sys.Size.get(0));

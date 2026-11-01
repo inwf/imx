@@ -18,6 +18,28 @@
 
 会话名称允许 1–64 个 ASCII 字母、数字、句点、下划线和连字符。`.` 和 `..` 为保留名称。以连字符开头的名称需要放在参数分隔符 `--` 后面，例如 `imx attach -- -dash`、`imx cat -- -dash` 和 `imx kill -- -dash`。
 
+## 分屏与窗格
+
+进入 `imx attach <name>` 后，Command+D 将当前窗格左右分屏，Command+Shift+D 将当前窗格上下分屏。新窗格使用当前聚焦窗格的实际工作目录启动普通 shell，用户可以手动执行 `imx attach <name>` 进入需要的会话。每个窗格都可以继续拆分。
+
+鼠标点击窗格切换输入焦点，高亮边框表示当前聚焦的窗格。各个窗格独立处理屏幕、全屏程序、输入协议和历史。程序启用鼠标时，点击坐标转换为窗格内部坐标后传给程序；程序没有接管鼠标时，滚轮浏览窗格历史。
+
+分离快捷键（默认 Ctrl+\\）只分离当前聚焦窗格的连接，随后回到该窗格的普通 shell。其他窗格保持连接，即使它们连接同一个会话。会话中的 shell 退出后，所在窗格返回普通 shell；普通 shell 退出后关闭窗格，剩余窗格重新分配空间。最后一个窗格关闭后退出整个界面。
+
+分屏布局只存在于当前客户端内存中。关闭终端或者断开 SSH 连接会释放布局，并终止窗格中的普通 shell 及其作业，已经进入的会话继续在各自后台运行。重新连接时自行分屏和 attach。窗口缩小时保留全部窗格，空间不足时显示聚焦窗格所在区域；重新扩大窗口后恢复完整布局。新分屏需要每个窗格至少 12 列、5 行（包括边框）。
+
+```toml
+[keybindings]
+# 在当前窗格右侧创建新窗格。
+# Create a new pane to the right of the focused pane.
+split_right = { key = 'd', super = true }
+# 在当前窗格下方创建新窗格。
+# Create a new pane below the focused pane.
+split_down = { key = 'd', super = true, shift = true }
+```
+
+`super` 对应 macOS 的 Command。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。
+
 ## 切换会话
 
 在 `dev1` 会话内部执行以下命令，当前终端会切换到 `dev2`：
@@ -68,6 +90,8 @@ enabled = true
 
 [keybindings]
 detach = { key = '\', ctrl = true }
+split_right = { key = 'd', super = true }
+split_down = { key = 'd', super = true, shift = true }
 ```
 
 ### 快捷键配置
@@ -81,11 +105,11 @@ detach = { key = 'x', ctrl = true }
 
 `key` 为必填字符串，可以使用单个 Unicode 字符，或者 `Enter`、`Tab`、`Escape`、`Space`、`Backspace`、`Insert`、`Delete`、`Left`、`Right`、`Up`、`Down`、`Page_Up`、`Page_Down`、`Home`、`End`、`F1` 至 `F12`。ASCII 字母和按键名称不区分大小写。`ctrl`、`alt`、`shift`、`super` 为可选布尔值，在显式配置的快捷键中默认为 `false`；需要 Shift 时设置 `shift = true`。例如，`{ key = 'x', ctrl = true, shift = true }` 表示 `Ctrl+Shift+x`，`{ key = 'F12' }` 表示 F12。
 
-配置由客户端在建立连接时读取。修改后分离并重新连接即可生效，会话中的程序继续运行。同一连接切换会话时保留当前快捷键设置；同时连接的其他客户端继续使用各自建立连接时读取的设置。已有配置文件可以手动添加 `[keybindings]` 部分。
+分离快捷键由客户端在建立连接时读取。修改后分离并重新连接即可生效，会话中的程序继续运行。同一连接切换会话时保留当前快捷键设置；同时连接的其他客户端继续使用各自建立连接时读取的设置。分屏快捷键在启动整个界面时读取，修改后退出界面并重新进入生效。已有配置文件可以手动添加 `[keybindings]` 部分。
 
 快捷键支持普通终端、Kitty 键盘协议和 xterm 的 modifyOtherKeys 编码。终端需要能够发送所配置组合的编码；某些普通终端无法区分 `Ctrl+Shift+x` 与 `Ctrl+x`，此类组合需要扩展键盘协议。普通编码中的 `Ctrl+i` 与 Tab、`Ctrl+m` 与 Enter、`Ctrl+h` 与部分终端的 Backspace 共用字节，因此配置其中一个组合时，共用编码也会触发。单独的 Escape 等待 100 毫秒，以便识别以 Escape 开头的组合键。
 
-启用括号粘贴模式时，粘贴内容原样传递。未绑定的输入和按键释放事件原样传递。未知选项、无效按键名称、缺少 `key` 或类型错误会在进入会话或查看列表时报告。
+粘贴内容保留原有文字，并按照目标程序是否启用括号粘贴模式发送边界标记。分屏界面根据目标窗格的终端模式编码未绑定的键盘事件；程序启用按键释放报告时同步传递释放事件。未知选项、无效按键名称、缺少 `key`、类型错误或重复绑定会在进入会话或查看列表时报告。
 
 ### CREATED 时间格式
 

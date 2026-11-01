@@ -2,7 +2,7 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const vt = @import("ghostty-vt");
 
-pub const Action = enum { detach };
+pub const Action = enum { detach, split_right, split_down };
 pub const Modifiers = vaxis.Key.Modifiers;
 
 pub const Binding = struct {
@@ -20,7 +20,7 @@ pub const Binding = struct {
         return if (cp >= 'A' and cp <= 'Z') cp + 0x20 else cp;
     }
 
-    fn matches(self: Binding, key: vaxis.Key, bytes: []const u8) bool {
+    pub fn matches(self: Binding, key: vaxis.Key, bytes: []const u8) bool {
         if (key.matchExact(self.codepoint, self.mods)) return true;
         // 普通终端的部分 Ctrl 组合与 Tab、Enter、Backspace 等按键共用字节。
         if (!self.mods.ctrl or self.mods.shift or self.mods.super or self.mods.alt != key.mods.alt) return false;
@@ -38,6 +38,8 @@ pub const Binding = struct {
 
 pub const Bindings = struct {
     detach: Binding = .{ .codepoint = '\\', .mods = .{ .ctrl = true } },
+    split_right: Binding = .{ .codepoint = 'd', .mods = .{ .super = true } },
+    split_down: Binding = .{ .codepoint = 'd', .mods = .{ .super = true, .shift = true } },
 
     fn action(self: Bindings, event: vaxis.Event, bytes: []const u8) ?Action {
         if (event != .key_press) return null;
@@ -116,6 +118,8 @@ pub const Input = struct {
 
     decoder: Decoder = .{},
     bindings: Bindings = .{},
+    workspace: bool = false,
+    report_events: bool = false,
     pending: [read_size]u8 = undefined,
     pending_len: usize = 0,
     output: [read_size * 2]u8 = undefined,
@@ -123,7 +127,7 @@ pub const Input = struct {
     deadline: ?i64 = null,
     pasting: bool = false,
 
-    pub const Result = struct { bytes: []const u8, action: ?Action };
+    pub const Result = struct { bytes: []const u8, action: ?Action, event: ?vaxis.Event = null };
 
     pub fn feed(self: *Input, bytes: []const u8, now: i64) !Result {
         std.debug.assert(bytes.len <= read_size);
@@ -150,11 +154,17 @@ pub const Input = struct {
                         .paste_end => self.pasting = false,
                         else => if (!self.pasting) {
                             if (self.bindings.action(event, self.pending[0..self.pending_len])) |action| {
-                                self.pending_len = 0;
-                                self.deadline = null;
-                                return .{ .bytes = self.output[0..self.output_len], .action = action };
+                                if (self.workspace == (action != .detach)) {
+                                    self.pending_len = 0;
+                                    self.deadline = null;
+                                    return .{ .bytes = self.output[0..self.output_len], .action = action };
+                                }
                             }
                         },
+                    }
+                    if (self.report_events and (!self.pasting or event == .paste_start)) {
+                        self.flush();
+                        return .{ .bytes = self.output[0..self.output_len], .action = null, .event = event };
                     }
                 }
                 self.flush();
@@ -172,7 +182,8 @@ pub const Input = struct {
 
     fn escapeAction(self: *Input) ?Action {
         if (self.pasting or self.pending_len != 1 or self.pending[0] != 0x1b) return null;
-        return self.bindings.action(.{ .key_press = .{ .codepoint = vaxis.Key.escape } }, "\x1b");
+        const action = self.bindings.action(.{ .key_press = .{ .codepoint = vaxis.Key.escape } }, "\x1b") orelse return null;
+        return if (self.workspace == (action != .detach)) action else null;
     }
 
     pub fn takePending(self: *Input) []const u8 {

@@ -7,6 +7,7 @@ import pexpect
 import psutil
 
 from conftest import BINARY, ROOT, SessionEnvironment
+from test_panes import PaneTerminal
 
 
 def measure_sessions(count):
@@ -15,7 +16,11 @@ def measure_sessions(count):
     for index in range(count):
         child = environment.spawn(f"session-{index}")
         if frontend_pss is None:
-            frontend_pss = psutil.Process(child.pid).memory_full_info().pss
+            frontend = psutil.Process(child.pid)
+            clients = [frontend] + [process for process in frontend.children(recursive=True)
+                                    if process.exe() == str(BINARY) and process.name() != "imx-server"]
+            assert len(clients) == 2
+            frontend_pss = sum(process.memory_full_info().pss for process in clients)
         child.sendcontrol("\\")
         child.expect(pexpect.EOF)
     rows = environment.sessions()
@@ -79,6 +84,37 @@ def measure_output():
     return measurement
 
 
+def measure_panes():
+    environment = SessionEnvironment()
+    try:
+        terminal = PaneTerminal(environment)
+        terminal.split()
+        terminal.visible("2: shell")
+        terminal.child.sendline("imx attach second")
+        terminal.visible("2: second")
+        frontend = psutil.Process(terminal.child.pid)
+        clients = [frontend] + [process for process in frontend.children(recursive=True)
+                                if process.exe() == str(BINARY) and process.name() != "imx-server"]
+        assert len(clients) == 3
+        before = [process.cpu_times() for process in clients]
+        time.sleep(5)
+        after = [process.cpu_times() for process in clients]
+        return {
+            "panes": 2,
+            "attached_sessions": 2,
+            "columns": 100,
+            "rows": 30,
+            "frontend_processes": len(clients),
+            "frontend_threads": sum(process.num_threads() for process in clients),
+            "frontend_pss_bytes": sum(process.memory_full_info().pss for process in clients),
+            "idle_interval_seconds": 5,
+            "idle_cpu_seconds": sum((end.user - start.user) + (end.system - start.system)
+                                    for start, end in zip(before, after)),
+        }
+    finally:
+        environment.cleanup()
+
+
 def measure_isolation():
     environment = SessionEnvironment()
     noisy = environment.spawn("noisy")
@@ -121,6 +157,7 @@ report = {
     "architecture": platform.machine(),
     "binary_bytes": BINARY.stat().st_size,
     "sessions": [measure_sessions(count) for count in (1, 10, 100)],
+    "panes": measure_panes(),
     "output": measure_output(),
     "isolation": measure_isolation(),
 }

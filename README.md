@@ -159,7 +159,13 @@ To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal mo
 > [!IMPORTANT]
 > Sessions and history are held in memory. A backend exiting releases its session; restarting the host releases all sessions.
 
-### 4. Make it yours
+### 4. Split panes
+
+While attached, press **Command+D** to split the focused pane left and right, or **Command+Shift+D** to split it top and bottom. Each new pane starts a plain shell in the focused pane's current directory. Run `imx attach <name>` there to connect to another session. Click a pane to focus it; its border is highlighted. The detach shortcut affects only the focused pane's connection and returns that pane to its plain shell.
+
+Panes can be split repeatedly. Scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Exiting a plain shell closes its pane; closing the last pane exits the interface. Closing the terminal discards the layout and terminates the plain pane shells while attached sessions keep running. Layouts are held only in the current client and are not saved. Set `keybindings.split_right` and `keybindings.split_down` to use other shortcuts.
+
+### 5. Make it yours
 
 Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with all default settings and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
 
@@ -177,11 +183,14 @@ enabled = true
 
 [keybindings]
 detach = { key = '\', ctrl = true }
+split_right = { key = 'd', super = true }
+split_down = { key = 'd', super = true, shift = true }
 ```
 
 - **`prompt.show_session`** shows `[dev] ` before the prompt of new Bash, Zsh, and Fish shells inside sessions, keeping the prompt's path, colors, and theme. The next `imx attach` installs the integration between `# BEGIN imx shell integration` and `# END imx shell integration` markers in your shell startup files. Set the option to `false` and attach again to remove it. The default is `true`, including when the option is omitted.
 - **`list.created_format`** formats the `CREATED` column with `strftime` fields. The default shows `10-30 14:05:09`; `%Y-%m-%d %H:%M:%S` adds the year.
 - **`completion.enabled`** switches Tab completion of commands and session names. The default is `true`.
+- **`keybindings.split_right`**, **`keybindings.split_down`** split the focused pane horizontally across the screen or vertically down it. Defaults are Command+D and Command+Shift+D; `super` means Command on macOS. Each new pane starts a plain shell in the current directory. Restart the split interface to apply changes to these bindings. Duplicate shortcuts are rejected.
 - **`keybindings.detach`** sets the shortcut that detaches the current connection. For example, `{ key = 'x', ctrl = true }` uses `Ctrl+x`, and `{ key = 'F12' }` uses F12. `key` accepts a single character or a supported key name; `ctrl`, `alt`, `shift`, and `super` are booleans and default to `false` within an explicit binding. ASCII letter names are case-insensitive; use `shift = true` to require Shift. Changes apply when you reconnect, and switching sessions keeps the current connection's binding. See [keybindings](docs/usage.md#快捷键配置) for supported names and terminal encoding behavior.
 
 Syntax errors, unknown options, and wrong value types are reported when you attach or list sessions. Diagnostics include the configuration path and, for option errors, the full option name and its requirements. The [configuration section](docs/usage.md#配置文件与会话提示符) of the usage guide lists the startup files and describes how they are edited.
@@ -189,6 +198,8 @@ Syntax errors, unknown options, and wrong value types are reported when you atta
 ## How it works
 
 `imx` commands talk to each session's backend over its own Unix socket in a private runtime directory. Each backend owns its session's PTY and keeps a live terminal model with Ghostty's `ghostty-vt` library: screen contents, colors, and scrollback. Reattaching replays that model to your terminal, and `imx cat` formats the same state as plain text.
+
+The interactive client manages a PTY and a terminal model for each pane. libvaxis renders the panes and their borders, while Ghostty encodes keyboard and mouse input for each pane's active terminal modes. Pane layouts and ordinary pane shells live with this client; session backends retain their own lifetimes.
 
 | Command                     | Purpose                                                      |
 | --------------------------- | ------------------------------------------------------------ |
@@ -223,7 +234,8 @@ List queries run concurrently with a shared one-second deadline. `STATUS` shows 
 | Session names   | 1-64 characters: ASCII letters, digits, dots, underscores, and hyphens; `.` and `..` are reserved |
 | History         | 10,000-line target within a 2 MiB budget, trimmed in complete terminal pages |
 | Terminal size   | Up to 512 columns × 256 rows; the most recent connection sets the size |
-| Output queues   | 256 KiB per queue; a connection that falls behind is disconnected and the session keeps running |
+| Session output queues | 256 KiB per queue; a connection that falls behind is disconnected and the session keeps running |
+| Pane rendering queue | Up to 16 MiB for a complete screen update; rendering waits for queued output to drain |
 
 ### Shell integration
 
@@ -280,15 +292,15 @@ When upgrading from v0.4.1, the existing shared backend continues to manage its 
 
 ## Resource usage
 
-Measured on 2026-10-31 with the development version using independent session backends, on x86_64 WSL2 Linux, using the default build mode and an 80×24 terminal:
+Measured on 2026-11-01 with the development build supporting independent session backends and panes, on x86_64 WSL2 Linux, using the default build mode and an 80×24 terminal:
 
 | Idle sessions | Backend memory (PSS) | Backend processes | Backend threads |
 | ------------- | -------------------- | ----------------- | --------------- |
-| 1             | 1.85 MiB             | 1                 | 1               |
-| 10            | 3.96 MiB             | 10                | 10              |
-| 100           | 25.09 MiB            | 100               | 100             |
+| 1             | 2.26 MiB             | 1                 | 1               |
+| 10            | 4.86 MiB             | 10                | 10              |
+| 100           | 30.96 MiB            | 100               | 100             |
 
-The table totals all imx backends; shells and session programs consume additional memory. A connected client used about 1.07 MiB PSS, and the static executable was about 2.11 MiB. Generating and processing 500,000 lines of output (about 3.89 MB) took about 0.59 s, using about 0.26 s of backend CPU time. Backend CPU time did not increase across the 5-second idle samples in each row above.
+The table totals all imx backends; shells and session programs consume additional memory. A connected client with one pane used about 2.19 MiB PSS across its manager and connection process. Two panes attached to separate sessions in a 100×30 terminal used about 4.07 MiB across three client processes. The static executable was about 2.67 MiB. Generating and processing 500,000 lines of output (about 3.89 MB) took about 0.55 s, using about 0.24 s of backend CPU time. Backend CPU time did not increase across the 5-second idle samples in each row above; the two-pane client also recorded no CPU time increase during its idle sample.
 
 With another session producing continuous output, 100 commands in a healthy session had a median response time of 1.00 ms and a maximum of 2.10 ms. With a paused backend, a list query took about 1,003 ms and completion took about 252 ms. Resource usage depends on the system, terminal size, and session contents.
 
