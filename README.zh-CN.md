@@ -28,43 +28,43 @@
 <table>
   <tr>
     <td width="33%" valign="top">
-      <h3><img src="docs/assets/icons/infinity.svg" width="24" height="24" align="middle" alt="" /> 保留会话</h3>
+      <h3>保留会话</h3>
       关闭终端或断开 SSH 连接后，shell 和其中的程序继续运行。
     </td>
     <td width="33%" valign="top">
-      <h3><img src="docs/assets/icons/history.svg" width="24" height="24" align="middle" alt="" /> 恢复现场</h3>
+      <h3>恢复现场</h3>
       重新连接时恢复屏幕、颜色和保留的历史，Vim 等全屏程序保持离开时的状态。
     </td>
     <td width="33%" valign="top">
-      <h3><img src="docs/assets/icons/file-text.svg" width="24" height="24" align="middle" alt="" /> 查看输出</h3>
+      <h3>查看输出</h3>
       在任意终端通过 <code>imx cat</code> 以纯文本读取会话保留的历史和当前屏幕。
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h3><img src="docs/assets/icons/users.svg" width="24" height="24" align="middle" alt="" /> 共享连接</h3>
+      <h3>共享连接</h3>
       多个终端可以同时进入同一个会话，共享它的输入和输出。
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/terminal.svg" width="24" height="24" align="middle" alt="" /> 会话提示符</h3>
+      <h3>会话提示符</h3>
       开启一个选项，新启动的 Bash、Zsh 和 Fish 会在原有提示符前显示 <code>[dev]</code>，保留原来的路径、颜色和主题。
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/keyboard.svg" width="24" height="24" align="middle" alt="" /> Tab 补全</h3>
+      <h3>Tab 补全</h3>
       在 Bash、Zsh 和 Fish 中补全命令和当前会话的名称，补全文件由安装脚本放到位。
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h3><img src="docs/assets/icons/sliders-horizontal.svg" width="24" height="24" align="middle" alt="" /> 一个配置文件</h3>
+      <h3>一个配置文件</h3>
       首次使用时自动创建包含默认值和注释的 TOML 文件，用于设置会话提示符、补全和 <code>CREATED</code> 列的时间格式。语法、选项名称和取值类型都会检查。
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/feather.svg" width="24" height="24" align="middle" alt="" /> 会话隔离</h3>
+      <h3>会话隔离</h3>
       每个会话由独立后台进程管理，内部运行一个事件循环线程。某个后台暂停或崩溃时，其他会话仍然可用。
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/package.svg" width="24" height="24" align="middle" alt="" /> 直接安装</h3>
+      <h3>直接安装</h3>
       发布文件是 x86_64 和 ARM64 的 musl 静态可执行文件，附带补全文件。安装脚本自动选择架构并校验 SHA256，<code>imx update</code> 升级现有安装。
     </td>
   </tr>
@@ -320,7 +320,6 @@ imx 用到的第三方项目：
 - [zmx](https://github.com/neurosnap/zmx)：终端历史格式化和状态恢复参考其实现，MIT 许可证。
 - [Ghostty](https://github.com/ghostty-org/ghostty)：终端处理使用其 `ghostty-vt` 库，MIT 许可证。
 - [tomlc17](https://github.com/cktan/tomlc17)：解析配置文件，MIT 许可证。
-- [Lucide](https://lucide.dev)：本 README 的功能图标，ISC 许可证，见 [docs/assets/icons/LICENSE](docs/assets/icons/LICENSE)。
 
 版权声明和全部第三方许可证见 [NOTICE](NOTICE) 和 [licenses/](licenses/)，其中包括 `ghostty-vt` 附带的库。
 

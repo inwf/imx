@@ -28,43 +28,43 @@ Each session has an independent backend process with one event loop thread. The 
 <table>
   <tr>
     <td width="33%" valign="top">
-      <h3><img src="docs/assets/icons/infinity.svg" width="24" height="24" align="middle" alt="" /> Persistent sessions</h3>
+      <h3>Persistent sessions</h3>
       Close the terminal or lose the SSH connection. The shell and its programs keep running while you are away.
     </td>
     <td width="33%" valign="top">
-      <h3><img src="docs/assets/icons/history.svg" width="24" height="24" align="middle" alt="" /> Screen restoration</h3>
+      <h3>Screen restoration</h3>
       Reattach to restore the screen, colors, and retained history. Full-screen programs such as Vim come back as you left them.
     </td>
     <td width="33%" valign="top">
-      <h3><img src="docs/assets/icons/file-text.svg" width="24" height="24" align="middle" alt="" /> Readable output</h3>
+      <h3>Readable output</h3>
       Read a session's retained history and active screen as plain text from any terminal with <code>imx cat</code>.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h3><img src="docs/assets/icons/users.svg" width="24" height="24" align="middle" alt="" /> Shared connections</h3>
+      <h3>Shared connections</h3>
       Several terminals can attach to one session at once and share its input and output.
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/terminal.svg" width="24" height="24" align="middle" alt="" /> Session prompt</h3>
+      <h3>Session prompt</h3>
       Turn on one option and new Bash, Zsh, and Fish shells show <code>[dev]</code> before your existing prompt, keeping its path, colors, and theme.
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/keyboard.svg" width="24" height="24" align="middle" alt="" /> Tab completion</h3>
+      <h3>Tab completion</h3>
       Complete commands and the names of current sessions in Bash, Zsh, and Fish. The installer puts the completion files in place.
     </td>
   </tr>
   <tr>
     <td valign="top">
-      <h3><img src="docs/assets/icons/sliders-horizontal.svg" width="24" height="24" align="middle" alt="" /> One configuration file</h3>
+      <h3>One configuration file</h3>
       A TOML file with commented defaults is created on first use. It sets the session prompt, completion, and the <code>CREATED</code> time format. Syntax, option names, and value types are checked.
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/feather.svg" width="24" height="24" align="middle" alt="" /> Session isolation</h3>
+      <h3>Session isolation</h3>
       Each session runs in its own backend with one event loop thread. A paused or crashed backend leaves other sessions available.
     </td>
     <td valign="top">
-      <h3><img src="docs/assets/icons/package.svg" width="24" height="24" align="middle" alt="" /> Direct installation</h3>
+      <h3>Direct installation</h3>
       Releases ship static musl executables for x86_64 and ARM64 together with completion files. The installer selects the architecture, checks SHA256, and <code>imx update</code> upgrades in place.
     </td>
   </tr>
@@ -323,7 +323,6 @@ Third-party projects used by imx:
 - [zmx](https://github.com/neurosnap/zmx): terminal history formatting and state restoration are adapted from it. MIT License.
 - [Ghostty](https://github.com/ghostty-org/ghostty): terminal processing uses its `ghostty-vt` library. MIT License.
 - [tomlc17](https://github.com/cktan/tomlc17): parses the configuration file. MIT License.
-- [Lucide](https://lucide.dev): the feature icons in this README. ISC License, see [docs/assets/icons/LICENSE](docs/assets/icons/LICENSE).
 
 Copyright notices and the complete set of third-party licenses are in [NOTICE](NOTICE) and [licenses/](licenses/), including those of the libraries bundled with `ghostty-vt`.
 
