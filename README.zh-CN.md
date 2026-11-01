@@ -160,11 +160,11 @@ imx kill dev     # 终止会话
 
 ### 4. 分屏
 
-进入会话后，按下 **Command+D** 将当前窗格左右分屏，按下 **Command+Shift+D** 将当前窗格上下分屏。新窗格在当前聚焦窗格的工作目录启动普通 shell，用户可以执行 `imx attach <name>` 连接其他会话。鼠标点击窗格即可聚焦，高亮边框表示当前输入目标。分离快捷键只断开当前聚焦窗格的会话连接，并返回该窗格的普通 shell。
+进入会话后，按下 **Alt+D** 将当前窗格左右分屏，按下 **Alt+Shift+D** 将当前窗格上下分屏。Alt 对应 macOS 的 Option。新窗格在当前聚焦窗格的工作目录启动普通 shell，用户可以执行 `imx attach <name>` 连接其他会话。鼠标点击窗格即可聚焦，高亮边框表示当前输入目标。分离快捷键只断开当前聚焦窗格的会话连接，并返回该窗格的普通 shell。
 
-每个窗格都可以继续分屏。程序没有接管鼠标时，滚轮用于查看该窗格的历史。在普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`，即可关闭该窗格。需要保留已经连接的会话时，先按分离快捷键（默认 `Ctrl+\`），再在普通 shell 中输入 `exit`。最后一个窗格关闭后退出分屏界面。
+每个窗格都可以继续分屏。程序没有接管鼠标时，滚轮用于查看该窗格的历史。按下 **Alt+W** 关闭当前聚焦的窗格，并终止其中连接的会话及程序；其他连接到同一会话的客户端也会断开。需要保留会话时，先按分离快捷键（默认 `Ctrl+\`），再按 Alt+W。关闭普通 shell 窗格时，其中的程序也会终止。在普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`，同样可以关闭窗格。最后一个窗格关闭后退出分屏界面。
 
-关闭终端会丢弃布局并终止窗格中的普通 shell，已经连接的会话继续运行。布局只保留在当前客户端内存中，不会保存到文件。可以通过 `keybindings.split_right` 和 `keybindings.split_down` 修改快捷键。
+关闭终端会丢弃布局并终止窗格中的普通 shell，已经连接的会话继续运行。布局只保留在当前客户端内存中，不会保存到文件。可以通过 `keybindings.split_right`、`keybindings.split_down` 和 `keybindings.close_pane` 修改快捷键。
 
 ### 5. 按需配置
 
@@ -188,7 +188,8 @@ enabled = true
 - **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
-- **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Command+D、Command+Shift+D；`super` 对应 macOS 的 Command。新窗格在当前目录启动普通 shell。退出整个分屏界面并重新进入后，分屏快捷键的修改生效。重复的快捷键会报告配置错误。
+- **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。退出整个界面并重新进入后，快捷键的修改生效。重复的快捷键会报告配置错误。
+- **`keybindings.close_pane`**：关闭当前聚焦的窗格，并终止其中连接的会话及程序，默认使用 Alt+W。需要保留会话时先 detach。退出整个界面并重新进入后，关闭快捷键的修改生效。
 - **`keybindings.detach`**：设置分离当前连接的快捷键。例如，`{ key = 'x', ctrl = true }` 表示 `Ctrl+x`，`{ key = 'F12' }` 表示 F12。`key` 接受单个字符或支持的按键名称；`ctrl`、`alt`、`shift`、`super` 使用布尔值，在显式配置的快捷键中默认为 `false`。ASCII 字母名称不区分大小写，需要 Shift 时设置 `shift = true`。修改后重新连接生效，同一连接切换会话时保留当前设置。支持的按键名称及终端编码行为见[快捷键配置](docs/usage.md#快捷键配置)。
 
 语法错误、未知选项和取值类型错误会在进入会话或查看列表时报告。错误信息包含配置文件路径；选项错误还会说明完整配置项名称及其要求。初始化文件的位置和修改方式见使用说明的[配置部分](docs/usage.md#配置文件与会话提示符)。

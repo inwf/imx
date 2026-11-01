@@ -52,17 +52,24 @@ enabled = true
 # The session and its programs keep running. Detach and reattach to apply a changed binding.
 detach = { key = '\', ctrl = true }
 
-# 左右分屏，在当前聚焦窗格的目录启动普通 shell，默认 Command+D。
-# Split left and right, starting a plain shell in the focused pane's directory. Default: Command+D.
+# 左右分屏，在当前聚焦窗格的目录启动普通 shell，默认 Alt+D（macOS 的 Option+D）。
+# Split left and right, starting a plain shell in the focused pane's directory. Default: Alt+D (Option+D on macOS).
 # 修改分屏快捷键后，退出整个分屏界面并重新 attach 生效。
 # Exit the entire split interface and attach again to apply changed split bindings.
-split_right = { key = 'd', super = true }
+split_right = { key = 'd', alt = true }
 
-# 上下分屏，在当前聚焦窗格的目录启动普通 shell，默认 Command+Shift+D。
-# Split top and bottom, starting a plain shell in the focused pane's directory. Default: Command+Shift+D.
+# 上下分屏，在当前聚焦窗格的目录启动普通 shell，默认 Alt+Shift+D（macOS 的 Option+Shift+D）。
+# Split top and bottom, starting a plain shell in the focused pane's directory. Default: Alt+Shift+D (Option+Shift+D on macOS).
 # 修改后同样需要退出整个分屏界面并重新 attach。
 # Exit the entire split interface and attach again to apply this change too.
-split_down = { key = 'd', super = true, shift = true }
+split_down = { key = 'd', alt = true, shift = true }
 
-# 使用 Option+D 和 Option+Shift+D 时，将两个分屏绑定中的 super = true 改为 alt = true。
-# For Option+D and Option+Shift+D, replace super = true with alt = true in both split bindings.
+# 关闭当前聚焦的窗格，默认 Alt+W（macOS 的 Option+W）。最后一个窗格关闭后退出界面。
+# Close the focused pane, default Alt+W (Option+W on macOS). Closing the last pane exits the interface.
+# 如果窗格连接着会话，会自动终止该会话及其中的程序，其他连接到同一会话的客户端也会断开。
+# An attached session and its programs are terminated; other clients attached to that session are disconnected too.
+# 需要保留会话时，先 detach（默认 Ctrl+\），再按 Alt+W 关闭窗格。
+# To keep the session running, detach first (default Ctrl+\), then press Alt+W to close the pane.
+# 普通 shell 窗格关闭时，其中的程序也会终止。修改快捷键后退出整个界面并重新 attach 生效。
+# Closing a plain shell pane also terminates its programs. Exit the entire interface and attach again to apply changes.
+close_pane = { key = 'w', alt = true }

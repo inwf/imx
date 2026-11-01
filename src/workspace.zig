@@ -15,6 +15,18 @@ const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Axis = enum { right, down };
 
+const CloseRequest = struct {
+    fd: c_int,
+    input: protocol.Queue = .{},
+    reader: protocol.Reader = .{},
+
+    fn deinit(self: *CloseRequest, allocator: std.mem.Allocator) void {
+        sys.close(self.fd);
+        self.input.deinit(allocator);
+        self.reader.deinit(allocator);
+    }
+};
+
 const Node = struct {
     rect: Rect,
     content: union(enum) { pane: *Pane, split: struct { axis: Axis, first: *Node, second: *Node } },
@@ -101,6 +113,9 @@ const Pane = struct {
     state: vt.RenderState = .empty,
     hold_until: ?i64 = null,
     input: protocol.Queue = .{},
+    detaching: bool = false,
+    close_requested: bool = false,
+    closing: ?CloseRequest = null,
 
     fn deinit(self: *Pane) void {
         const allocator = self.app.allocator;
@@ -108,6 +123,7 @@ const Pane = struct {
         if (self.pid != 0) @import("server.zig").terminateSession(self.pid) catch @panic("failed to terminate pane processes");
         if (self.control) |fd| sys.close(fd);
         if (self.attached) |state| state.deinit();
+        if (self.closing) |*request| request.deinit(allocator);
         sys.close(self.listener);
         self.stream.deinit();
         self.term.deinit(allocator);
@@ -210,6 +226,21 @@ const Pane = struct {
         self.app.allocator.free(self.cwd);
         self.cwd = path;
     }
+
+    fn closeSession(self: *Pane, state: context.State) !void {
+        const app = self.app;
+        var root = try config.Config.initPath(app.allocator, app.io, state.directory);
+        defer root.deinit();
+        const fd = @import("connection.zig").open(app.allocator, app.io, &root, state.session, false) catch |err| switch (err) {
+            error.SessionNotFound => return,
+            else => return err,
+        };
+        var request: CloseRequest = .{ .fd = fd };
+        errdefer request.deinit(app.allocator);
+        _ = try sys.nonblocking(fd, true);
+        try request.input.message(app.allocator, .kill, state.session);
+        self.closing = request;
+    }
 };
 
 const App = struct {
@@ -267,7 +298,7 @@ const App = struct {
         for (self.panes.items) |pane| {
             const size: sys.Size = .{ .cols = pane.rect.width - 2, .rows = pane.rect.height - 2 };
             if (pane.term.cols != size.cols or pane.term.rows != size.rows) {
-                try size.set(pane.fd);
+                if (pane.fd >= 0) try size.set(pane.fd);
                 try pane.stream.handler.resize(.{ .cols = size.cols, .rows = size.rows });
             }
         }
@@ -280,6 +311,28 @@ const App = struct {
         self.focused = pane;
         if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, "\x1b[I");
         try self.arrange();
+    }
+
+    fn remove(self: *App, index: usize) !void {
+        const pane = self.panes.items[index];
+        if (self.panes.items.len > 1) _ = self.root.remove(self.allocator, pane);
+        _ = self.panes.orderedRemove(index);
+        if (self.mouse_pane == pane) self.mouse_pane = null;
+        if (self.panes.items.len > 0 and self.focused == pane) self.focused = self.panes.items[@min(index, self.panes.items.len - 1)];
+        pane.deinit();
+        if (self.panes.items.len > 0) try self.arrange();
+    }
+
+    fn closeRequested(self: *App) !void {
+        for (self.panes.items, 0..) |pane, index| {
+            if (!pane.close_requested or pane.closing != null or pane.detaching) continue;
+            if (pane.attached) |state| {
+                try pane.closeSession(state.value);
+                if (pane.closing != null) continue;
+            } else if (pane.initial and pane.exit_status == null) continue;
+            try self.remove(index);
+            break;
+        }
     }
 
     fn split(self: *App, axis: Axis) !void {
@@ -301,7 +354,6 @@ const App = struct {
         node.content = .{ .split = .{ .axis = axis, .first = first, .second = second } };
         if (!self.composed) {
             self.composed = true;
-            self.keys.report_events = true;
             for (self.panes.items) |value| enableEffects(value);
             try self.output.append(self.allocator, display.reset ++ "\x1b[?1049h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[>4;2m\x1b[>31u");
             self.vx.state.alt_screen = true;
@@ -337,24 +389,33 @@ const App = struct {
     }
 
     fn input(self: *App, result: keyboard.Input.Result) !void {
+        const pane = self.focused;
+        if (result.event) |event| if (event == .mouse and self.composed) return self.handleMouse(event.mouse);
+        if (pane.close_requested) return;
         if (result.action) |action| {
-            if (result.bytes.len != 0) try self.focused.input.append(self.allocator, result.bytes);
-            try self.split(if (action == .split_right) .right else .down);
+            if (result.bytes.len != 0) try pane.input.append(self.allocator, result.bytes);
+            switch (action) {
+                .split_right => try self.split(.right),
+                .split_down => try self.split(.down),
+                .close_pane => pane.close_requested = true,
+                .detach => unreachable,
+            }
             return;
         }
-        const pane = self.focused;
+        if (result.event) |event| {
+            if (event == .key_press and pane.attached != null and pane.attached.?.value.detach.matches(event.key_press, result.bytes)) {
+                pane.detaching = true;
+                return pane.input.append(self.allocator, result.bytes);
+            }
+        }
         if (!self.composed) return pane.input.append(self.allocator, result.bytes);
         if (result.event) |event| switch (event) {
-            .mouse => |mouse| return self.handleMouse(mouse),
             .paste_start, .paste_end => {
                 if (pane.term.modes.get(.bracketed_paste)) try pane.input.append(self.allocator, result.bytes);
                 return;
             },
             .key_press, .key_release => {
                 const key = if (event == .key_press) event.key_press else event.key_release;
-                if (event == .key_press and pane.attached != null and pane.attached.?.value.detach.matches(key, result.bytes)) {
-                    return pane.input.append(self.allocator, result.bytes);
-                }
                 pane.term.scrollViewport(.bottom);
                 var writer: std.Io.Writer.Allocating = .init(self.allocator);
                 defer writer.deinit();
@@ -537,7 +598,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     defer environment.deinit();
     var executable: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &executable);
-    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .keys = .{ .bindings = bindings, .workspace = true } };
+    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .keys = .{ .bindings = bindings, .workspace = true, .report_events = true } };
     defer {
         var writer: std.Io.Writer.Allocating = .init(allocator);
         defer writer.deinit();
@@ -574,6 +635,8 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     var fds: std.ArrayList(c.struct_pollfd) = .empty;
     defer fds.deinit(allocator);
     while (app.panes.items.len > 0) {
+        try app.closeRequested();
+        if (app.panes.items.len == 0) break;
         if (app.composed and app.dirty and app.output.pending().len == 0) try app.draw();
         fds.clearRetainingCapacity();
         try fds.appendSlice(allocator, &.{ .{ .fd = signals, .events = c.POLLIN, .revents = 0 }, .{ .fd = 0, .events = if (app.focused.input.pending().len < protocol.max_queue - 32768) c.POLLIN else 0, .revents = 0 }, .{ .fd = 1, .events = if (app.output.pending().len > 0) c.POLLOUT else 0, .revents = 0 } });
@@ -581,6 +644,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
             .{ .fd = pane.fd, .events = (if (app.output.pending().len < protocol.max_queue - 32768) @as(c_short, c.POLLIN) else 0) | (if (pane.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
             .{ .fd = pane.listener, .events = c.POLLIN, .revents = 0 },
             .{ .fd = pane.control orelse -1, .events = c.POLLIN, .revents = 0 },
+            .{ .fd = if (pane.closing) |request| request.fd else -1, .events = @as(c_short, c.POLLIN) | (if (pane.closing != null and pane.closing.?.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
         });
         const now = try sys.monotonicMilliseconds();
         var deadline = app.keys.deadline;
@@ -643,7 +707,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         if (fds.items[2].revents & (c.POLLHUP | c.POLLERR) != 0) return;
         var removed = false;
         for (app.panes.items, 0..) |pane, index| {
-            const events = fds.items[3 + index * 3 ..][0..3];
+            const events = fds.items[3 + index * 4 ..][0..4];
             if (events[1].revents & c.POLLIN != 0) {
                 const fd = try sys.check(c.accept4(pane.listener, null, null, c.SOCK_CLOEXEC | c.SOCK_NONBLOCK), "accept(pane)");
                 const peer = try config.peer(fd);
@@ -662,8 +726,35 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                     if (n == 0) {
                         sys.close(pane.control.?);
                         pane.control = null;
+                        pane.detaching = false;
                     } else pane.attached = try std.json.parseFromSlice(context.State, allocator, buffer[0..n], .{ .allocate = .alloc_always });
                     app.dirty = true;
+                }
+            }
+            if (pane.closing) |*request| {
+                if (events[3].revents & c.POLLOUT != 0) try request.input.flush(request.fd, true);
+                if (events[3].revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
+                    const alive = try request.reader.receive(allocator, request.fd);
+                    var complete = false;
+                    while (try request.reader.next()) |reply| {
+                        switch (reply.tag) {
+                            .ok => {
+                                if (reply.payload.len != 0) return error.InvalidMessage;
+                                complete = true;
+                            },
+                            .failure => {
+                                if (!std.mem.eql(u8, reply.payload, "SessionNotFound")) return error.SessionCloseFailed;
+                                complete = true;
+                            },
+                            else => return error.InvalidMessage,
+                        }
+                    }
+                    if (complete) {
+                        try app.remove(index);
+                        removed = true;
+                        break;
+                    }
+                    if (!alive) return error.ConnectionClosed;
                 }
             }
             if (events[0].revents & c.POLLOUT != 0) try pane.input.flush(pane.fd, false);
@@ -676,6 +767,12 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                         pane.pid = 0;
                         sys.close(pane.fd);
                         pane.fd = -1;
+                        if (pane.closing != null) continue;
+                        if (pane.close_requested) {
+                            try app.remove(index);
+                            removed = true;
+                            break;
+                        }
                         if (!app.composed) {
                             const flush_deadline = try sys.monotonicMilliseconds() + 100;
                             while (app.output.pending().len > 0) {
@@ -698,12 +795,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                             pane.attached = null;
                             try pane.spawn(null);
                         } else {
-                            if (app.panes.items.len > 1) _ = app.root.remove(allocator, pane);
-                            _ = app.panes.orderedRemove(index);
-                            if (app.mouse_pane == pane) app.mouse_pane = null;
-                            if (app.panes.items.len > 0 and app.focused == pane) app.focused = app.panes.items[@min(index, app.panes.items.len - 1)];
-                            pane.deinit();
-                            if (app.panes.items.len > 0) try app.arrange();
+                            try app.remove(index);
                             removed = true;
                         }
                         app.dirty = true;

@@ -2,7 +2,7 @@ const std = @import("std");
 const vaxis = @import("vaxis");
 const vt = @import("ghostty-vt");
 
-pub const Action = enum { detach, split_right, split_down };
+pub const Action = enum { detach, split_right, split_down, close_pane };
 pub const Modifiers = vaxis.Key.Modifiers;
 
 pub const Binding = struct {
@@ -38,8 +38,9 @@ pub const Binding = struct {
 
 pub const Bindings = struct {
     detach: Binding = .{ .codepoint = '\\', .mods = .{ .ctrl = true } },
-    split_right: Binding = .{ .codepoint = 'd', .mods = .{ .super = true } },
-    split_down: Binding = .{ .codepoint = 'd', .mods = .{ .super = true, .shift = true } },
+    split_right: Binding = .{ .codepoint = 'd', .mods = .{ .alt = true } },
+    split_down: Binding = .{ .codepoint = 'd', .mods = .{ .alt = true, .shift = true } },
+    close_pane: Binding = .{ .codepoint = 'w', .mods = .{ .alt = true } },
 
     fn action(self: Bindings, event: vaxis.Event, bytes: []const u8) ?Action {
         if (event != .key_press) return null;
@@ -176,8 +177,9 @@ pub const Input = struct {
 
     pub fn expire(self: *Input) Result {
         const action = self.escapeAction();
+        const event: ?vaxis.Event = if (self.report_events and !self.pasting and self.pending_len == 1 and self.pending[0] == 0x1b) .{ .key_press = .{ .codepoint = vaxis.Key.escape } } else null;
         const bytes = self.takePending();
-        return .{ .bytes = if (action == null) bytes else "", .action = action };
+        return .{ .bytes = if (action == null) bytes else "", .action = action, .event = event };
     }
 
     fn escapeAction(self: *Input) ?Action {
