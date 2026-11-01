@@ -190,6 +190,7 @@ enabled = true
 - **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
+- **`panes.focused_border_color`**：使用 `"#RRGGBB"` 字符串设置聚焦窗格的边框和标题颜色，例如 `"#33AAFF"`；省略时使用终端默认青色。会话窗格和普通 shell 窗格均适用，修改后重新启动整个界面生效。
 - **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。退出整个界面并重新进入后，快捷键的修改生效。重复的快捷键会报告配置错误。
 - **`keybindings.close_pane`**：关闭当前聚焦的窗格，并终止其中连接的会话及程序，默认使用 Alt+W。需要保留会话时先 detach。退出整个界面并重新进入后，关闭快捷键的修改生效。
 - **`keybindings.focus_left`**、**`focus_right`**、**`focus_up`**、**`focus_down`**：默认使用 Alt+方向键聚焦相邻窗格。**`keybindings.focus_1`** 至 **`focus_10`**：默认使用 Alt+1 至 Alt+9 和 Alt+0 聚焦对应编号的窗格。修改后重新启动整个界面生效。

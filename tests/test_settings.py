@@ -8,6 +8,7 @@ import struct
 from threading import Barrier
 import tomllib
 
+import pexpect
 import pytest
 
 from test_prompt import configuration, enter, settings, setup_shell
@@ -187,6 +188,31 @@ def test_invalid_list_configuration_fails_before_creating_runtime(sessions, valu
         assert result.stdout == ""
     assert not sessions.runtime.exists()
     assert not (sessions.home / ".local/state/imx").exists()
+
+
+@pytest.mark.parametrize("value, error", [
+    ("panes = false", "InvalidPanesConfiguration"),
+    ("[panes]\nfocused_border_color = true", "FocusedBorderColorMustBeString"),
+    ("[panes]\nfocused_border_colour = '#123456'", "UnknownConfigurationOption"),
+    *[(f"[panes]\nfocused_border_color = '{color}'", "InvalidFocusedBorderColor") for color in [
+        "", "red", "123456", "#123", "#12345678", "#12GG56", " #123456", "#123456 ", "#+1FFFF", "#0_0_0_", "#１２３４５６",
+    ]],
+])
+def test_invalid_pane_configuration_fails_before_creating_runtime(sessions, value, error):
+    path = configuration(sessions)
+    path.parent.mkdir(parents=True)
+    path.write_text(value + "\n")
+    try:
+        child = sessions.spawn(initialize=False)
+        child.expect(pexpect.EOF)
+        child.close()
+        assert child.exitstatus == 1
+        assert error in child.before
+        assert str(path) in child.before
+        assert not sessions.runtime.exists()
+        assert not (sessions.home / ".local/state/imx").exists()
+    finally:
+        path.unlink()
 
 
 @pytest.mark.parametrize("value, error", [

@@ -22,8 +22,8 @@ fn color(value: vt.Style.Color, palette: vt.color.Palette, default: ?vt.color.RG
     return .{ .rgb = .{ rgb.r, rgb.g, rgb.b } };
 }
 
-pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal, state: *const vt.RenderState, rect: Rect, offset: [2]u16, selected: bool, title: []const u8) !void {
-    const border: vaxis.Style = .{ .fg = .{ .index = if (selected) 6 else 8 }, .bold = selected };
+pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal, state: *const vt.RenderState, rect: Rect, offset: [2]u16, selected: bool, focused_border_color: vaxis.Color, title: []const u8) !void {
+    const border: vaxis.Style = .{ .fg = if (selected) focused_border_color else .{ .index = 8 }, .bold = selected };
     for (0..rect.width) |x| {
         put(screen, @as(i32, rect.x) + @as(i32, @intCast(x)) - offset[0], @as(i32, rect.y) - offset[1], .{ .char = .{ .grapheme = "─" }, .style = border });
         put(screen, @as(i32, rect.x) + @as(i32, @intCast(x)) - offset[0], @as(i32, rect.y) + rect.height - 1 - offset[1], .{ .char = .{ .grapheme = "─" }, .style = border });
@@ -119,7 +119,17 @@ test "pane rendering preserves backgrounds on cleared cells" {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     try state.update(allocator, &term);
-    try draw(arena.allocator(), &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, true, "test");
+    try draw(arena.allocator(), &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, true, .{ .index = 6 }, "test");
     try std.testing.expectEqual(vaxis.Color{ .index = 4 }, screen.readCell(52, 2).?.style.bg);
     try std.testing.expectEqualStrings("A", screen.readCell(52, 1).?.char.grapheme);
+    const selected: vaxis.Color = .{ .rgb = .{ 0x33, 0xaa, 0xff } };
+    try draw(arena.allocator(), &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, true, selected, "test");
+    for ([_][2]u16{ .{ 50, 0 }, .{ 52, 0 }, .{ 99, 29 } }) |position| {
+        const style = screen.readCell(position[0], position[1]).?.style;
+        try std.testing.expectEqual(selected, style.fg);
+        try std.testing.expect(style.bold);
+    }
+    try draw(arena.allocator(), &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, false, selected, "test");
+    try std.testing.expectEqual(vaxis.Color{ .index = 8 }, screen.readCell(50, 0).?.style.fg);
+    try std.testing.expect(!screen.readCell(50, 0).?.style.bold);
 }

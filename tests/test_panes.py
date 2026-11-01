@@ -216,6 +216,31 @@ def test_configured_focus_shortcuts(sessions):
     terminal.focused(1)
 
 
+@pytest.mark.parametrize("color", [None, "#33aAfF", "#000000", "#FFFFFF"])
+def test_configured_border_color_follows_focus(sessions, color):
+    path = sessions.home / ".config/imx/config.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text("[panes]\n" if color is None else f'[panes]\nfocused_border_color = "{color}"\n')
+    child = sessions.spawn(rows=30, cols=100)
+    if color is None:
+        expected = "\x1b[36m"
+    else:
+        red, green, blue = bytes.fromhex(color[1:])
+        expected = f"\x1b[38:2:{red}:{green}:{blue}m"
+    child.send("\x1bd")
+    child.expect_exact(expected)
+    child.expect_exact("2: shell")
+    for shortcut, title in [("\x1b1", "1: dev"), ("\x1b[<0;55;3M\x1b[<0;55;3m", "2: shell"), ("\x1b1", "1: dev")]:
+        child.send(shortcut)
+        child.expect_exact(expected)
+        child.expect_exact(title)
+    child.sendcontrol("\\")
+    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    destination = sessions.path / "colored-shell"
+    child.sendline(f"printf ready > {shlex.quote(str(destination))}")
+    sessions.wait(lambda: destination.exists() and destination.read_text() == "ready")
+
+
 def test_directional_focus_reveals_panes_in_a_small_terminal(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()

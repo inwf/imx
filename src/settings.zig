@@ -3,6 +3,7 @@ const config = @import("config.zig");
 const sys = @import("sys.zig");
 const toml = @import("toml");
 const keyboard = @import("keyboard.zig");
+const vt = @import("ghostty-vt");
 
 const Context = struct {
     allocator: std.mem.Allocator,
@@ -37,6 +38,7 @@ pub const Settings = struct {
     show_session: bool = true,
     completion_enabled: bool = true,
     keybindings: keyboard.Bindings = .{},
+    focused_border_color: ?vt.color.RGB = null,
     created_format: ?[:0]u8 = null,
     file_missing: bool = false,
 
@@ -114,7 +116,7 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
         return context.reject(error.InvalidConfiguration, std.mem.sliceTo(&result.errmsg, 0));
     }
     const root = result.toptab;
-    try validateKeys(context, root, &.{ "prompt", "list", "completion", "keybindings" });
+    try validateKeys(context, root, &.{ "prompt", "list", "completion", "keybindings", "panes" });
     var preferences: Settings = .{};
     const prompt = toml.toml_get(root, "prompt");
     if (prompt.type != toml.TOML_UNKNOWN) {
@@ -156,6 +158,20 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
                 const other = @field(preferences.keybindings, @tagName(previous));
                 if (value.codepoint == other.codepoint and value.mods.eql(other.mods)) return field.child(@tagName(action)).reject(error.DuplicateKeybinding, "shortcut conflicts with keybindings." ++ @tagName(previous));
             }
+        }
+    }
+    const panes = toml.toml_get(root, "panes");
+    if (panes.type != toml.TOML_UNKNOWN) {
+        const field = context.child("panes");
+        if (panes.type != toml.TOML_TABLE) return field.reject(error.InvalidPanesConfiguration, "expected a table");
+        try validateKeys(field, panes, &.{"focused_border_color"});
+        const color = toml.toml_get(panes, "focused_border_color");
+        if (color.type != toml.TOML_UNKNOWN) {
+            const entry = field.child("focused_border_color");
+            if (color.type != toml.TOML_STRING) return entry.reject(error.FocusedBorderColorMustBeString, "expected a string in #RRGGBB format");
+            const value = color.u.str.ptr[0..@intCast(color.u.str.len)];
+            if (value.len != 7 or value[0] != '#') return entry.reject(error.InvalidFocusedBorderColor, "expected # followed by six hexadecimal digits (#RRGGBB)");
+            preferences.focused_border_color = vt.color.RGB.parse(value) catch return entry.reject(error.InvalidFocusedBorderColor, "expected # followed by six hexadecimal digits (#RRGGBB)");
         }
     }
     const listing = toml.toml_get(root, "list");
@@ -203,6 +219,7 @@ test "default configuration matches built-in settings" {
     try std.testing.expectEqual(defaults.show_session, preferences.show_session);
     try std.testing.expectEqual(defaults.completion_enabled, preferences.completion_enabled);
     try std.testing.expectEqualDeep(defaults.keybindings, preferences.keybindings);
+    try std.testing.expectEqualDeep(defaults.focused_border_color, preferences.focused_border_color);
     try std.testing.expectEqualStrings(defaults.createdFormat(), preferences.createdFormat());
 }
 

@@ -260,6 +260,7 @@ const App = struct {
     dirty: bool = false,
     offset: [2]u16 = .{ 0, 0 },
     vx: vaxis.Vaxis,
+    focused_border_color: vaxis.Color,
     output: protocol.Queue = .{ .limit = 16 * 1024 * 1024 },
     keys: keyboard.Input,
     status: ?[]u8 = null,
@@ -421,7 +422,7 @@ const App = struct {
         for (self.panes.items) |pane| {
             const title = try std.fmt.allocPrint(frame, " {d}: {s} ", .{ pane.id, if (pane.attached) |state| state.value.session else "shell" });
             if (pane.hold_until == null) try pane.state.update(self.allocator, &pane.term);
-            try render.draw(frame, &self.vx.screen, &pane.term, &pane.state, pane.rect, self.offset, pane == self.focused, title);
+            try render.draw(frame, &self.vx.screen, &pane.term, &pane.state, pane.rect, self.offset, pane == self.focused, self.focused_border_color, title);
         }
         if (self.status) |text| for (text[0..@min(text.len, self.size.cols)], 0..) |_, col| self.vx.screen.writeCell(@intCast(col), self.size.rows - 1, .{ .char = .{ .grapheme = text[col..][0..1] }, .style = .{ .fg = .{ .index = 0 }, .bg = .{ .index = 3 } } });
         var writer: std.Io.Writer.Allocating = .init(frame);
@@ -643,13 +644,13 @@ fn encodeKey(writer: *std.Io.Writer, key: vaxis.Key, released: bool, term: *vt.T
     try vt.input.encodeKey(writer, .{ .action = if (released) .release else .press, .key = mapped, .mods = .{ .ctrl = key.mods.ctrl, .alt = key.mods.alt, .shift = key.mods.shift, .super = key.mods.super, .caps_lock = key.mods.caps_lock, .num_lock = key.mods.num_lock }, .consumed_mods = .{ .shift = true }, .utf8 = text, .unshifted_codepoint = codepoint }, options);
 }
 
-pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, name: []const u8, bindings: keyboard.Bindings) !void {
+pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, name: []const u8, bindings: keyboard.Bindings, focused_border_color: ?vt.color.RGB) !void {
     _ = try sys.check(c.prctl(c.PR_SET_CHILD_SUBREAPER, @as(c_ulong, 1), @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)), "prctl(pane children)");
     var environment = try environ.createMap(allocator);
     defer environment.deinit();
     var executable: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &executable);
-    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .keys = .{ .bindings = bindings, .workspace = true, .report_events = true } };
+    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .focused_border_color = if (focused_border_color) |rgb| .{ .rgb = .{ rgb.r, rgb.g, rgb.b } } else .{ .index = 6 }, .keys = .{ .bindings = bindings, .workspace = true, .report_events = true } };
     defer {
         var writer: std.Io.Writer.Allocating = .init(allocator);
         defer writer.deinit();

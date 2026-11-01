@@ -2,8 +2,8 @@
 # Merge the options you need into ~/.config/imx/config.toml; declare each section once.
 # 设置了非空的 XDG_CONFIG_HOME 时，使用 $XDG_CONFIG_HOME/imx/config.toml。
 # When XDG_CONFIG_HOME is nonempty, use $XDG_CONFIG_HOME/imx/config.toml.
-# 以下取值均为内置默认值，省略的选项也使用这些默认值。
-# The values below are the built-in defaults, which also apply to omitted options.
+# 以下启用的配置使用内置默认值，可选配置的示例见对应注释。
+# Active entries below use built-in defaults; comments provide examples for optional settings.
 
 [prompt]
 # 在会话内的 Bash、Zsh 和 Fish 提示符前显示会话名称，例如 [dev]。
@@ -29,6 +29,17 @@ created_format = "%m-%d %H:%M:%S"
 # 设为 false 关闭补全；修改后在下一次按下 Tab 时生效。
 # Set false to disable completion; changes apply on the next Tab press.
 enabled = true
+
+[panes]
+# 设置当前聚焦窗格的边框和标题颜色，会话窗格和普通 shell 窗格均适用。
+# Set the focused pane's border and title color, for both attached sessions and plain shells.
+# 必须使用带引号的 "#RRGGBB" 字符串，十六进制字母不区分大小写。
+# Use a quoted "#RRGGBB" string; hexadecimal letters are case-insensitive.
+# 省略时使用终端默认青色。取消下面示例的注释可以启用自定义颜色。
+# Omit to use the terminal's cyan color. Uncomment the example below to set a custom color.
+# 修改后退出整个界面并重新 attach 生效。
+# Exit the entire interface and attach again to apply changes.
+# focused_border_color = "#33AAFF"
 
 [keybindings]
 # key 指定单个字符或按键名称；ASCII 字母和按键名称不区分大小写。

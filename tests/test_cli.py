@@ -69,6 +69,8 @@ def test_separator_allows_session_names_that_look_like_options(sessions, name):
     ("[keybindings]\ndetach = { key = 'x', ctrl = 'true' }\n", "keybindings.detach.ctrl", "expected a boolean"),
     ("[keybindings]\ndetach = { key = 'x', control = true }\n", "keybindings.detach.control", "unknown configuration option"),
     ("[keybindings]\ndetach = {}\n", "keybindings.detach.key", "required key is missing"),
+    ("[panes]\nfocused_border_color = 12\n", "panes.focused_border_color", "expected a string in #RRGGBB format"),
+    ("[panes]\nfocused_border_color = '#abc'\n", "panes.focused_border_color", "expected # followed by six hexadecimal digits (#RRGGBB)"),
 ])
 def test_configuration_errors_identify_file_option_and_requirement(sessions, contents, key, message):
     path = configuration(sessions)

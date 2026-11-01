@@ -98,6 +98,17 @@ enabled = true
 
 仓库根目录的 [config.example.toml](../config.example.toml) 提供完整配置模板，以中英文注释说明每项配置的用途、默认值和生效时机。可以将需要的选项合并到自己的配置文件，同一个分组只声明一次。快捷键使用内置默认值，需要自定义时添加对应的 `[keybindings]` 选项。
 
+### 聚焦窗格颜色
+
+`panes.focused_border_color` 设置当前聚焦窗格的边框和标题颜色，会话窗格和普通 shell 窗格均适用。格式必须为带引号的 `"#RRGGBB"`，十六进制字母不区分大小写。省略时使用终端默认青色。修改后退出整个界面并重新 attach 生效。
+
+```toml
+[panes]
+# 聚焦窗格使用此边框和标题颜色。
+# Use this color for the focused pane's border and title.
+focused_border_color = "#33AAFF"
+```
+
 ### 快捷键配置
 
 `keybindings.detach` 设置分离当前连接的快捷键，默认是 `Ctrl+\`。省略该选项时使用默认值。例如，改为 `Ctrl+x`：
