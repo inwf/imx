@@ -18,6 +18,7 @@
 - **Screen restoration:** reattach to restore the screen and retained history, including full-screen terminal programs such as Vim.
 - **Readable output:** use `imx cat` from outside a session to read retained history and the active screen as text.
 - **Shared connections:** multiple terminals can attach to one session and share its input and output.
+- **Session switching:** run `imx attach dev2` inside `dev1` to move the current terminal to `dev2`, preserving both sessions' programs and history.
 - **Session prompt:** enable a configuration option to show `[dev]` before your existing Bash, Zsh, or Fish prompt.
 - **Creation time format:** choose how the `CREATED` column displays session creation times through the configuration file.
 - **Tab completion:** complete commands and current session names in Bash, Zsh, and Fish.
@@ -88,6 +89,8 @@ imx ls
 imx cat dev
 ```
 
+To switch sessions, run `imx attach dev2` inside the current session. The target is created if needed, using the current directory and environment. Run `imx attach dev` to return. Other terminals attached to the original session stay connected.
+
 Terminate a session when you are finished:
 
 ```bash
@@ -155,7 +158,7 @@ Uninstalling terminates the current user's imx sessions and removes the current 
 
 | Command | Purpose |
 | --- | --- |
-| `imx attach dev` | Create or attach to the `dev` session |
+| `imx attach dev` | Create or attach to `dev`; inside a session, switch the current terminal to `dev` |
 | `imx list`, `imx ls`, `imx` | List all sessions |
 | `imx cat dev` | Print retained history and the active screen as text |
 | `imx detach` | Run inside a session to detach all its connections |

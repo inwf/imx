@@ -2,7 +2,7 @@ const std = @import("std");
 const sys = @import("sys.zig");
 const config = @import("config.zig");
 const client = @import("client.zig");
-const server = @import("server.zig");
+const connection = @import("connection.zig");
 const protocol = @import("protocol.zig");
 const registry = @import("registry.zig");
 const uninstall = @import("uninstall.zig");
@@ -55,6 +55,7 @@ fn execute(init: std.process.Init.Minimal) !void {
             \\  imx help             Print help
             \\
             \\Close the terminal or press Ctrl+\ to detach the current client.
+            \\Inside a session, attach switches the active connection to the target session.
             \\Names contain 1-64 ASCII letters, digits, dots, underscores or hyphens.
             \\History uses a 10,000-line target and a 2 MiB scrollback budget.
             \\Scrollback limits are applied in complete terminal pages.
@@ -91,7 +92,6 @@ fn execute(init: std.process.Init.Minimal) !void {
     };
     if (tag != .list) try config.validateName(name);
     if (tag == .attach) {
-        if (config.env("IMX_SESSION") != null) return error.NestedSessionNotSupported;
         if (sys.c.isatty(0) == 0 or sys.c.isatty(1) == 0) return error.TerminalRequired;
         _ = try sys.Size.get(0);
     }
@@ -106,26 +106,23 @@ fn execute(init: std.process.Init.Minimal) !void {
     defer root.deinit();
     try records.register(io, root.dir_fd);
     records.finishSetup();
-    if (try root.connect()) |legacy| {
-        defer sys.close(legacy);
-        if (tag == .attach) return client.attach(allocator, io, legacy, name, &records);
-        return client.command(allocator, legacy, tag, name, preferences.createdFormat());
+    if (tag == .list) {
+        if (try root.connect()) |legacy| {
+            defer sys.close(legacy);
+            return client.command(allocator, legacy, tag, name, preferences.createdFormat());
+        }
+        return sessions.list(allocator, io, &root, preferences.createdFormat(), null);
     }
-    if (tag == .list) return sessions.list(allocator, io, &root, preferences.createdFormat(), null);
-    var cfg = (try root.session(io, name, tag == .attach)) orelse return error.SessionNotFound;
-    defer cfg.deinit();
-    try cfg.lock();
-    defer cfg.unlock() catch @panic("failed to release startup lock");
-    var socket = try cfg.connect();
-    if (socket == null) {
-        if (tag != .attach) return error.SessionNotFound;
-        try server.start(allocator, io, &cfg);
-        socket = try cfg.connect();
+    if (tag == .attach) {
+        if (config.env("IMX_SESSION")) |source| {
+            try config.validateName(source);
+            if (std.mem.eql(u8, source, name)) return;
+            return client.switchSession(allocator, io, &root, source, name);
+        }
     }
-    const fd = socket orelse return error.DaemonStartFailed;
+    const fd = try connection.open(allocator, io, &root, name, tag == .attach);
+    if (tag == .attach) return client.attach(allocator, io, fd, name, &root, &records);
     defer sys.close(fd);
-    try cfg.unlock();
-    if (tag == .attach) return client.attach(allocator, io, fd, name, &records);
     return client.command(allocator, fd, tag, name, preferences.createdFormat());
 }
 

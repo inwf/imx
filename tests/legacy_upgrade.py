@@ -31,6 +31,9 @@ def verify(prefix, terminate_legacy):
         client = environment.spawn("legacy", initialize=False)
         client.expect_exact("IMX_PROMPT> ")
         assert "retained" in environment.command(client, "printf '%s\\n' \"$LEGACY_VALUE\"")
+        output = environment.command(client, "imx attach target; printf 'SWITCH_STATUS=%s\\n' \"$?\"")
+        assert "SwitchUnsupportedByBackend" in output and "SWITCH_STATUS=1" in output
+        assert [row["NAME"] for row in environment.sessions()] == ["legacy"]
         if terminate_legacy:
             environment.run("kill", "legacy")
             client.expect(pexpect.EOF)

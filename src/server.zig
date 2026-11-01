@@ -14,11 +14,24 @@ const Client = struct {
     reader: protocol.Reader = .{},
     output: protocol.Queue = .{},
     live: protocol.Queue = .{},
+    live_started: bool = false,
     session: ?*Session = null,
     size: sys.Size = .{ .rows = 24, .cols = 80 },
     snapshot: ?[]u8 = null,
     snapshot_offset: usize = 0,
     closing: bool = false,
+    supports_switch: bool = false,
+    switch_peer: ?*Client = null,
+    switch_name: ?[]u8 = null,
+    switch_sent: bool = false,
+    switch_departing: bool = false,
+
+    fn flushLive(self: *Client) !void {
+        const pending = self.live.pending().len;
+        try self.live.flush(self.fd, true);
+        const remaining = self.live.pending().len;
+        self.live_started = remaining != 0 and (self.live_started or remaining < pending);
+    }
 };
 
 const Session = struct {
@@ -32,6 +45,7 @@ const Session = struct {
     input: protocol.Queue = .{},
     clients: std.ArrayList(*Client) = .empty,
     leader: ?*Client = null,
+    input_client: ?*Client = null,
     exited: bool = false,
     allocator: Allocator,
 };
@@ -88,7 +102,21 @@ const Server = struct {
     }
 
     fn dropClient(self: *Server, client: *Client) !void {
+        if (client.switch_peer) |other| {
+            client.switch_peer = null;
+            other.switch_peer = null;
+            if (!other.closing) {
+                if (client.switch_name == null) {
+                    other.closing = true;
+                    try self.respond(other, .failure, "SwitchClientDisconnected");
+                } else if (client.switch_sent) {
+                    try self.respond(other, .switch_cancel, "");
+                }
+            }
+        }
+        if (client.switch_name) |name| self.allocator.free(name);
         if (client.session) |session| {
+            if (session.input_client == client) session.input_client = null;
             for (session.clients.items, 0..) |candidate, i| {
                 if (candidate == client) {
                     _ = session.clients.orderedRemove(i);
@@ -181,19 +209,19 @@ const Server = struct {
 
     fn request(self: *Server, client: *Client, msg: protocol.Message) !void {
         if (client.closing) return error.InvalidMessage;
+        if (client.switch_name != null and msg.tag != .switch_session) return error.InvalidMessage;
         switch (msg.tag) {
             .attach => {
                 if (client.session != null or client.snapshot != null or msg.payload.len < 5) return error.InvalidMessage;
-                client.size = try sys.Size.decode(msg.payload[0..4]);
-                var fields = std.mem.splitScalar(u8, msg.payload[4..], 0);
-                const name = fields.next() orelse return error.InvalidMessage;
-                if (!std.mem.eql(u8, name, self.cfg.session_name.?)) return error.InvalidSessionName;
-                const cwd = fields.next() orelse return error.InvalidMessage;
-                const shell = fields.next() orelse return error.InvalidMessage;
-                const environment = fields.rest();
-                try config.validateName(name);
-                if (environment.len == 0 or environment[environment.len - 1] != 0) return error.InvalidMessage;
-                const session = self.sessions.get(name) orelse try self.create(name, cwd, shell, environment, client.size);
+                const fields = try protocol.Attach.decode(msg.payload);
+                client.size = fields.size;
+                if (!std.mem.eql(u8, fields.name, self.cfg.session_name.?)) return error.InvalidSessionName;
+                try config.validateName(fields.name);
+                var environment = std.mem.splitScalar(u8, fields.environment, 0);
+                while (environment.next()) |entry| {
+                    if (std.mem.eql(u8, entry, protocol.client_marker)) client.supports_switch = true;
+                }
+                const session = self.sessions.get(fields.name) orelse try self.create(fields.name, fields.cwd, fields.shell, fields.environment, client.size);
                 try self.resize(session, client.size);
                 client.snapshot = try terminal.restore(self.allocator, &session.term);
                 client.session = session;
@@ -201,6 +229,56 @@ const Server = struct {
                 try session.clients.append(self.allocator, client);
                 if (session.clients.items.len == 1) try self.focus(session, true);
                 try self.respond(client, .ok, "");
+            },
+            .switch_prepare => {
+                if (client.session != null or client.switch_peer != null or client.switch_name != null) return error.InvalidMessage;
+                try config.validateName(msg.payload);
+                const session = self.sessions.get(self.cfg.session_name.?) orelse return error.SessionNotFound;
+                const caller = try config.peer(client.fd);
+                if (c.getsid(caller.pid) != session.pid) return error.SwitchOutsideSession;
+                const active = session.input_client orelse session.leader orelse return error.NoAttachedClient;
+                if (active.switch_departing) return error.NoAttachedClient;
+                if (!active.supports_switch) return error.SwitchUnsupportedByClient;
+                if (active.switch_peer != null) return error.SwitchInProgress;
+                const name = try self.allocator.dupe(u8, msg.payload);
+                errdefer self.allocator.free(name);
+                try self.respond(client, .ok, "");
+                client.switch_name = name;
+                client.switch_peer = active;
+                active.switch_peer = client;
+            },
+            .switch_session => {
+                if (client.session != null or client.switch_sent) return error.InvalidMessage;
+                const active = client.switch_peer orelse return error.SwitchClientDisconnected;
+                const name = client.switch_name orelse return error.InvalidMessage;
+                const fields = try protocol.Attach.decode(msg.payload);
+                if (!std.mem.eql(u8, fields.name, name)) return error.InvalidSessionName;
+                self.respond(active, .switch_session, msg.payload) catch |err| {
+                    if (err == error.SlowClient) return error.SwitchClientBusy;
+                    return err;
+                };
+                client.switch_sent = true;
+            },
+            .switch_result => {
+                if (client.session == null) return error.InvalidMessage;
+                const requester = client.switch_peer orelse {
+                    try self.respond(client, .switch_cancel, "");
+                    return;
+                };
+                if (!requester.switch_sent or msg.payload.len > 128) return error.InvalidMessage;
+                for (msg.payload) |byte| if (!std.ascii.isAlphanumeric(byte) and byte != '_') return error.InvalidMessage;
+                if (msg.payload.len == 0) {
+                    try self.respond(client, .switch_commit, "");
+                    client.switch_departing = true;
+                    try self.respond(requester, .ok, "");
+                } else {
+                    try self.respond(requester, .failure, msg.payload);
+                }
+                requester.closing = true;
+                requester.switch_peer = null;
+                client.switch_peer = null;
+                self.allocator.free(requester.switch_name.?);
+                requester.switch_name = null;
             },
             .info => {
                 if (client.session != null) return error.InvalidMessage;
@@ -329,6 +407,8 @@ const Server = struct {
             },
             .input => {
                 const session = client.session orelse return error.InvalidMessage;
+                if (client.switch_departing) return;
+                if (msg.payload.len > 0) session.input_client = client;
                 try session.input.append(self.allocator, msg.payload);
                 try self.updateSession(session);
             },
@@ -365,7 +445,7 @@ const Server = struct {
                         try signalClient(client);
                         return self.dropClient(client);
                     },
-                    error.SessionNotFound, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed => {
+                    error.SessionNotFound, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed, error.SwitchOutsideSession, error.NoAttachedClient, error.SwitchUnsupportedByClient, error.SwitchInProgress, error.SwitchClientDisconnected, error.SwitchClientBusy => {
                         client.closing = true;
                         try self.respond(client, .failure, @errorName(err));
                     },
@@ -375,26 +455,35 @@ const Server = struct {
             }
         }
         if (events & c.EPOLLOUT != 0) {
-            client.output.flush(client.fd, true) catch |err| switch (err) {
-                error.ConnectionClosed => return self.dropClient(client),
-                else => return err,
-            };
-            if (client.output.pending().len == 0) {
-                if (client.snapshot) |snapshot| {
-                    const count = @min(snapshot.len - client.snapshot_offset, 16 * 1024);
-                    try client.output.message(self.allocator, .output, snapshot[client.snapshot_offset..][0..count]);
-                    client.snapshot_offset += count;
-                    if (client.snapshot_offset == snapshot.len) {
-                        self.allocator.free(snapshot);
-                        client.snapshot = null;
-                        client.snapshot_offset = 0;
-                    }
-                } else if (client.live.pending().len > 0) {
-                    client.live.flush(client.fd, true) catch |err| switch (err) {
-                        error.ConnectionClosed => return self.dropClient(client),
-                        else => return err,
-                    };
-                } else if (client.closing) return self.dropClient(client);
+            // 已经发送部分字节的输出必须先完成，保持切换消息的字节顺序。
+            if (client.live_started) {
+                client.flushLive() catch |err| switch (err) {
+                    error.ConnectionClosed => return self.dropClient(client),
+                    else => return err,
+                };
+            }
+            if (!client.live_started) {
+                client.output.flush(client.fd, true) catch |err| switch (err) {
+                    error.ConnectionClosed => return self.dropClient(client),
+                    else => return err,
+                };
+                if (client.output.pending().len == 0) {
+                    if (client.snapshot) |snapshot| {
+                        const count = @min(snapshot.len - client.snapshot_offset, 16 * 1024);
+                        try client.output.message(self.allocator, .output, snapshot[client.snapshot_offset..][0..count]);
+                        client.snapshot_offset += count;
+                        if (client.snapshot_offset == snapshot.len) {
+                            self.allocator.free(snapshot);
+                            client.snapshot = null;
+                            client.snapshot_offset = 0;
+                        }
+                    } else if (client.live.pending().len > 0) {
+                        client.flushLive() catch |err| switch (err) {
+                            error.ConnectionClosed => return self.dropClient(client),
+                            else => return err,
+                        };
+                    } else if (client.closing) return self.dropClient(client);
+                }
             }
             try self.updateClient(client);
         }
@@ -636,6 +725,7 @@ fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8,
         if (entry.len == 0) continue;
         if (std.mem.indexOfScalar(u8, entry, '=') == null) return error.InvalidMessage;
         if (std.mem.startsWith(u8, entry, "IMX_SESSION=") or std.mem.startsWith(u8, entry, "IMX_DIR=")) continue;
+        if (std.mem.startsWith(u8, entry, protocol.client_marker_prefix)) continue;
         try envp.append(allocator, @ptrCast(entry.ptr));
     }
     const session_env = try std.fmt.allocPrintSentinel(allocator, "IMX_SESSION={s}", .{name}, 0);

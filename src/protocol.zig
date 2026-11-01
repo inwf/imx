@@ -3,9 +3,31 @@ const sys = @import("sys.zig");
 
 pub const max_payload = 128 * 1024;
 pub const max_queue = 256 * 1024;
-pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11, info = 12 };
+pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11, info = 12, switch_prepare = 13, switch_session = 14, switch_result = 15, switch_commit = 16, switch_cancel = 17 };
+pub const client_marker_prefix = "IMX_CLIENT_CAPABILITIES=";
+pub const client_marker = client_marker_prefix ++ "switch-v1";
 pub const SessionInfo = struct { name: []const u8, pid: c_int, clients: usize, directory: []const u8, created: []const u8 };
 pub const Message = struct { tag: Tag, payload: []const u8 };
+pub const Attach = struct {
+    size: sys.Size,
+    name: []const u8,
+    cwd: []const u8,
+    shell: []const u8,
+    environment: []const u8,
+
+    pub fn decode(payload: []const u8) !Attach {
+        if (payload.len < 5) return error.InvalidMessage;
+        const size = try sys.Size.decode(payload[0..4]);
+        var fields = std.mem.splitScalar(u8, payload[4..], 0);
+        const name = fields.next() orelse return error.InvalidMessage;
+        const cwd = fields.next() orelse return error.InvalidMessage;
+        const shell = fields.next() orelse return error.InvalidMessage;
+        const environment = fields.rest();
+        if (environment.len == 0 or environment[environment.len - 1] != 0) return error.InvalidMessage;
+        if (!std.fs.path.isAbsolute(cwd) or !std.fs.path.isAbsolute(shell)) return error.InvalidMessage;
+        return .{ .size = size, .name = name, .cwd = cwd, .shell = shell, .environment = environment };
+    }
+};
 pub const ListOptions = struct {
     table: bool = false,
     created_format: [:0]const u8 = sys.default_created_format,

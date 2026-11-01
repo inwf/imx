@@ -4,6 +4,7 @@ const c = sys.c;
 const protocol = @import("protocol.zig");
 const config = @import("config.zig");
 const registry = @import("registry.zig");
+const connection = @import("connection.zig");
 
 pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8, created_format: [:0]const u8) !void {
     const customized = tag == .list and !std.mem.eql(u8, created_format, sys.default_created_format);
@@ -76,7 +77,7 @@ fn sameBackendExecutable(fd: c_int) !bool {
     return own.stx_dev_major == backend.stx_dev_major and own.stx_dev_minor == backend.stx_dev_minor and own.stx_ino == backend.stx_ino;
 }
 
-pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const u8, records: *const registry.Registry) !void {
+fn attachPayload(allocator: std.mem.Allocator, io: std.Io, name: []const u8) ![]u8 {
     const size = try sys.Size.get(0);
     const cwd = try std.process.currentPathAlloc(io, allocator);
     defer allocator.free(cwd);
@@ -90,24 +91,86 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
     }
     var environ = c.environ;
     while (environ[0] != null) : (environ += 1) {
-        try payload.appendSlice(allocator, std.mem.span(environ[0]));
+        const entry = std.mem.span(environ[0]);
+        if (std.mem.startsWith(u8, entry, protocol.client_marker_prefix)) continue;
+        try payload.appendSlice(allocator, entry);
         try payload.append(allocator, 0);
     }
+    try payload.appendSlice(allocator, protocol.client_marker ++ "\x00");
     if (payload.items.len > protocol.max_payload) return error.EnvironmentTooLarge;
-    try protocol.send(fd, .attach, payload.items);
+    return payload.toOwnedSlice(allocator);
+}
+
+fn acknowledgement(allocator: std.mem.Allocator, fd: c_int) !?[]u8 {
     var header: [8]u8 = undefined;
     try sys.readExact(fd, &header);
     const response = try protocol.decodeHeader(&header);
     if (response.tag == .failure) {
         const text = try allocator.alloc(u8, response.len);
-        defer allocator.free(text);
+        errdefer allocator.free(text);
         try sys.readExact(fd, text);
+        return text;
+    }
+    if (response.tag != .ok or response.len != 0) return error.InvalidMessage;
+    return null;
+}
+
+fn requireAcknowledgement(allocator: std.mem.Allocator, fd: c_int, switching: bool) !void {
+    if (try acknowledgement(allocator, fd)) |failure| {
+        defer allocator.free(failure);
+        if (switching and std.mem.eql(u8, failure, "InvalidMessage")) return error.SwitchUnsupportedByBackend;
         try sys.writeAll(2, "imx: ", false);
-        try sys.writeAll(2, text, false);
+        try sys.writeAll(2, failure, false);
         try sys.writeAll(2, "\n", false);
         return error.RequestFailed;
     }
-    if (response.tag != .ok or response.len != 0) return error.InvalidMessage;
+}
+
+pub fn switchSession(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, source: []const u8, name: []const u8) !void {
+    const fd = try connection.open(allocator, io, root, source, false);
+    defer sys.close(fd);
+    const payload = try attachPayload(allocator, io, name);
+    defer allocator.free(payload);
+    try protocol.send(fd, .switch_prepare, name);
+    try requireAcknowledgement(allocator, fd, true);
+    // 保持连接，防止新后台在终端完成切换前因没有客户端而退出。
+    const target = try connection.open(allocator, io, root, name, true);
+    defer sys.close(target);
+    try sys.socketTimeout(fd, 15_000);
+    try protocol.send(fd, .switch_session, payload);
+    try requireAcknowledgement(allocator, fd, false);
+}
+
+const SwitchAttempt = union(enum) { ready: c_int, failed: []u8 };
+
+fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, bytes: []const u8) !SwitchAttempt {
+    const payload = try allocator.dupe(u8, bytes);
+    defer allocator.free(payload);
+    const request = try protocol.Attach.decode(payload);
+    try config.validateName(request.name);
+    var endpoint = (try root.session(io, request.name, false)) orelse return error.SessionNotFound;
+    defer endpoint.deinit();
+    const fd = (try endpoint.connect()) orelse return error.SessionNotFound;
+    errdefer sys.close(fd);
+    const size = try sys.Size.get(0);
+    @memcpy(payload[0..4], &size.encode());
+    try protocol.send(fd, .attach, payload);
+    if (try acknowledgement(allocator, fd)) |failure| {
+        sys.close(fd);
+        return .{ .failed = failure };
+    }
+    try sys.socketTimeout(fd, 0);
+    _ = try sys.nonblocking(fd, true);
+    return .{ .ready = fd };
+}
+
+pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name: []const u8, root: *const config.Config, records: *const registry.Registry) !void {
+    var fd = initial_fd;
+    defer sys.close(fd);
+    const payload = try attachPayload(allocator, io, name);
+    defer allocator.free(payload);
+    try protocol.send(fd, .attach, payload);
+    try requireAcknowledgement(allocator, fd, false);
     try sys.socketTimeout(fd, 0);
     const signal = try sys.signalFd(&.{ c.SIGWINCH, c.SIGTERM, c.SIGHUP, c.SIGINT });
     defer sys.close(signal);
@@ -141,19 +204,27 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
     defer reader.deinit(allocator);
     var connected = true;
     var detaching = false;
-    while (connected or output.pending().len > 0) {
+    var prepared: ?c_int = null;
+    defer if (prepared) |next| sys.close(next);
+    var switch_deadline: i64 = 0;
+    client_loop: while (connected or output.pending().len > 0) {
         var pollfds = [_]c.struct_pollfd{
-            .{ .fd = if (connected and !detaching) 0 else -1, .events = if (input.pending().len < protocol.max_queue - 8192) c.POLLIN else 0, .revents = 0 },
+            .{ .fd = if (connected and !detaching and prepared == null) 0 else -1, .events = if (input.pending().len < protocol.max_queue - 8192) c.POLLIN else 0, .revents = 0 },
             .{ .fd = if (connected) fd else -1, .events = @as(c_short, if (output.pending().len < protocol.max_queue - protocol.max_payload - 8) c.POLLIN else 0) | @as(c_short, if (input.pending().len > 0) c.POLLOUT else 0), .revents = 0 },
             .{ .fd = signal, .events = c.POLLIN, .revents = 0 },
             .{ .fd = if (output.pending().len > 0) 1 else -1, .events = c.POLLOUT, .revents = 0 },
         };
-        const count = c.poll(&pollfds, pollfds.len, if (connected) -1 else 100);
+        const timeout: c_int = if (prepared != null) blk: {
+            const remaining = switch_deadline - try sys.monotonicMilliseconds();
+            if (remaining <= 0) return error.SwitchTimeout;
+            break :blk @intCast(remaining);
+        } else if (connected) -1 else 100;
+        const count = c.poll(&pollfds, pollfds.len, timeout);
         if (count < 0) {
             if (c.__errno_location().* == c.EINTR) continue;
             return sys.failure("poll(client)");
         }
-        if (count == 0) return error.TerminalOutputBlocked;
+        if (count == 0) return if (prepared != null) error.SwitchTimeout else error.TerminalOutputBlocked;
         if (pollfds[2].revents & c.POLLIN != 0) {
             var info: c.struct_signalfd_siginfo = undefined;
             while ((try sys.read(signal, std.mem.asBytes(&info))) != null) {
@@ -182,6 +253,46 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
             while (try reader.next()) |msg| {
                 switch (msg.tag) {
                     .output => try output.append(allocator, msg.payload),
+                    .switch_session => {
+                        if (prepared != null) return error.InvalidMessage;
+                        const attempt = prepareSwitch(allocator, io, root, msg.payload) catch |err| {
+                            if (err == error.OutOfMemory) return err;
+                            try input.message(allocator, .switch_result, @errorName(err));
+                            continue;
+                        };
+                        switch (attempt) {
+                            .ready => |next| {
+                                prepared = next;
+                                switch_deadline = try sys.monotonicMilliseconds() + 2000;
+                                try input.message(allocator, .switch_result, "");
+                            },
+                            .failed => |failure| {
+                                defer allocator.free(failure);
+                                try input.message(allocator, .switch_result, failure);
+                            },
+                        }
+                    },
+                    .switch_commit => {
+                        if (msg.payload.len != 0) return error.InvalidMessage;
+                        const next = prepared orelse return error.InvalidMessage;
+                        sys.close(fd);
+                        fd = next;
+                        prepared = null;
+                        reader.deinit(allocator);
+                        reader = .{};
+                        input.deinit(allocator);
+                        input = .{};
+                        output.deinit(allocator);
+                        output = .{};
+                        try output.append(allocator, reset_display);
+                        connected = true;
+                        continue :client_loop;
+                    },
+                    .switch_cancel => {
+                        if (msg.payload.len != 0) return error.InvalidMessage;
+                        if (prepared) |next| sys.close(next);
+                        prepared = null;
+                    },
                     .failure => return error.RequestFailed,
                     else => return error.InvalidMessage,
                 }
@@ -202,9 +313,10 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, fd: c_int, name: []const
     }
 }
 
+const reset_display = "\x1b[?2026l\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l\x1b[?2004l\x1b[>4;0m\x1b[<u\x1b[?25h\x1b[0m\x1b[0 q\r\n";
+
 fn resetDisplay() !void {
     const flags = try sys.nonblocking(1, true);
     defer _ = c.fcntl(1, c.F_SETFL, flags);
-    const bytes = "\x1b[?2026l\x1b[?1049l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l\x1b[?2004l\x1b[>4;0m\x1b[<u\x1b[?25h\x1b[0m\x1b[0 q\r\n";
-    if (try sys.write(1, bytes, false) != bytes.len) return error.TerminalCleanupBlocked;
+    if (try sys.write(1, reset_display, false) != reset_display.len) return error.TerminalCleanupBlocked;
 }
