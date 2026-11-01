@@ -17,7 +17,8 @@ class PaneTerminal:
         self.sessions = sessions
         self.child = child if child is not None else sessions.spawn(name, initialize=initialize, rows=30, cols=100)
         if child is None and not initialize:
-            self.child.expect(r"[#$>] ")
+            self.child.sendline("printf '\\nPANE_READY\\n'")
+            self.child.expect_exact("\r\nPANE_READY\r\n")
         self.capture = io.StringIO()
         self.child.logfile_read = self.capture
         self.screen = pyte.Screen(100, 30)
