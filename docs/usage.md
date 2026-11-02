@@ -85,7 +85,7 @@ imx attach dev2
 
 ## 会话列表
 
-`imx ls`、`imx list` 和 `imx` 查看全部会话，按会话名称排序。列表包含 `NAME`、`PID`、`CLIENTS`、`DIRECTORY`、`CREATED` 和 `STATUS`。终端输出根据标题和所有会话内容计算列宽，列间保留两个空格；管道和重定向输出使用制表符分隔。
+`imx ls`、`imx list` 和 `imx` 查看全部会话，按会话名称排序。列表依次包含 `NAME`、`PID`、`CLIENTS`、`CREATED`、`STATUS` 和 `DIRECTORY`。终端输出根据标题和所有会话内容计算列宽，列间保留两个空格；管道和重定向输出使用制表符分隔。
 
 列表并发查询独立后台，共享一秒查询期限。正常响应显示 `running`，超过期限显示 `unresponsive`，请求错误显示 `error:<错误名称>`；无法获取的字段显示 `-`。已退出后台留下的 socket 不会作为存活会话显示。客户端连接后台及等待响应采用两秒超时，超时报错会保留后台及其会话。
 

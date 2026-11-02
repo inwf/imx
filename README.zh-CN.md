@@ -239,7 +239,7 @@ mouse = false
 2. **分离。** 关闭终端、连接断开、按下配置的快捷键（默认 `Alt+\`），或在会话内部执行 `imx detach`，会话都继续运行。
 3. **返回或结束。** `imx attach dev` 恢复屏幕和历史；shell 退出或执行 `imx kill dev` 会结束会话。
 
-会话列表包含 `NAME`、`PID`、`CLIENTS`、`DIRECTORY`、`CREATED` 和 `STATUS`。终端输出根据标题和会话内容计算列宽，管道和重定向输出使用制表符分隔。`DIRECTORY` 显示会话 shell 当前的实际目录，随 `cd` 和目录重命名更新。特殊字符采用转义形式，以保持输出结构，详细规则见[会话列表](docs/usage.md#会话列表)。
+会话列表依次包含 `NAME`、`PID`、`CLIENTS`、`CREATED`、`STATUS` 和 `DIRECTORY`。终端输出根据标题和会话内容计算列宽，管道和重定向输出使用制表符分隔。`DIRECTORY` 显示会话 shell 当前的实际目录，随 `cd` 和目录重命名更新。特殊字符采用转义形式，以保持输出结构，详细规则见[会话列表](docs/usage.md#会话列表)。
 
 `CREATED` 按后台进程的本地时区显示创建时间，默认格式为 `MM-DD HH:mm:ss`，例如 `10-30 14:05:09`。每次查看列表都会读取 `list.created_format`，修改后在下一次查询时应用到已有会话。重新进入会话时保留原来的创建时间。
 

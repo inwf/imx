@@ -55,7 +55,7 @@ def test_session_creation_time(sessions, hours):
     after = datetime.now(zone).replace(microsecond=0)
     listing = sessions.run("ls").stdout
     reader = csv.DictReader(io.StringIO(listing), delimiter="\t")
-    assert reader.fieldnames == ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED", "STATUS"]
+    assert reader.fieldnames == ["NAME", "PID", "CLIENTS", "CREATED", "STATUS", "DIRECTORY"]
     row = next(reader)
     created = row["CREATED"]
     recorded = [datetime.strptime(f"{year} {created}", "%Y %m-%d %H:%M:%S").replace(tzinfo=zone)
@@ -90,7 +90,7 @@ def test_terminal_session_list_columns(sessions, created_format):
         clients.append(sessions.spawn(name=name, cols=240))
     sessions.path = original
     rows = sessions.sessions()
-    headings = ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED", "STATUS"]
+    headings = ["NAME", "PID", "CLIENTS", "CREATED", "STATUS", "DIRECTORY"]
     baseline = None
     for invocation in ("imx", "imx ls", "imx list"):
         output = sessions.command(clients[0], invocation)
@@ -125,7 +125,7 @@ def test_session_list_after_executable_replacement(sessions):
     for invocation in ("imx", "imx ls", "imx list"):
         output = sessions.command(child, invocation)
         assert "\t" not in output
-        assert all(heading in output for heading in ["NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED", "STATUS"])
+        assert all(heading in output for heading in ["NAME", "PID", "CLIENTS", "CREATED", "STATUS", "DIRECTORY"])
         assert original_pid in output
         assert "imx: " not in output
     assert sessions.sessions()[0]["PID"] == original_pid

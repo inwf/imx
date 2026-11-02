@@ -240,7 +240,7 @@ A session's life:
 2. **Detach.** Closing the terminal, a dropped connection, the configured shortcut (default `Alt+\`), or `imx detach` inside the session all leave the session running.
 3. **Return or finish.** `imx attach dev` restores the screen and history. The session ends when the shell exits or with `imx kill dev`.
 
-Session lists include `NAME`, `PID`, `CLIENTS`, `DIRECTORY`, `CREATED`, and `STATUS`. Terminal output uses column widths calculated from the headings and session contents; piped or redirected output is tab-separated. `DIRECTORY` shows the session shell's current actual directory, following `cd` and directory renames. Special characters are escaped to preserve the output structure; see [session lists](docs/usage.md#会话列表) for details.
+Session lists include `NAME`, `PID`, `CLIENTS`, `CREATED`, `STATUS`, and `DIRECTORY`, in that order. Terminal output uses column widths calculated from the headings and session contents; piped or redirected output is tab-separated. `DIRECTORY` shows the session shell's current actual directory, following `cd` and directory renames. Special characters are escaped to preserve the output structure; see [session lists](docs/usage.md#会话列表) for details.
 
 `CREATED` shows the creation time in the backend's local timezone, by default as `MM-DD HH:mm:ss` such as `10-30 14:05:09`. Each list command reads `list.created_format`, so format changes apply to existing sessions on the next query. Reattaching keeps the creation time.
 

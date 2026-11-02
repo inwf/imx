@@ -340,8 +340,8 @@ const Server = struct {
                 } else if (names.items.len == 0) {
                     try builder.writer.writeAll("No sessions.\n");
                 } else {
-                    const headings = [_][]const u8{ "NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED" };
-                    var widths = [_]usize{ 4, 3, 7, 9, 7 };
+                    const headings = [_][]const u8{ "NAME", "PID", "CLIENTS", "CREATED", "DIRECTORY" };
+                    var widths = [_]usize{ 4, 3, 7, 7, 9 };
                     if (table) {
                         for (names.items) |name| {
                             const session = self.sessions.get(name).?;
@@ -352,8 +352,8 @@ const Server = struct {
                                 session.name,
                                 try std.fmt.bufPrint(&pid, "{d}", .{session.pid}),
                                 try std.fmt.bufPrint(&count, "{d}", .{session.clients.items.len}),
-                                directory.?,
                                 try sys.formatDateTime(&created, session.created, options.created_format),
+                                directory.?,
                             };
                             for (fields, &widths) |field, *width| width.* = @max(width.*, try displayWidth(field));
                         }
@@ -368,8 +368,8 @@ const Server = struct {
                             session.name,
                             try std.fmt.bufPrint(&pid, "{d}", .{session.pid}),
                             try std.fmt.bufPrint(&count, "{d}", .{session.clients.items.len}),
-                            directory.?,
                             try sys.formatDateTime(&created, session.created, options.created_format),
+                            directory.?,
                         }, widths, table);
                     }
                 }

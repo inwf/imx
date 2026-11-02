@@ -158,15 +158,15 @@ pub fn list(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config
     for (queries.items) |query| {
         if (query.state == .missing) continue;
         if (query.info) |info| {
-            try rows.append(memory, .{ info.name, try std.fmt.allocPrint(memory, "{d}", .{info.pid}), try std.fmt.allocPrint(memory, "{d}", .{info.clients}), info.directory, info.created, "running" });
+            try rows.append(memory, .{ info.name, try std.fmt.allocPrint(memory, "{d}", .{info.pid}), try std.fmt.allocPrint(memory, "{d}", .{info.clients}), info.created, "running", info.directory });
         } else {
             const status = if (query.state == .unresponsive) "unresponsive" else try std.fmt.allocPrint(memory, "error:{s}", .{query.failure});
-            try rows.append(memory, .{ query.name, "-", "-", "-", "-", status });
+            try rows.append(memory, .{ query.name, "-", "-", "-", status, "-" });
         }
     }
     if (rows.items.len == 0) return sys.writeAll(1, "No sessions.\n", false);
-    const headings = [6][]const u8{ "NAME", "PID", "CLIENTS", "DIRECTORY", "CREATED", "STATUS" };
-    var widths = [_]usize{ 4, 3, 7, 9, 7, 6 };
+    const headings = [6][]const u8{ "NAME", "PID", "CLIENTS", "CREATED", "STATUS", "DIRECTORY" };
+    var widths = [_]usize{ 4, 3, 7, 7, 6, 9 };
     const table = c.isatty(1) != 0;
     if (table) for (rows.items) |row| {
         for (row, &widths) |field, *width| width.* = @max(width.*, try displayWidth(field));
