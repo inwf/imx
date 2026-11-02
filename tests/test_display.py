@@ -1,4 +1,5 @@
 import io
+import shlex
 import signal
 
 import pexpect
@@ -119,11 +120,33 @@ def test_detach_uses_resized_terminal_dimensions(sessions, rows, cols):
 @pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
 @pytest.mark.parametrize("action", ["exit", "detach", "shortcut"])
 @pytest.mark.parametrize("number, direction", [(1, "right"), (2, "right"), (2, "down")])
-def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number, direction):
+@pytest.mark.parametrize("directory_name", [None, "d" * 39, "d" * 46])
+def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number, direction, directory_name):
     setup_shell(sessions, shell)
     terminal = PaneTerminal(sessions, initialize=False)
+    if directory_name is not None:
+        directory = sessions.home / directory_name
+        directory.mkdir()
+        terminal.child.sendline(f"cd {shlex.quote(str(directory))}; printf '\\nDISPLAY_DIRECTORY_READY\\n'")
+        terminal.child.expect_exact("\r\nDISPLAY_DIRECTORY_READY\r\n")
     terminal.split(direction)
     terminal.visible("2: shell")
+    width = 50 if direction == "right" else 100
+    height = 30 if direction == "right" else 15
+
+    def contents(number):
+        left, top = origin(terminal, number)
+        return [row[left + 1:left + width - 1] for row in terminal.screen.display[top + 1:top + height - 1]]
+
+    def cursor(number):
+        left, top = origin(terminal, number)
+        return terminal.screen.cursor.x - left - 1, terminal.screen.cursor.y - top - 1
+
+    terminal.wait(lambda: "> " in "".join(contents(2)))
+    terminal.child.send("\x0c")
+    terminal.wait(lambda: contents(2)[0].strip() and "> " in "".join(contents(2)))
+    expected_contents = contents(2)
+    expected_cursor = cursor(2)
     if number == 2:
         terminal.child.sendline("imx attach test")
         terminal.visible("2: test")
@@ -136,10 +159,5 @@ def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number
     else:
         terminal.child.sendline("exit" if action == "exit" else "imx detach")
     terminal.visible(f"{number}: shell")
-    left, top = origin(terminal, number)
-    width = 50 if direction == "right" else 100
-    height = 30 if direction == "right" else 15
-    terminal.wait(lambda: "BASE:" in terminal.screen.display[top + 1][left + 1:left + width - 1])
-    assert all(not row[left + 1:left + width - 1].strip() for row in terminal.screen.display[top + 2:top + height - 1])
-    assert terminal.screen.cursor.y == top + 1
+    terminal.wait(lambda: contents(number) == expected_contents and cursor(number) == expected_cursor)
     terminal.command("printf ready", "after-detach", "ready")
