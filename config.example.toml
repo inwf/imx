@@ -1,109 +1,121 @@
 # 将需要的配置项合并到 ~/.config/imx/config.toml，同一个配置分组只声明一次。
-# Merge the options you need into ~/.config/imx/config.toml; declare each section once.
 # 设置了非空的 XDG_CONFIG_HOME 时，使用 $XDG_CONFIG_HOME/imx/config.toml。
-# When XDG_CONFIG_HOME is nonempty, use $XDG_CONFIG_HOME/imx/config.toml.
 # 以下启用的配置使用内置默认值，可选配置的示例见对应注释。
+#
+# Merge the options you need into ~/.config/imx/config.toml; declare each section once.
+# When XDG_CONFIG_HOME is nonempty, use $XDG_CONFIG_HOME/imx/config.toml.
 # Active entries below use built-in defaults; comments provide examples for optional settings.
 
 [prompt]
 # 在会话内的 Bash、Zsh 和 Fish 提示符前显示会话名称，例如 [dev]。
-# Show the session name, such as [dev], before Bash, Zsh, and Fish prompts inside a session.
-# 保留提示符原来的路径、颜色和主题；设为 false 可以关闭名称显示。
-# Keep the prompt's existing path, colors, and theme; set false to hide the session name.
+# 保留提示符原来的路径、颜色和主题；设置为 false 可以关闭名称显示。
 # 下一次 imx attach 会安装或移除提示符集成，新启动的 shell 会加载对应设置。
+#
+# Show the session name, such as [dev], before Bash, Zsh, and Fish prompts inside a session.
+# Keep the prompt's existing path, colors, and theme; set false to hide the session name.
 # The next imx attach installs or removes prompt integration; newly started shells load it.
 show_session = true
 
 [list]
 # 设置 imx、imx ls 和 imx list 输出中 CREATED 列的时间格式。
-# Set the CREATED time format in the output of imx, imx ls, and imx list.
 # 使用 strftime 格式及后台进程的本地时区；修改后在下一次查询时生效。
-# Use strftime formatting and the backend's local timezone; changes apply to the next query.
 # 默认显示月、日、时、分、秒；例如 "%Y-%m-%d %H:%M:%S" 可以增加年份。
+#
+# Set the CREATED time format in the output of imx, imx ls, and imx list.
+# Use strftime formatting and the backend's local timezone; changes apply to the next query.
 # The default shows month, day, hour, minute, and second; "%Y-%m-%d %H:%M:%S" adds the year.
 created_format = "%m-%d %H:%M:%S"
 
 [completion]
 # 在 Bash、Zsh 和 Fish 中按 Tab 补全 imx 命令及已有会话名称。
+# 设置为 false 关闭补全；修改后在下一次按下 Tab 时生效。
+#
 # Complete imx commands and existing session names with Tab in Bash, Zsh, and Fish.
-# 设为 false 关闭补全；修改后在下一次按下 Tab 时生效。
 # Set false to disable completion; changes apply on the next Tab press.
 enabled = true
 
 [panes]
 # 默认关闭 imx 的鼠标模式，普通 shell 中可以直接拖动选择文字，使用终端的复制快捷键。
-# imx mouse mode is disabled by default; drag to select text at shell prompts and use the terminal's copy shortcut.
-# 设为 true 启用鼠标点击聚焦、滚轮浏览历史、拖动分隔线调整大小和窗格内文字选择。
-# Set true to enable click-to-focus, history scrolling, separator resizing, and text selection within panes.
+# 设置为 true 启用鼠标点击聚焦、滚轮浏览历史、拖动分隔线调整大小和窗格内文字选择。
 # 开启时，窗格内选区在松开鼠标后通过 OSC 52 复制，需要终端支持并允许访问剪贴板。
-# When enabled, pane selections are copied on release via OSC 52; the terminal must support and allow clipboard access.
 # 关闭时通过 Alt+方向键或 Alt+数字切换窗格；终端本地选区可能跨越多个窗格。
-# When disabled, use Alt+Arrow or Alt+number to focus panes; native terminal selections may span multiple panes.
 # 窗格内程序主动请求的鼠标输入仍然有效；关闭时只传给当前聚焦的窗格。
-# Applications can still request mouse input; with this option disabled, only the focused pane receives it.
 # 修改后退出整个界面并重新 attach 生效；省略此项也默认关闭。
+#
+# imx mouse mode is disabled by default; drag to select text at shell prompts and use the terminal's copy shortcut.
+# Set true to enable click-to-focus, history scrolling, separator resizing, and text selection within panes.
+# When enabled, pane selections are copied on release via OSC 52; the terminal must support and allow clipboard access.
+# When disabled, use Alt+Arrow or Alt+number to focus panes; native terminal selections may span multiple panes.
+# Applications can still request mouse input; with this option disabled, only the focused pane receives it.
 # Exit the entire interface and attach again to apply changes; omitting this option also disables mouse mode.
 mouse = false
 
 # 设置当前聚焦窗格的边框和标题颜色，会话窗格和普通 shell 窗格均适用。
-# Set the focused pane's border and title color, for both attached sessions and plain shells.
 # 必须使用带引号的 "#RRGGBB" 字符串，十六进制字母不区分大小写。
-# Use a quoted "#RRGGBB" string; hexadecimal letters are case-insensitive.
 # 省略时使用终端默认青色。取消下面示例的注释可以启用自定义颜色。
-# Omit to use the terminal's cyan color. Uncomment the example below to set a custom color.
 # 修改后退出整个界面并重新 attach 生效。
+#
+# Set the focused pane's border and title color, for both attached sessions and plain shells.
+# Use a quoted "#RRGGBB" string; hexadecimal letters are case-insensitive.
+# Omit to use the terminal's cyan color. Uncomment the example below to set a custom color.
 # Exit the entire interface and attach again to apply changes.
 # focused_border_color = "#33AAFF"
 
 [keybindings]
 # key 指定单个字符或按键名称；ASCII 字母和按键名称不区分大小写。
-# key names a single character or a key; ASCII letters and key names are case-insensitive.
 # 按键名称支持 Enter、Tab、Escape、Space、Backspace、Insert、Delete、Left、Right、Up、Down、
-# Supported names: Enter, Tab, Escape, Space, Backspace, Insert, Delete, Left, Right, Up, Down,
 # Page_Up、Page_Down、Home、End，以及 F1 至 F12。
-# Page_Up, Page_Down, Home, End, and F1 through F12.
 # ctrl 表示 Ctrl，alt 表示 Alt（macOS 的 Option），shift 表示 Shift，super 表示 macOS 的 Command。
-# ctrl means Ctrl, alt means Alt (Option on macOS), shift means Shift, and super means Command on macOS.
 # 显式配置的绑定中，省略的修饰键均为 false；需要 Shift 时设置 shift = true。
-# Omitted modifiers in an explicit binding default to false; set shift = true to require Shift.
 # 终端需要发送对应组合键；Option 组合需要终端发送 Alt/Meta 编码。
-# The terminal must forward the combination; Option combinations require Alt/Meta encoding.
 # 每个动作使用不同的快捷键。示例：{ key = 'x', ctrl = true } 表示 Ctrl+x。
+#
+# key names a single character or a key; ASCII letters and key names are case-insensitive.
+# Supported names: Enter, Tab, Escape, Space, Backspace, Insert, Delete, Left, Right, Up, Down,
+# Page_Up, Page_Down, Home, End, and F1 through F12.
+# ctrl means Ctrl, alt means Alt (Option on macOS), shift means Shift, and super means Command on macOS.
+# Omitted modifiers in an explicit binding default to false; set shift = true to require Shift.
+# The terminal must forward the combination; Option combinations require Alt/Meta encoding.
 # Assign a different shortcut to each action. Example: { key = 'x', ctrl = true } means Ctrl+x.
 
 # 分离当前连接，默认 Alt+\（macOS 的 Option+\）。分屏时只分离当前聚焦窗格，随后返回普通 shell。
-# Detach the current connection, default Alt+\ (Option+\ on macOS). In split mode, detach the focused pane and return to its plain shell.
 # 会话和其中的程序继续运行。修改快捷键后，分离并重新 attach 生效。
+#
+# Detach the current connection, default Alt+\ (Option+\ on macOS). In split mode, detach the focused pane and return to its plain shell.
 # The session and its programs keep running. Detach and reattach to apply a changed binding.
 detach = { key = '\', alt = true }
 
 # 左右分屏，在当前聚焦窗格的目录启动普通 shell，默认 Alt+D（macOS 的 Option+D）。
-# Split left and right, starting a plain shell in the focused pane's directory. Default: Alt+D (Option+D on macOS).
 # 修改分屏快捷键后，退出整个分屏界面并重新 attach 生效。
+#
+# Split left and right, starting a plain shell in the focused pane's directory. Default: Alt+D (Option+D on macOS).
 # Exit the entire split interface and attach again to apply changed split bindings.
 split_right = { key = 'd', alt = true }
 
 # 上下分屏，在当前聚焦窗格的目录启动普通 shell，默认 Alt+Shift+D（macOS 的 Option+Shift+D）。
-# Split top and bottom, starting a plain shell in the focused pane's directory. Default: Alt+Shift+D (Option+Shift+D on macOS).
 # 修改后同样需要退出整个分屏界面并重新 attach。
+#
+# Split top and bottom, starting a plain shell in the focused pane's directory. Default: Alt+Shift+D (Option+Shift+D on macOS).
 # Exit the entire split interface and attach again to apply this change too.
 split_down = { key = 'd', alt = true, shift = true }
 
 # 关闭当前聚焦的窗格，默认 Alt+W（macOS 的 Option+W）。最后一个窗格关闭后退出界面。
-# Close the focused pane, default Alt+W (Option+W on macOS). Closing the last pane exits the interface.
 # 如果窗格连接着会话，会自动终止该会话及其中的程序，其他连接到同一会话的客户端也会断开。
-# An attached session and its programs are terminated; other clients attached to that session are disconnected too.
 # 需要保留会话时，先 detach（默认 Alt+\），再按 Alt+W 关闭窗格。
-# To keep the session running, detach first (default Alt+\), then press Alt+W to close the pane.
 # 普通 shell 窗格关闭时，其中的程序也会终止。修改快捷键后退出整个界面并重新 attach 生效。
+#
+# Close the focused pane, default Alt+W (Option+W on macOS). Closing the last pane exits the interface.
+# An attached session and its programs are terminated; other clients attached to that session are disconnected too.
+# To keep the session running, detach first (default Alt+\), then press Alt+W to close the pane.
 # Closing a plain shell pane also terminates its programs. Exit the entire interface and attach again to apply changes.
 close_pane = { key = 'w', alt = true }
 
 # 按方向切换到相邻窗格，默认 Alt+方向键；该方向没有窗格时保持当前焦点。
-# Focus a neighboring pane with Alt+Arrow; keep focus when there is no pane in that direction.
 # 多个窗格位于同一方向时，优先选择边缘最近且靠近当前窗格中心的窗格。
-# Prefer the nearest edge, then the pane closest to the focused pane's center.
 # 普通 shell 窗格也可以聚焦。修改这些快捷键后退出整个界面并重新 attach 生效。
+#
+# Focus a neighboring pane with Alt+Arrow; keep focus when there is no pane in that direction.
+# Prefer the nearest edge, then the pane closest to the focused pane's center.
 # Plain shell panes can also receive focus. Restart the entire interface to apply changed bindings.
 focus_left = { key = 'Left', alt = true }
 focus_right = { key = 'Right', alt = true }
@@ -111,8 +123,9 @@ focus_up = { key = 'Up', alt = true }
 focus_down = { key = 'Down', alt = true }
 
 # Alt+1 至 Alt+9 对应窗格标题中的编号 1 至 9；关闭窗格后其他编号保持不变。
-# Alt+1 through Alt+9 select title numbers 1 through 9; remaining panes keep their numbers after a pane closes.
 # 指定编号不存在时保持当前焦点；修改这些快捷键后重新启动整个界面生效。
+#
+# Alt+1 through Alt+9 select title numbers 1 through 9; remaining panes keep their numbers after a pane closes.
 # Missing numbers keep the current focus; restart the entire interface to apply changed bindings.
 focus_1 = { key = '1', alt = true }
 focus_2 = { key = '2', alt = true }
@@ -123,6 +136,8 @@ focus_6 = { key = '6', alt = true }
 focus_7 = { key = '7', alt = true }
 focus_8 = { key = '8', alt = true }
 focus_9 = { key = '9', alt = true }
+
 # Alt+0 对应编号 10；更大编号使用方向快捷键，开启鼠标模式后也可以点击聚焦。
+#
 # Alt+0 selects number 10; use arrows for higher pane numbers, or click with mouse mode enabled.
 focus_10 = { key = '0', alt = true }
