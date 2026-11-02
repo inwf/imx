@@ -253,6 +253,8 @@ List queries run concurrently with a shared one-second deadline. `STATUS` shows 
 | Session output queues | 256 KiB per queue; a connection that falls behind is disconnected and the session keeps running |
 | Pane rendering queue | Up to 16 MiB for a complete screen update; rendering waits for queued output to drain |
 
+Pane rendering updates changed rows, reuses UTF-8 and frame buffers, and combines continuous output with a minimum refresh interval of 16 ms. Idle clients wait for events.
+
 ### Shell integration
 
 | Shell | Prompt integration                                           | Completion file under the prefix                             |
@@ -321,6 +323,8 @@ The table totals all imx backends; shells and session programs consume additiona
 With another session producing continuous output, 100 commands in a healthy session had a median response time of 1.00 ms and a maximum of 2.10 ms. With a paused backend, a list query took about 1,003 ms and completion took about 252 ms. Resource usage depends on the system, terminal size, and session contents.
 
 See the [performance guide](docs/performance.md) for the measurement environment, capacity limits, and instructions for measuring on your own machine.
+
+On 2026-11-02, a 240×60 terminal with 2, 4, or 8 panes was measured while one pane updated a line 2,000 times with a 1 ms wait between updates. Across three runs per layout, median client CPU time was 0.21, 0.21, and 0.23 s; client PSS was 8.54, 9.49, and 9.43 MiB. Run `tests/benchmark_panes.py` with the test environment to reproduce this measurement.
 
 ## Documentation
 

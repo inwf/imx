@@ -55,6 +55,8 @@ TMPDIR="$PWD/work/runtime" uv run --frozen --project tests pytest -q tests
 
 `tests/test_panes.py` 验证分屏布局、目录继承、鼠标焦点、独立连接、会话切换、终端恢复和进程回收。`tests/pane_app.py` 在真实 PTY 中启用全屏、鼠标、括号粘贴及不同键盘协议，记录实际收到的输入，用于检查窗格坐标转换和按键编码。
 
+`tests/test_pane_start.py` 验证后台暂停、目录删除、shell 启动失败和取消等待时的窗格隔离。`tests/benchmark_panes.py` 测量 2、4、8 个窗格中连续刷新一行文字时的客户端 CPU 时间、PSS 和终端输出量，复测方法见[性能说明](performance.md)。
+
 修改安装或发布脚本时，还需要 ShellCheck 和 actionlint：
 
 ```bash

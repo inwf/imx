@@ -22,7 +22,29 @@ fn color(value: vt.Style.Color, palette: vt.color.Palette, default: ?vt.color.RG
     return .{ .rgb = .{ rgb.r, rgb.g, rgb.b } };
 }
 
-pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal, state: *const vt.RenderState, rect: Rect, offset: [2]u16, selected: bool, focused_border_color: vaxis.Color, title: []const u8) !void {
+pub const Cache = struct {
+    const Row = struct {
+        text: std.ArrayList(u8) = .empty,
+        id: ?vt.RenderState.Row.Id = null,
+    };
+
+    rows: std.ArrayList(Row) = .empty,
+    columns: usize = 0,
+    foreground: ?vt.color.RGB = null,
+    background: ?vt.color.RGB = null,
+    reverse: bool = false,
+    title: [128]u8 = undefined,
+    title_len: usize = 0,
+    selected: bool = false,
+    border_color: vaxis.Color = .default,
+
+    pub fn deinit(self: *Cache, allocator: std.mem.Allocator) void {
+        for (self.rows.items) |*row| row.text.deinit(allocator);
+        self.rows.deinit(allocator);
+    }
+};
+
+fn drawBorder(screen: *vaxis.Screen, rect: Rect, offset: [2]u16, selected: bool, focused_border_color: vaxis.Color, title: []const u8) void {
     const border: vaxis.Style = .{ .fg = if (selected) focused_border_color else .{ .index = 8 }, .bold = selected };
     for (0..rect.width) |x| {
         put(screen, @as(i32, rect.x) + @as(i32, @intCast(x)) - offset[0], @as(i32, rect.y) - offset[1], .{ .char = .{ .grapheme = "─" }, .style = border });
@@ -35,18 +57,59 @@ pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal,
     const corners = [_][]const u8{ "┌", "┐", "└", "┘" };
     for (corners, 0..) |grapheme, i| put(screen, @as(i32, rect.x) + (if (i % 2 == 0) @as(i32, 0) else rect.width - 1) - offset[0], @as(i32, rect.y) + (if (i < 2) @as(i32, 0) else rect.height - 1) - offset[1], .{ .char = .{ .grapheme = grapheme }, .style = border });
     for (title[0..@min(title.len, rect.width - 4)], 0..) |_, i| put(screen, @as(i32, rect.x) + 2 + @as(i32, @intCast(i)) - offset[0], @as(i32, rect.y) - offset[1], .{ .char = .{ .grapheme = title[i..][0..1] }, .style = border });
-    const rows = state.row_data.items(.cells);
-    const selections = state.row_data.items(.selection);
-    for (rows, 0..) |cells, y| {
+}
+
+fn clearRow(screen: *vaxis.Screen, rect: Rect, offset: [2]u16, y: usize) void {
+    const sy = @as(i32, rect.y) + 1 + @as(i32, @intCast(y)) - offset[1];
+    for (0..rect.width - 2) |x| put(screen, @as(i32, rect.x) + 1 + @as(i32, @intCast(x)) - offset[0], sy, .{});
+}
+
+fn codepoint(text: *std.ArrayList(u8), cp: u21) !void {
+    var bytes: [4]u8 = undefined;
+    const len = try std.unicode.utf8Encode(if (cp == 0) ' ' else cp, &bytes);
+    text.appendSliceAssumeCapacity(bytes[0..len]);
+}
+
+pub fn draw(allocator: std.mem.Allocator, cache: *Cache, screen: *vaxis.Screen, term: *vt.Terminal, state: *vt.RenderState, rect: Rect, offset: [2]u16, selected: bool, focused_border_color: vaxis.Color, title: []const u8, force: bool) !void {
+    const foreground = term.colors.foreground.get();
+    const background = term.colors.background.get();
+    const reverse = term.modes.get(.reverse_colors);
+    const full = force or state.dirty == .full or cache.rows.items.len != state.row_data.len or cache.columns != state.cols or
+        !std.meta.eql(cache.foreground, foreground) or !std.meta.eql(cache.background, background) or cache.reverse != reverse;
+    if (full) for (0..rect.height - 2) |y| clearRow(screen, rect, offset, y);
+    if (full or cache.selected != selected or !std.meta.eql(cache.border_color, focused_border_color) or !std.mem.eql(u8, cache.title[0..cache.title_len], title)) {
+        @memcpy(cache.title[0..title.len], title);
+        cache.title_len = title.len;
+        cache.selected = selected;
+        cache.border_color = focused_border_color;
+        drawBorder(screen, rect, offset, selected, focused_border_color, cache.title[0..cache.title_len]);
+    }
+    while (cache.rows.items.len > state.row_data.len) {
+        var row = cache.rows.pop().?;
+        row.text.deinit(allocator);
+    }
+    while (cache.rows.items.len < state.row_data.len) try cache.rows.append(allocator, .{});
+    for (cache.rows.items, 0..) |*row, y| {
         if (y >= rect.height - 2) break;
+        const source = state.row_data.get(y);
+        const id = source.id();
+        if (!full and !source.dirty and row.id != null and row.id.?.eql(id)) continue;
+        if (!full) clearRow(screen, rect, offset, y);
+        const cells = source.cells;
+        var capacity: usize = cells.len * 4;
+        for (0..cells.len) |x| {
+            const cell = cells.get(x);
+            if (cell.raw.content_tag == .codepoint_grapheme) capacity += cell.grapheme.len * 4;
+        }
+        row.text.clearRetainingCapacity();
+        try row.text.ensureTotalCapacity(allocator, capacity);
         for (0..cells.len) |x| {
             if (x >= rect.width - 2) break;
             const cell = cells.get(x);
             if (cell.raw.wide == .spacer_tail or cell.raw.wide == .spacer_head) continue;
-            var text: std.Io.Writer.Allocating = .init(frame);
-            const cp = cell.raw.codepoint();
-            try text.writer.printUnicodeCodepoint(if (cp == 0) ' ' else cp);
-            if (cell.raw.content_tag == .codepoint_grapheme) for (cell.grapheme) |extra| try text.writer.printUnicodeCodepoint(extra);
+            const start = row.text.items.len;
+            try codepoint(&row.text, cell.raw.codepoint());
+            if (cell.raw.content_tag == .codepoint_grapheme) for (cell.grapheme) |extra| try codepoint(&row.text, extra);
             var style: vt.Style = if (cell.raw.style_id == 0) .{} else cell.style;
             switch (cell.raw.content_tag) {
                 .bg_color_palette => style.bg_color = .{ .palette = cell.raw.content.color_palette.data },
@@ -54,20 +117,20 @@ pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal,
                 else => {},
             }
             const width: u8 = if (cell.raw.wide == .wide) 2 else 1;
-            const highlighted = if (selections[y]) |range| x >= range[0] and x <= range[1] else false;
+            const highlighted = if (source.selection) |range| x >= range[0] and x <= range[1] else false;
             const sx = @as(i32, rect.x) + 1 + @as(i32, @intCast(x)) - offset[0];
             const sy = @as(i32, rect.y) + 1 + @as(i32, @intCast(y)) - offset[1];
             const value: vaxis.Cell = .{
-                .char = .{ .grapheme = try text.toOwnedSlice(), .width = width },
+                .char = .{ .grapheme = row.text.items[start..], .width = width },
                 .style = .{
-                    .fg = color(style.fg_color, state.colors.palette, term.colors.foreground.get()),
-                    .bg = color(style.bg_color, state.colors.palette, term.colors.background.get()),
+                    .fg = color(style.fg_color, state.colors.palette, foreground),
+                    .bg = color(style.bg_color, state.colors.palette, background),
                     .ul = color(style.underline_color, state.colors.palette, null),
                     .bold = style.flags.bold,
                     .dim = style.flags.faint,
                     .italic = style.flags.italic,
                     .blink = style.flags.blink,
-                    .reverse = (style.flags.inverse != term.modes.get(.reverse_colors)) != highlighted,
+                    .reverse = (style.flags.inverse != reverse) != highlighted,
                     .invisible = style.flags.invisible,
                     .strikethrough = style.flags.strikethrough,
                     .ul_style = switch (style.flags.underline) {
@@ -82,7 +145,13 @@ pub fn draw(frame: std.mem.Allocator, screen: *vaxis.Screen, term: *vt.Terminal,
             };
             put(screen, sx, sy, value);
         }
+        row.id = id;
     }
+    cache.columns = state.cols;
+    cache.foreground = foreground;
+    cache.background = background;
+    cache.reverse = reverse;
+    state.clean();
     if (selected) {
         screen.cursor_vis = false;
         if (state.cursor.viewport) |cursor| {
@@ -118,20 +187,60 @@ test "pane rendering preserves backgrounds on cleared cells" {
     defer state.deinit(allocator);
     var screen = try vaxis.Screen.init(allocator, .{ .cols = 100, .rows = 30, .x_pixel = 0, .y_pixel = 0 });
     defer screen.deinit(allocator);
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
+    var cache: Cache = .{};
+    defer cache.deinit(allocator);
     try state.update(allocator, &term);
-    try draw(arena.allocator(), &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, true, .{ .index = 6 }, "test");
+    try draw(allocator, &cache, &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, true, .{ .index = 6 }, "test", true);
     try std.testing.expectEqual(vaxis.Color{ .index = 4 }, screen.readCell(52, 2).?.style.bg);
     try std.testing.expectEqualStrings("A", screen.readCell(52, 1).?.char.grapheme);
     const selected: vaxis.Color = .{ .rgb = .{ 0x33, 0xaa, 0xff } };
-    try draw(arena.allocator(), &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, true, selected, "test");
+    try draw(allocator, &cache, &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, true, selected, "test", false);
     for ([_][2]u16{ .{ 50, 0 }, .{ 52, 0 }, .{ 99, 29 } }) |position| {
         const style = screen.readCell(position[0], position[1]).?.style;
         try std.testing.expectEqual(selected, style.fg);
         try std.testing.expect(style.bold);
     }
-    try draw(arena.allocator(), &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, false, selected, "test");
+    try draw(allocator, &cache, &screen, &term, &state, .{ .x = 50, .width = 50, .height = 30 }, .{ 0, 0 }, false, selected, "test", false);
     try std.testing.expectEqual(vaxis.Color{ .index = 8 }, screen.readCell(50, 0).?.style.fg);
     try std.testing.expect(!screen.readCell(50, 0).?.style.bold);
+}
+
+test "pane rendering retains text through partial updates and clears wide cells" {
+    const allocator = std.testing.allocator;
+    var term = try vt.Terminal.init(std.testing.io, allocator, .{ .cols = 12, .rows = 4 });
+    defer term.deinit(allocator);
+    var stream = term.vtStream();
+    defer stream.deinit();
+    var state: vt.RenderState = .empty;
+    defer state.deinit(allocator);
+    var cache: Cache = .{};
+    defer cache.deinit(allocator);
+    var screen = try vaxis.Screen.init(allocator, .{ .cols = 14, .rows = 6, .x_pixel = 0, .y_pixel = 0 });
+    defer screen.deinit(allocator);
+    const rect: Rect = .{ .width = 14, .height = 6 };
+    stream.nextSlice("\x1b[H中文e\xcc\x81\x1b[2;1HSTABLE");
+    try state.update(allocator, &term);
+    try draw(allocator, &cache, &screen, &term, &state, rect, .{ 0, 0 }, true, .{ .index = 6 }, "test", true);
+    try std.testing.expectEqualStrings("中", screen.readCell(1, 1).?.char.grapheme);
+    try std.testing.expectEqualStrings("文", screen.readCell(3, 1).?.char.grapheme);
+    try std.testing.expectEqualStrings("e\xcc\x81", screen.readCell(5, 1).?.char.grapheme);
+    for (0..50) |iteration| {
+        stream.nextSlice(if (iteration % 2 == 0) "\x1b[HA\x1b[K" else "\x1b[H界\x1b[K");
+        try state.update(allocator, &term);
+        try draw(allocator, &cache, &screen, &term, &state, rect, .{ 0, 0 }, true, .{ .index = 6 }, "test", false);
+        try std.testing.expectEqualStrings(if (iteration % 2 == 0) "A" else "界", screen.readCell(1, 1).?.char.grapheme);
+        try std.testing.expectEqualStrings(" ", screen.readCell(2, 1).?.char.grapheme);
+        try std.testing.expectEqualStrings(" ", screen.readCell(5, 1).?.char.grapheme);
+        for ("STABLE", 1..) |_, x| try std.testing.expectEqualStrings("STABLE"[x - 1 .. x], screen.readCell(@intCast(x), 2).?.char.grapheme);
+    }
+    stream.nextSlice("\x1b[?5h");
+    try state.update(allocator, &term);
+    try draw(allocator, &cache, &screen, &term, &state, rect, .{ 0, 0 }, true, .{ .index = 6 }, "test", false);
+    try std.testing.expect(screen.readCell(1, 2).?.style.reverse);
+    try term.resize(allocator, .{ .cols = 6, .rows = 4 });
+    try state.update(allocator, &term);
+    screen.clear();
+    try draw(allocator, &cache, &screen, &term, &state, .{ .x = 6, .width = 8, .height = 6 }, .{ 0, 0 }, true, .{ .index = 6 }, "test", true);
+    try std.testing.expectEqualStrings("界", screen.readCell(7, 1).?.char.grapheme);
+    try std.testing.expectEqualStrings(" ", screen.readCell(1, 1).?.char.grapheme);
 }

@@ -619,6 +619,20 @@ def test_output_in_one_pane_preserves_other_pane_input_and_close_cleanup(session
     assert sessions.sessions()[0]["NAME"] == "dev"
 
 
+def test_idle_panes_wait_for_events(sessions):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("2: shell")
+    terminal.command("printf ready", "idle-ready", "ready")
+    time.sleep(0.2)
+    terminal.pump()
+    frontend = psutil.Process(terminal.child.pid)
+    before = frontend.num_ctx_switches().voluntary
+    time.sleep(1)
+    after = frontend.num_ctx_switches().voluntary
+    assert after - before <= 2
+
+
 @pytest.mark.parametrize("close", ["exit\r", "\x1bw"])
 def test_closing_last_pane_restores_outer_terminal(sessions, close):
     outer = pexpect.spawn("/bin/bash", ["--noprofile", "--norc"], env=sessions.environment,
