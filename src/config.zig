@@ -102,9 +102,17 @@ pub const Config = struct {
     }
 
     pub fn connect(self: *const Config) !?c_int {
-        const fd = try sys.check(c.socket(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_CLOEXEC, 0), "socket");
+        return self.connectMode(false);
+    }
+
+    pub fn connectNonblocking(self: *const Config) !?c_int {
+        return self.connectMode(true);
+    }
+
+    fn connectMode(self: *const Config, nonblocking: bool) !?c_int {
+        const fd = try sys.check(c.socket(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_CLOEXEC | @as(c_int, if (nonblocking) c.SOCK_NONBLOCK else 0), 0), "socket");
         errdefer sys.close(fd);
-        try sys.socketTimeout(fd, 2000);
+        if (!nonblocking) try sys.socketTimeout(fd, 2000);
         var addr = self.address();
         if (c.connect(fd, @ptrCast(&addr), @sizeOf(c.struct_sockaddr_un)) < 0) {
             switch (c.__errno_location().*) {

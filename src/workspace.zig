@@ -11,6 +11,7 @@ const display = @import("display.zig");
 const context = @import("pane_context.zig");
 const render = @import("pane_render.zig");
 const selection = @import("pane_selection.zig");
+const DirectoryRequest = @import("pane_directory.zig").Request;
 const Rect = render.Rect;
 const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
@@ -154,6 +155,9 @@ const Pane = struct {
     detaching: bool = false,
     close_requested: bool = false,
     closing: ?CloseRequest = null,
+    directory_request: ?DirectoryRequest = null,
+    directory_source: ?usize = null,
+    starting: ?struct { fd: c_int, deadline: i64 } = null,
 
     fn deinit(self: *Pane) void {
         const allocator = self.app.allocator;
@@ -162,6 +166,8 @@ const Pane = struct {
         if (self.control) |fd| sys.close(fd);
         if (self.attached) |state| state.deinit();
         if (self.closing) |*request| request.deinit(allocator);
+        if (self.directory_request) |*request| request.deinit(allocator);
+        if (self.starting) |startup| sys.close(startup.fd);
         sys.close(self.listener);
         self.stream.deinit();
         self.selection.deinit(&self.term);
@@ -173,7 +179,7 @@ const Pane = struct {
         allocator.destroy(self);
     }
 
-    fn spawn(self: *Pane, session: ?[]const u8) !void {
+    fn spawn(self: *Pane, session: ?[]const u8, deadline: i64) !void {
         const app = self.app;
         const allocator = app.allocator;
         var environment = try app.environ.createMap(allocator);
@@ -198,8 +204,9 @@ const Pane = struct {
         const attach_argv = [_:null]?[*:0]const u8{ executable, "attach", "--", name };
         const shell_argv = [_:null]?[*:0]const u8{ executable, "-l" };
         var ready: [2]c_int = undefined;
-        _ = try sys.check(c.pipe2(&ready, c.O_CLOEXEC), "pipe2(pane readiness)");
-        defer sys.close(ready[0]);
+        _ = try sys.check(c.pipe2(&ready, c.O_CLOEXEC | c.O_NONBLOCK), "pipe2(pane readiness)");
+        errdefer sys.close(ready[0]);
+        defer sys.close(ready[1]);
         var size: c.struct_winsize = .{ .ws_row = self.term.rows, .ws_col = self.term.cols, .ws_xpixel = 0, .ws_ypixel = 0 };
         const pid = try sys.check(c.forkpty(&self.fd, null, &app.termios, &size), "forkpty(pane)");
         if (pid == 0) {
@@ -212,7 +219,6 @@ const Pane = struct {
             _ = c.write(3, &failure, @sizeOf(c_int));
             c._exit(126);
         }
-        sys.close(ready[1]);
         self.pid = pid;
         self.exit_status = null;
         errdefer {
@@ -221,49 +227,59 @@ const Pane = struct {
             @import("server.zig").terminateSession(pid) catch @panic("failed to clean up pane process");
             self.pid = 0;
         }
-        var failure: c_int = undefined;
-        if ((try sys.read(ready[0], std.mem.asBytes(&failure))).? != 0) return error.PaneExecFailed;
         _ = try sys.nonblocking(self.fd, true);
         _ = try sys.check(c.fcntl(self.fd, c.F_SETFD, c.FD_CLOEXEC), "fcntl(pane)");
+        self.starting = .{ .fd = ready[0], .deadline = deadline };
     }
 
     fn directory(self: *Pane) ![]u8 {
         const app = self.app;
-        var pid = self.pid;
-        if (self.attached) |state| {
-            var root = try config.Config.initPath(app.allocator, app.io, state.value.directory);
-            defer root.deinit();
-            const fd = try @import("connection.zig").open(app.allocator, app.io, &root, state.value.session, false);
-            defer sys.close(fd);
-            try protocol.send(fd, .info, "{}");
-            var reader: protocol.Reader = .{};
-            defer reader.deinit(app.allocator);
-            var bytes: std.ArrayList(u8) = .empty;
-            defer bytes.deinit(app.allocator);
-            while (try reader.receive(app.allocator, fd)) {
-                while (try reader.next()) |message| switch (message.tag) {
-                    .ok => {},
-                    .output => try bytes.appendSlice(app.allocator, message.payload),
-                    .done => break,
-                    .failure => return error.SessionDirectoryUnavailable,
-                    else => return error.InvalidMessage,
-                };
-            }
-            const info = try std.json.parseFromSlice(protocol.SessionInfo, app.allocator, bytes.items, .{});
-            defer info.deinit();
-            pid = info.value.pid;
-        }
         var path: [64]u8 = undefined;
-        const link = try std.fmt.bufPrint(&path, "/proc/{d}/cwd", .{pid});
+        const link = try std.fmt.bufPrint(&path, "/proc/{d}/cwd", .{self.pid});
         var buffer: [std.fs.max_path_bytes]u8 = undefined;
         const length = try std.Io.Dir.readLinkAbsolute(app.io, link, &buffer);
         return app.allocator.dupe(u8, buffer[0..length]);
     }
 
-    fn rememberDirectory(self: *Pane) !void {
-        const path = try self.directory();
-        self.app.allocator.free(self.cwd);
-        self.cwd = path;
+    fn pollStartup(self: *Pane, query_events: c_short, startup_events: c_short, now: i64) !void {
+        const allocator = self.app.allocator;
+        if (self.directory_request) |*request| {
+            if (now >= request.deadline) return error.SessionDirectoryTimeout;
+            if (query_events & c.POLLOUT != 0) try request.output.flush(request.fd, true);
+            if (query_events & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
+                if (try request.read(allocator)) |path| {
+                    var transferred = false;
+                    defer if (!transferred) allocator.free(path);
+                    if (self.directory_source) |id| for (self.app.panes.items) |source| {
+                        if (source.id != id) continue;
+                        if (source.attached) |state| if (std.mem.eql(u8, state.value.session, request.name)) {
+                            const remembered = try allocator.dupe(u8, path);
+                            allocator.free(source.cwd);
+                            source.cwd = remembered;
+                        };
+                    };
+                    const deadline = request.deadline;
+                    request.deinit(allocator);
+                    self.directory_request = null;
+                    allocator.free(self.cwd);
+                    self.cwd = path;
+                    transferred = true;
+                    return self.spawn(null, deadline);
+                }
+            }
+        }
+        if (self.starting) |startup| {
+            if (now >= startup.deadline) return error.PaneStartTimeout;
+            if (startup_events & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
+                var failure: c_int = undefined;
+                if (try sys.read(startup.fd, std.mem.asBytes(&failure))) |n| {
+                    if (n != 0) return error.PaneExecFailed;
+                    sys.close(startup.fd);
+                    self.starting = null;
+                    self.app.dirty = true;
+                }
+            }
+        }
     }
 
     fn closeSession(self: *Pane, state: context.State) !void {
@@ -308,7 +324,7 @@ const App = struct {
     keyboard_flags: u5 = 5,
     status: ?[]u8 = null,
 
-    fn create(self: *App, cwd: []const u8, size: sys.Size, session: ?[]const u8) !*Pane {
+    fn create(self: *App, cwd: []const u8, size: sys.Size, session: ?[]const u8, request: ?DirectoryRequest) !*Pane {
         try self.panes.ensureUnusedCapacity(self.allocator, 1);
         const pane = try self.allocator.create(Pane);
         errdefer self.allocator.destroy(pane);
@@ -325,7 +341,8 @@ const App = struct {
             pane.term.deinit(self.allocator);
         }
         if (self.composed) enableEffects(pane);
-        try pane.spawn(session);
+        if (request == null) try pane.spawn(session, try sys.monotonicMilliseconds() + 2000);
+        pane.directory_request = request;
         self.panes.appendAssumeCapacity(pane);
         self.next_id += 1;
         return pane;
@@ -429,23 +446,36 @@ const App = struct {
 
     fn split(self: *App, axis: Axis) !void {
         const selected = self.focused;
+        if (selected.directory_request != null or selected.starting != null) return self.message("This pane is still starting.");
         const rect = if (self.composed) selected.rect else Rect{ .width = self.size.cols, .height = self.size.rows };
         if (rect.width > self.size.cols or rect.height > self.size.rows or rect.width < (if (axis == .right) @as(u16, 24) else 12) or rect.height < (if (axis == .down) @as(u16, 10) else 5)) {
             try self.message("Not enough space to split this pane.");
             return;
         }
-        try selected.rememberDirectory();
+        var request: ?DirectoryRequest = null;
+        defer if (request) |*pending| pending.deinit(self.allocator);
+        if (selected.attached) |state| {
+            request = DirectoryRequest.init(self.allocator, self.io, state.value) catch |err| return self.splitFailure(err);
+        } else {
+            const path = selected.directory() catch |err| return self.splitFailure(err);
+            self.allocator.free(selected.cwd);
+            selected.cwd = path;
+        }
         const node = self.root.find(selected).?;
         const first = try self.allocator.create(Node);
-        errdefer self.allocator.destroy(first);
+        var committed = false;
+        defer if (!committed) self.allocator.destroy(first);
         const second = try self.allocator.create(Node);
-        errdefer self.allocator.destroy(second);
-        const pane = try self.create(selected.cwd, .{ .cols = rect.width - 2, .rows = rect.height - 2 }, null);
+        defer if (!committed) self.allocator.destroy(second);
+        const pane = self.create(selected.cwd, .{ .cols = rect.width - 2, .rows = rect.height - 2 }, null, request) catch |err| return self.splitFailure(err);
+        request = null;
+        pane.directory_source = selected.id;
         first.* = .{ .rect = rect, .content = .{ .pane = selected } };
         second.* = .{ .rect = rect, .content = .{ .pane = pane } };
         self.cancelResize();
         self.cancelSelection();
         node.content = .{ .split = .{ .axis = axis, .first = first, .second = second } };
+        committed = true;
         if (!self.composed) {
             self.composed = true;
             for (self.panes.items) |value| enableEffects(value);
@@ -459,10 +489,22 @@ const App = struct {
         try self.focus(pane);
     }
 
+    fn splitFailure(self: *App, err: anyerror) !void {
+        if (err == error.OutOfMemory) return err;
+        var buffer: [160]u8 = undefined;
+        try self.message(try std.fmt.bufPrint(&buffer, "Cannot start pane: {s}.", .{@errorName(err)}));
+    }
+
     fn message(self: *App, text: []const u8) !void {
         if (self.status) |value| self.allocator.free(value);
         self.status = try self.allocator.dupe(u8, text);
-        if (self.composed) self.dirty = true else try self.output.append(self.allocator, "\x07");
+        if (self.composed) {
+            self.dirty = true;
+        } else {
+            try self.output.append(self.allocator, "\x07\r\nimx: ");
+            try self.output.append(self.allocator, text);
+            try self.output.append(self.allocator, "\r\n");
+        }
     }
 
     fn draw(self: *App) !void {
@@ -490,7 +532,7 @@ const App = struct {
         const frame = arena.allocator();
         self.vx.screen.clear();
         for (self.panes.items) |pane| {
-            const title = try std.fmt.allocPrint(frame, " {d}: {s} ", .{ pane.id, if (pane.attached) |state| state.value.session else "shell" });
+            const title = try std.fmt.allocPrint(frame, " {d}: {s} ", .{ pane.id, if (pane.directory_request != null or pane.starting != null) "starting" else if (pane.attached) |state| state.value.session else "shell" });
             if (pane.hold_until == null) try pane.state.update(self.allocator, &pane.term);
             try render.draw(frame, &self.vx.screen, &pane.term, &pane.state, pane.rect, self.offset, pane == self.focused, self.focused_border_color, title);
         }
@@ -842,7 +884,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     defer sys.unblockSignals() catch @panic("failed to restore workspace signals");
     const cwd = try std.process.currentPathAlloc(io, allocator);
     defer allocator.free(cwd);
-    const initial = try app.create(cwd, app.size, name);
+    const initial = try app.create(cwd, app.size, name, null);
     app.focused = initial;
     app.root = try allocator.create(Node);
     app.root.* = .{ .rect = initial.rect, .content = .{ .pane = initial } };
@@ -861,20 +903,35 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     }
     var fds: std.ArrayList(c.struct_pollfd) = .empty;
     defer fds.deinit(allocator);
-    while (app.panes.items.len > 0) {
+    event_loop: while (app.panes.items.len > 0) {
+        const before_poll = try sys.monotonicMilliseconds();
+        for (app.panes.items, 0..) |pane, index| {
+            pane.pollStartup(0, 0, before_poll) catch |err| {
+                if (!app.composed or err == error.OutOfMemory) return err;
+                try app.remove(index);
+                try app.splitFailure(err);
+                continue :event_loop;
+            };
+        }
         try app.closeRequested();
         if (app.panes.items.len == 0) break;
         if (app.composed and app.dirty and app.output.pending().len == 0) try app.draw();
         fds.clearRetainingCapacity();
         try fds.appendSlice(allocator, &.{ .{ .fd = signals, .events = c.POLLIN, .revents = 0 }, .{ .fd = 0, .events = if (app.focused.input.pending().len < protocol.max_queue - 32768) c.POLLIN else 0, .revents = 0 }, .{ .fd = 1, .events = if (app.output.pending().len > 0) c.POLLOUT else 0, .revents = 0 } });
         for (app.panes.items) |pane| try fds.appendSlice(allocator, &.{
-            .{ .fd = pane.fd, .events = (if (app.output.pending().len < protocol.max_queue - 32768) @as(c_short, c.POLLIN) else 0) | (if (pane.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
+            .{ .fd = pane.fd, .events = (if (app.output.pending().len < protocol.max_queue - 32768) @as(c_short, c.POLLIN) else 0) | (if (pane.starting == null and pane.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
             .{ .fd = pane.listener, .events = c.POLLIN, .revents = 0 },
             .{ .fd = pane.control orelse -1, .events = c.POLLIN, .revents = 0 },
             .{ .fd = if (pane.closing) |request| request.fd else -1, .events = @as(c_short, c.POLLIN) | (if (pane.closing != null and pane.closing.?.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
+            .{ .fd = if (pane.directory_request) |request| request.fd else -1, .events = @as(c_short, c.POLLIN) | (if (pane.directory_request != null and pane.directory_request.?.output.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
+            .{ .fd = if (pane.starting) |startup| startup.fd else -1, .events = c.POLLIN, .revents = 0 },
         });
         const now = try sys.monotonicMilliseconds();
         var deadline = app.keys.deadline;
+        for (app.panes.items) |pane| {
+            if (pane.directory_request) |request| deadline = @min(deadline orelse request.deadline, request.deadline);
+            if (pane.starting) |startup| deadline = @min(deadline orelse startup.deadline, startup.deadline);
+        }
         for (app.panes.items) |pane| if (pane.hold_until) |until| {
             deadline = @min(deadline orelse until, until);
         };
@@ -945,7 +1002,14 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         if (fds.items[2].revents & (c.POLLHUP | c.POLLERR) != 0) return;
         var removed = false;
         for (app.panes.items, 0..) |pane, index| {
-            const events = fds.items[3 + index * 4 ..][0..4];
+            const events = fds.items[3 + index * 6 ..][0..6];
+            pane.pollStartup(events[4].revents, events[5].revents, after_poll) catch |err| {
+                if (!app.composed or err == error.OutOfMemory) return err;
+                try app.remove(index);
+                try app.splitFailure(err);
+                removed = true;
+                break;
+            };
             if (events[1].revents & c.POLLIN != 0) {
                 const fd = try sys.check(c.accept4(pane.listener, null, null, c.SOCK_CLOEXEC | c.SOCK_NONBLOCK), "accept(pane)");
                 const peer = try config.peer(fd);
@@ -1031,7 +1095,12 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                             pane.initial = false;
                             if (pane.attached) |state| state.deinit();
                             pane.attached = null;
-                            try pane.spawn(null);
+                            pane.spawn(null, try sys.monotonicMilliseconds() + 2000) catch |err| {
+                                if (err == error.OutOfMemory) return err;
+                                try app.remove(index);
+                                try app.splitFailure(err);
+                                removed = true;
+                            };
                         } else {
                             try app.remove(index);
                             removed = true;

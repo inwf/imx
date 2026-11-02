@@ -230,7 +230,10 @@ def test_configured_border_color_follows_focus(sessions, color, mouse):
         expected = f"\x1b[38:2:{red}:{green}:{blue}m"
     child.send("\x1bd")
     child.expect_exact(expected)
-    child.expect_exact("2: shell")
+    child.expect_exact("2:")
+    ready = sessions.path / "border-ready"
+    child.sendline(f"printf ready > {shlex.quote(str(ready))}")
+    sessions.wait(lambda: ready.exists() and ready.read_text() == "ready")
     second = "\x1b[<0;55;3M\x1b[<0;55;3m" if mouse else "\x1b2"
     for shortcut, title in [("\x1b1", "1: dev"), (second, "2: shell"), ("\x1b1", "1: dev")]:
         child.send(shortcut)

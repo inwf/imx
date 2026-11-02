@@ -2,6 +2,13 @@ const std = @import("std");
 const config = @import("config.zig");
 const server = @import("server.zig");
 
+pub fn openExistingNonblocking(io: std.Io, root: *const config.Config, name: []const u8) !c_int {
+    if (try root.connectNonblocking()) |legacy| return legacy;
+    var endpoint = (try root.session(io, name, false)) orelse return error.SessionNotFound;
+    defer endpoint.deinit();
+    return (try endpoint.connectNonblocking()) orelse error.SessionNotFound;
+}
+
 pub fn open(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, name: []const u8, create: bool) !c_int {
     if (try root.connect()) |legacy| return legacy;
     var endpoint = (try root.session(io, name, create)) orelse return error.SessionNotFound;
