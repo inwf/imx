@@ -6,7 +6,7 @@ const settings = @import("settings.zig");
 const sessions = @import("sessions.zig");
 const cli = @import("cli.zig");
 
-const commands = [_][]const u8{ "attach", "list", "ls", "cat", "detach", "kill", "update", "uninstall", "help" };
+const commands = [_][]const u8{ "attach", "list", "ls", "select", "cat", "detach", "kill", "update", "uninstall", "help" };
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io, kind: []const u8, prefix: []const u8) !void {
     const options = std.mem.startsWith(u8, kind, "options-");

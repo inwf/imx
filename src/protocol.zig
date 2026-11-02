@@ -3,7 +3,8 @@ const sys = @import("sys.zig");
 
 pub const max_payload = 128 * 1024;
 pub const max_queue = 256 * 1024;
-pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11, info = 12, switch_prepare = 13, switch_session = 14, switch_result = 15, switch_commit = 16, switch_cancel = 17 };
+pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11, info = 12, switch_prepare = 13, switch_session = 14, switch_result = 15, switch_commit = 16, switch_cancel = 17, preview = 18 };
+pub const PreviewOptions = struct { name: []const u8, size: sys.Size };
 pub const client_marker_prefix = "IMX_CLIENT_CAPABILITIES=";
 pub const client_marker = client_marker_prefix ++ "switch-v1";
 pub const SessionInfo = struct { name: []const u8, pid: c_int, clients: usize, directory: []const u8, created: []const u8 };

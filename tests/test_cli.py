@@ -13,7 +13,7 @@ def test_information_flags_leave_runtime_and_configuration_untouched(sessions, a
     assert not (sessions.home / ".local/state/imx").exists()
 
 
-@pytest.mark.parametrize("command", ["attach", "list", "ls", "cat", "detach", "kill", "update", "uninstall", "help"])
+@pytest.mark.parametrize("command", ["attach", "list", "ls", "select", "cat", "detach", "kill", "update", "uninstall", "help"])
 def test_command_help_precedes_configuration_and_execution(sessions, command):
     path = configuration(sessions)
     path.parent.mkdir(parents=True)

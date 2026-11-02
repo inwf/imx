@@ -3,7 +3,7 @@ const clap = @import("clap");
 const sys = @import("sys.zig");
 const update = @import("update.zig");
 
-pub const Command = enum { attach, list, ls, cat, detach, kill, update, uninstall, help };
+pub const Command = enum { attach, list, ls, select, cat, detach, kill, update, uninstall, help };
 pub const Invocation = struct { command: Command, name: []const u8 = "", update_mode: update.Mode = .normal };
 pub const Result = union(enum) { help: ?Command, version, run: Invocation };
 pub const root_options = [_][]const u8{ "-h", "--help", "-v", "--version" };
@@ -110,6 +110,7 @@ fn description(command: Command) []const u8 {
     return switch (command) {
         .attach => "Create or attach to a session. Inside a session, switch the current connection.\nAlt+D splits left and right; Alt+Shift+D splits top and bottom. Alt is Option on macOS.\nNew panes start a plain shell in the focused pane's directory. Click a pane to focus it.\nAlt+Arrow focuses a neighbor; Alt+1 through Alt+9 select pane numbers, and Alt+0 selects 10.\nAlt+W closes the focused pane and terminates its attached session and programs.\nDetach first (default: Alt+\\), then close the pane to keep the session running.\nClosing the last pane exits the interface. Configure shortcuts in config.toml under [keybindings].\n",
         .list, .ls => "List sessions, including their shell PID, connections, directory, creation time and status.\nOutput is tab-separated when redirected. This is the default command.\n",
+        .select => "Choose a session with a live preview. Requires an interactive terminal.\nUp/Down or j/k move the selection; Enter or Space attaches to it.\nEsc or q cancels. Inside a session, selection switches the current connection.\nPreviews preserve session sizes and connection counts.\n",
         .cat => "Print retained history and the active screen as plain text.\nHistory uses a 10,000-line target and a 2 MiB scrollback budget.\nScrollback limits are applied in complete terminal pages.\n",
         .detach => "Detach all connections from the current session. Run this command inside a session.\nThe shell and its programs keep running. The detach shortcut affects only its own connection.\n",
         .kill => "Terminate the named session, including its shell, foreground jobs and background jobs.\n",
@@ -143,6 +144,7 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
             \\Commands:
             \\  attach <name>  Create, attach to or switch to a session
             \\  list | ls      List sessions (default command)
+            \\  select         Choose a session with a live preview
             \\  cat <name>     Print retained history and the active screen
             \\  detach         Detach all connections from the current session
             \\  kill <name>    Terminate and remove a session

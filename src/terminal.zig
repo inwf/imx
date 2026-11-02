@@ -46,6 +46,26 @@ pub fn history(allocator: std.mem.Allocator, term: *vt.Terminal) ![]u8 {
     return builder.toOwnedSlice();
 }
 
+pub fn preview(allocator: std.mem.Allocator, term: *vt.Terminal, size: sys.Size) ![]u8 {
+    var builder = std.Io.Writer.Allocating.init(allocator);
+    defer builder.deinit();
+    try builder.writer.writeAll("\x1b[0m\x1b[2J\x1b[H");
+    const pages = &term.screens.active.pages;
+    const height = @min(size.rows, term.rows);
+    const width = @min(size.cols, term.cols);
+    // 保留光标附近的当前屏幕内容，预览尺寸不会传给会话 PTY。
+    const top = @min(term.rows - height, (term.screens.active.cursor.y + 1) -| height);
+    var formatter = vt.formatter.TerminalFormatter.init(term, .vt);
+    formatter.content = .{ .selection = vt.Selection.init(
+        pages.pin(.{ .active = .{ .x = 0, .y = top } }).?,
+        pages.pin(.{ .active = .{ .x = width - 1, .y = top + height - 1 } }).?,
+        true,
+    ) };
+    formatter.extra = .none;
+    try formatter.format(&builder.writer);
+    return builder.toOwnedSlice();
+}
+
 pub fn restore(allocator: std.mem.Allocator, term: *vt.Terminal) ![]u8 {
     var builder = std.Io.Writer.Allocating.init(allocator);
     defer builder.deinit();

@@ -146,6 +146,7 @@ The shortcut also works in applications that enable the Kitty keyboard protocol 
 ```bash
 imx attach dev   # reattach; the screen and history return
 imx ls           # list all sessions
+imx select       # choose a session with a live preview
 imx cat dev      # read retained output from any terminal
 imx kill dev     # terminate the session
 ```
@@ -155,6 +156,8 @@ Reattaching restores the screen, colors, and retained history. Full-screen progr
 Exiting or detaching restores normal terminal display and input modes, moves the previous screen into scrollback, and places the outer shell prompt at the top left. In split mode this applies within the affected pane. Closing the last pane also returns to the top left of the outer terminal.
 
 To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal moves to `dev2`, and both sessions keep their programs and history. If the target does not exist, it is created using the current directory, environment, and `$SHELL`. Run `imx attach dev1` to return. Other terminals attached to `dev1` stay connected. See [session switching](docs/usage.md#切换会话) for connection selection, error handling, and version requirements.
+
+`imx select` opens a session list with a live preview. Move with **Up/Down** or **j/k**, attach with **Enter** or **Space**, and cancel with **Esc** or **q**. Inside a session, confirmation switches the current connection. Only the selected session is previewed, with updates capped at 10 frames per second and no repeated refreshes while idle. Previewing preserves session sizes and connection counts. See [interactive selection](docs/usage.md#交互选择会话) for details.
 
 > [!IMPORTANT]
 > Sessions and history are held in memory. A backend exiting releases its session; restarting the host releases all sessions.
@@ -224,6 +227,7 @@ The interactive client manages a PTY and a terminal model for each pane. libvaxi
 | --------------------------- | ------------------------------------------------------------ |
 | `imx attach dev`            | Create or attach to `dev`; inside a session, switch the current terminal to `dev` |
 | `imx list`, `imx ls`, `imx` | List all sessions                                            |
+| `imx select`               | Interactively choose a session with a live preview           |
 | `imx cat dev`               | Print retained history and the active screen as text         |
 | `imx detach`                | Run inside a session to detach all of its connections        |
 | `imx kill dev`              | Terminate the session, including its shell, foreground jobs, and background jobs |

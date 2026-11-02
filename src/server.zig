@@ -16,6 +16,10 @@ const Client = struct {
     live: protocol.Queue = .{},
     live_started: bool = false,
     session: ?*Session = null,
+    preview: ?*Session = null,
+    preview_pending: bool = false,
+    preview_revision: ?u64 = null,
+    preview_primary: bool = false,
     size: sys.Size = .{ .rows = 24, .cols = 80 },
     snapshot: ?[]u8 = null,
     snapshot_offset: usize = 0,
@@ -44,6 +48,8 @@ const Session = struct {
     stream: Stream,
     input: protocol.Queue = .{},
     clients: std.ArrayList(*Client) = .empty,
+    previews: std.ArrayList(*Client) = .empty,
+    revision: u64 = 0,
     leader: ?*Client = null,
     input_client: ?*Client = null,
     exited: bool = false,
@@ -102,6 +108,14 @@ const Server = struct {
     }
 
     fn dropClient(self: *Server, client: *Client) !void {
+        if (client.preview) |session| {
+            for (session.previews.items, 0..) |candidate, index| {
+                if (candidate == client) {
+                    _ = session.previews.swapRemove(index);
+                    break;
+                }
+            }
+        }
         if (client.switch_peer) |other| {
             client.switch_peer = null;
             other.switch_peer = null;
@@ -143,6 +157,26 @@ const Server = struct {
     fn resize(self: *Server, session: *Session, size: sys.Size) !void {
         try size.set(session.fd);
         try session.term.resize(self.allocator, .{ .rows = size.rows, .cols = size.cols });
+        try self.changed(session);
+    }
+
+    fn sendPreview(self: *Server, client: *Client) !void {
+        const session = client.preview.?;
+        if (!client.preview_pending or client.preview_revision == session.revision) return;
+        // 会话内的选择界面使用备用屏幕，当前会话预览保留其原有主屏幕。
+        if (client.preview_primary and session.term.screens.active_key == .alternate and client.preview_revision != null) return;
+        const active = session.term.screens.active_key;
+        if (client.preview_primary) session.term.screens.switchTo(.primary);
+        defer session.term.screens.switchTo(active);
+        client.snapshot = try terminal.preview(self.allocator, &session.term, client.size);
+        client.preview_revision = session.revision;
+        client.preview_pending = false;
+        try self.updateClient(client);
+    }
+
+    fn changed(self: *Server, session: *Session) !void {
+        session.revision +%= 1;
+        for (session.previews.items) |client| if (!client.closing) try self.sendPreview(client);
     }
 
     fn finishSession(self: *Server, session: *Session, terminate: bool) !void {
@@ -153,6 +187,12 @@ const Server = struct {
             client.closing = true;
             try self.updateClient(client);
         }
+        for (session.previews.items) |client| {
+            client.preview = null;
+            client.closing = true;
+            try self.respond(client, .failure, "SessionNotFound");
+        }
+        session.previews.deinit(self.allocator);
         try self.unwatch(session.fd, session.id);
         session.stream.deinit();
         session.term.deinit(self.allocator);
@@ -209,8 +249,31 @@ const Server = struct {
 
     fn request(self: *Server, client: *Client, msg: protocol.Message) !void {
         if (client.closing) return error.InvalidMessage;
+        if (client.preview != null and msg.tag != .preview) return error.InvalidMessage;
         if (client.switch_name != null and msg.tag != .switch_session) return error.InvalidMessage;
         switch (msg.tag) {
+            .preview => {
+                if (client.session != null or client.snapshot != null or client.preview_pending or client.output.pending().len != 0) return error.InvalidMessage;
+                const parsed = std.json.parseFromSlice(protocol.PreviewOptions, self.allocator, msg.payload, .{}) catch |err| {
+                    if (err == error.OutOfMemory) return err;
+                    return error.InvalidMessage;
+                };
+                defer parsed.deinit();
+                try config.validateName(parsed.value.name);
+                try parsed.value.size.validate();
+                const session = self.sessions.get(parsed.value.name) orelse return error.SessionNotFound;
+                if (client.preview) |previous| {
+                    if (previous != session) return error.InvalidMessage;
+                    if (!std.meta.eql(client.size, parsed.value.size)) client.preview_revision = null;
+                } else {
+                    try session.previews.append(self.allocator, client);
+                    client.preview = session;
+                    client.preview_primary = c.getsid((try config.peer(client.fd)).pid) == session.pid;
+                }
+                client.size = parsed.value.size;
+                client.preview_pending = true;
+                try self.sendPreview(client);
+            },
             .attach => {
                 if (client.session != null or client.snapshot != null or msg.payload.len < 5) return error.InvalidMessage;
                 const fields = try protocol.Attach.decode(msg.payload);
@@ -476,6 +539,7 @@ const Server = struct {
                             self.allocator.free(snapshot);
                             client.snapshot = null;
                             client.snapshot_offset = 0;
+                            if (client.preview != null) try client.output.message(self.allocator, .done, "");
                         }
                     } else if (client.live.pending().len > 0) {
                         client.flushLive() catch |err| switch (err) {
@@ -498,6 +562,7 @@ const Server = struct {
                 if (count == 0) return self.finishSession(session, true);
                 session.stream.nextSlice(buffer[0..count]);
                 if (session.stream.handler.semantic_failure) return error.TerminalStateFailure;
+                try self.changed(session);
                 var i: usize = 0;
                 while (i < session.clients.items.len) {
                     const client = session.clients.items[i];

@@ -12,6 +12,7 @@ from test_uninstall import installation
 def test_completion_queries_leave_unused_runtime_untouched(sessions):
     assert sessions.run("__complete", "commands", "a").stdout == "attach\n"
     assert sessions.run("__complete", "commands", "l").stdout == "list\nls\n"
+    assert sessions.run("__complete", "commands", "s").stdout == "select\n"
     assert sessions.run("__complete", "commands", "-").stdout.splitlines() == ["-h", "--help", "-v", "--version"]
     assert sessions.run("__complete", "commands", "missing").stdout == ""
     assert sessions.run("__complete", "sessions", "").stdout == ""
@@ -61,6 +62,8 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
     prefix = installation.binary.parent.parent
     with CompletionShell(installation.environment, shell, prefix) as terminal:
         assert terminal.complete("imx a\t") == "imx attach "
+        assert terminal.complete("imx sel\t") == "imx select "
+        assert terminal.complete("imx select --he\t") == "imx select --help "
         assert terminal.complete("imx attach \t") == "imx attach "
         display = terminal.display()
         for name in [value for value in names if not value.startswith("-")]:

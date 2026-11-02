@@ -39,11 +39,19 @@ fn execute(init: std.process.Init.Minimal) !void {
         if (args.len != 4) return error.InvalidArguments;
         return completion.run(allocator, io, args[2], args[3]);
     }
-    const invocation = switch (try cli.parse(allocator, args[1..])) {
+    var invocation = switch (try cli.parse(allocator, args[1..])) {
         .help => |target| return cli.help(allocator, target),
         .version => return sys.writeAll(1, "imx " ++ version ++ "\n", false),
         .run => |value| value,
     };
+    var selected: ?[]u8 = null;
+    defer if (selected) |name| allocator.free(name);
+    if (invocation.command == .select) {
+        var preferences = try settings.load(allocator, io, .{});
+        defer preferences.deinit(allocator);
+        selected = try @import("select.zig").run(allocator, io, init.environ);
+        invocation = .{ .command = .attach, .name = selected orelse return };
+    }
     const tag: protocol.Tag = switch (invocation.command) {
         .uninstall => return uninstall.run(allocator, io, args[0]),
         .update => return update.run(allocator, io, init.environ, invocation.update_mode),
@@ -52,7 +60,7 @@ fn execute(init: std.process.Init.Minimal) !void {
         .cat => .cat,
         .detach => .detach,
         .kill => .kill,
-        .help => unreachable,
+        .help, .select => unreachable,
     };
     const name = if (tag == .detach) config.env("IMX_SESSION") orelse return cli.fail(allocator, "Run 'imx detach' inside a session (NotInsideSession).", .{}) else invocation.name;
     if (tag != .list) config.validateName(name) catch |err| return cli.fail(allocator, "Invalid session name '{s}': use 1-64 ASCII letters, digits, dots, underscores or hyphens; '.' and '..' are reserved ({s}).", .{ name, @errorName(err) });
