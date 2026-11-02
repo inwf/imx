@@ -123,9 +123,11 @@ focus_up = { key = 'Up', alt = true }
 focus_down = { key = 'Down', alt = true }
 
 # Alt+1 至 Alt+9 对应窗格标题中的编号 1 至 9；关闭窗格后其他编号保持不变。
+# 新窗格复用最小的空闲编号。
 # 指定编号不存在时保持当前焦点；修改这些快捷键后重新启动整个界面生效。
 #
 # Alt+1 through Alt+9 select title numbers 1 through 9; remaining panes keep their numbers after a pane closes.
+# New panes reuse the smallest available number.
 # Missing numbers keep the current focus; restart the entire interface to apply changed bindings.
 focus_1 = { key = '1', alt = true }
 focus_2 = { key = '2', alt = true }

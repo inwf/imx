@@ -65,7 +65,7 @@ def test_removed_directory_cancels_only_the_new_pane(sessions, attached):
     terminal.focus(2)
     terminal.command(f"cd {shlex.quote(str(sessions.path))}; printf alive", "source-after-failure", "alive")
     terminal.split("down")
-    terminal.visible("4: shell")
+    terminal.visible("3: shell")
     terminal.command("pwd", "retry-directory", f"{sessions.path}\n")
 
 
@@ -84,7 +84,7 @@ def test_closing_a_pending_split_cancels_its_request(sessions):
         backend.resume()
     terminal.command("printf alive", "source-after-cancel", "alive")
     terminal.split()
-    terminal.visible("3: shell")
+    terminal.visible("2: shell")
     terminal.command("printf ready", "retry-after-cancel", "ready")
 
 

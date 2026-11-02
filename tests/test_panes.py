@@ -183,6 +183,39 @@ def test_numbered_focus_matches_titles_after_closing_panes(sessions):
     terminal.focus(1)
 
 
+def test_new_panes_reuse_the_smallest_available_number(sessions):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("2: shell")
+    terminal.split("down")
+    terminal.visible("3: shell")
+    identities = set()
+    for iteration in range(12):
+        terminal.focus(2)
+        terminal.child.send("\x1bw")
+        terminal.wait(lambda: all(" 2: " not in row for row in terminal.screen.display))
+        terminal.visible("3: shell")
+        terminal.focus(1)
+        terminal.split("down")
+        terminal.visible("2: shell")
+        terminal.focus(3)
+        terminal.focus(2)
+        identity = sessions.path / f"pane-identity-{iteration}"
+        terminal.child.sendline(f"printf '%s' \"$IMX_PANE\" > {shlex.quote(str(identity))}")
+        terminal.wait(lambda: identity.exists() and identity.read_text() != "")
+        assert identity.read_text() not in identities
+        identities.add(identity.read_text())
+        terminal.command("printf '%s' \"$IMX_SESSION\"", f"plain-shell-{iteration}", "")
+    terminal.focus(1)
+    terminal.child.send("\x1bw")
+    terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
+    terminal.focus(3)
+    terminal.split("down")
+    terminal.visible("1: shell")
+    for number in (2, 3, 1):
+        terminal.focus(number)
+
+
 @pytest.mark.parametrize("mode, left, right, first, second", [
     ("legacy", "\x1b[1;3D", "\x1b[1;3C", "\x1b1", "\x1b2"),
     ("kitty", "\x1b[57350;3u", "\x1b[57351;3u", "\x1b[49;3u", "\x1b[50;3u"),

@@ -136,6 +136,7 @@ const Node = struct {
 const Pane = struct {
     app: *App,
     id: usize,
+    number: usize,
     pid: c.pid_t = 0,
     exit_status: ?c_int = null,
     fd: c_int = -1,
@@ -324,6 +325,14 @@ const App = struct {
     keyboard_flags: u5 = 5,
     status: ?[]u8 = null,
 
+    fn availableNumber(self: *const App) usize {
+        var number: usize = 1;
+        candidate: while (true) : (number += 1) {
+            for (self.panes.items) |pane| if (pane.number == number) continue :candidate;
+            return number;
+        }
+    }
+
     fn create(self: *App, cwd: []const u8, size: sys.Size, session: ?[]const u8, request: ?DirectoryRequest) !*Pane {
         try self.panes.ensureUnusedCapacity(self.allocator, 1);
         const pane = try self.allocator.create(Pane);
@@ -334,7 +343,7 @@ const App = struct {
         errdefer self.allocator.free(path);
         const listener = try context.listen(address);
         errdefer sys.close(listener);
-        pane.* = .{ .app = self, .id = self.next_id, .listener = listener, .address = address, .cwd = path, .initial = session != null, .rect = .{ .width = size.cols, .height = size.rows }, .term = try terminal.init(self.allocator, self.io, size), .stream = undefined };
+        pane.* = .{ .app = self, .id = self.next_id, .number = self.availableNumber(), .listener = listener, .address = address, .cwd = path, .initial = session != null, .rect = .{ .width = size.cols, .height = size.rows }, .term = try terminal.init(self.allocator, self.io, size), .stream = undefined };
         pane.stream = pane.term.vtStream();
         errdefer {
             pane.stream.deinit();
@@ -416,7 +425,7 @@ const App = struct {
     fn focusNumber(self: *App, number: usize) !void {
         if (!self.composed) return;
         for (self.panes.items) |pane| {
-            if (pane.id == number) return self.focus(pane);
+            if (pane.number == number) return self.focus(pane);
         }
     }
 
@@ -532,7 +541,7 @@ const App = struct {
         const frame = arena.allocator();
         self.vx.screen.clear();
         for (self.panes.items) |pane| {
-            const title = try std.fmt.allocPrint(frame, " {d}: {s} ", .{ pane.id, if (pane.directory_request != null or pane.starting != null) "starting" else if (pane.attached) |state| state.value.session else "shell" });
+            const title = try std.fmt.allocPrint(frame, " {d}: {s} ", .{ pane.number, if (pane.directory_request != null or pane.starting != null) "starting" else if (pane.attached) |state| state.value.session else "shell" });
             if (pane.hold_until == null) try pane.state.update(self.allocator, &pane.term);
             try render.draw(frame, &self.vx.screen, &pane.term, &pane.state, pane.rect, self.offset, pane == self.focused, self.focused_border_color, title);
         }
