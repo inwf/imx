@@ -152,7 +152,7 @@ imx kill dev     # terminate the session
 
 Reattaching restores the screen, colors, and retained history. Full-screen programs such as Vim return with the document as you left it.
 
-Exiting or detaching restores normal terminal display and input modes and places the outer shell prompt on a new line at the bottom of the screen.
+Exiting or detaching restores normal terminal display and input modes, moves the previous screen into scrollback, and places the outer shell prompt at the top left. In split mode this applies within the affected pane. Closing the last pane also returns to the top left of the outer terminal.
 
 To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal moves to `dev2`, and both sessions keep their programs and history. If the target does not exist, it is created using the current directory, environment, and `$SHELL`. Run `imx attach dev1` to return. Other terminals attached to `dev1` stay connected. See [session switching](docs/usage.md#切换会话) for connection selection, error handling, and version requirements.
 
@@ -170,6 +170,8 @@ Use **Alt+Arrow** to focus a neighboring pane. **Alt+1** through **Alt+9** selec
 Mouse mode defaults to off (`panes.mouse = false`). At ordinary shell prompts, drag to make a native terminal selection and use the terminal's copy shortcut, such as Command+C in iTerm2. Native selections may span multiple panes. Set `panes.mouse = true` to enable clicking to focus panes, scrolling pane history, dragging separators, and selecting text within a pane. Exit the entire interface and attach again to apply changes. Applications that request mouse input still receive it; with mouse mode off, only the focused pane receives mouse events. In iTerm2, Option+drag makes a native selection while an application is using the mouse.
 
 With mouse mode enabled, drag a separator with the left mouse button to resize adjacent panes. Both edges of the separator accept dragging, including in nested splits. Programs receive their updated terminal dimensions while you drag. Each pane keeps at least 12 columns and 5 rows including its border; the adjusted proportions are retained when the terminal resizes.
+
+Set `panes.horizontal_gap` for blank columns between side-by-side pane borders and `panes.vertical_gap` for blank rows between top and bottom pane borders. Both default to `0` and accept integers from `0` to `255`. Gaps stay fixed during terminal resizing and support dragging when mouse mode is enabled. Restart the interface to apply changes.
 
 With mouse mode enabled, drag over text to highlight a selection within its pane and copy it when you release the mouse. Double-click selects a word; triple-click selects a line. Dragging beyond the top or bottom scrolls through history. Copying uses OSC 52, including over SSH, and requires a terminal that supports and permits clipboard access. Applications that handle mouse input keep receiving it; hold Shift while dragging to select text. Keyboard reporting follows the focused program, preserving normal input-method text entry at shell prompts.
 
@@ -204,6 +206,7 @@ The [full configuration template](config.example.toml) documents every option, i
 - **`completion.enabled`** switches Tab completion of commands and session names. The default is `true`.
 - **`panes.mouse`** enables imx mouse focus, separator resizing, history scrolling, and pane text selection. The default is `false`, including when omitted. At shell prompts, the terminal handles selection and copying while this option is off. Restart the interface to apply changes.
 - **`panes.focused_border_color`** sets the focused pane's border and title color with a `"#RRGGBB"` string, such as `"#33AAFF"`. Omit it to use the terminal's cyan color. It applies to attached sessions and plain shell panes. Restart the interface to apply changes.
+- **`panes.horizontal_gap` / `panes.vertical_gap`** set blank columns / rows between adjacent pane borders. Both default to `0`, accept integers from `0` to `255`, and take effect after restarting the interface.
 - **`keybindings.split_right`**, **`keybindings.split_down`** split the focused pane horizontally across the screen or vertically down it. Defaults are Alt+D and Alt+Shift+D; `alt` means Option on macOS. Each new pane starts a plain shell in the current directory. Restart the interface to apply changes to these bindings. Duplicate shortcuts are rejected.
 - **`keybindings.close_pane`** closes the focused pane and terminates its attached session and programs. The default is Alt+W. Detach first to preserve the session. Restart the interface to apply changes to this binding.
 - **`keybindings.focus_left`**, **`focus_right`**, **`focus_up`**, **`focus_down`** select a neighboring pane with Alt+Arrow. **`keybindings.focus_1`** through **`focus_10`** select numbered panes with Alt+1 through Alt+9 and Alt+0. Restart the interface to apply changes.

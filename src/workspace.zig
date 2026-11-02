@@ -37,6 +37,7 @@ const Node = struct {
         pane: *Pane,
         split: struct {
             axis: Axis,
+            gap: u16 = 0,
             first: *Node,
             second: *Node,
             ratio: struct { first: u16 = 1, total: u16 = 2 } = .{},
@@ -49,7 +50,7 @@ const Node = struct {
             .split => |split| blk: {
                 const a = split.first.minimum();
                 const b = split.second.minimum();
-                break :blk if (split.axis == .right) .{ .cols = a.cols + b.cols, .rows = @max(a.rows, b.rows) } else .{ .cols = @max(a.cols, b.cols), .rows = a.rows + b.rows };
+                break :blk if (split.axis == .right) .{ .cols = a.cols + split.gap + b.cols, .rows = @max(a.rows, b.rows) } else .{ .cols = @max(a.cols, b.cols), .rows = a.rows + split.gap + b.rows };
             },
         };
     }
@@ -64,13 +65,15 @@ const Node = struct {
                 const a = split.first.minimum();
                 const b = split.second.minimum();
                 if (split.axis == .right) {
-                    first.width = std.math.clamp(@as(u16, @intCast(@as(u32, rect.width) * split.ratio.first / split.ratio.total)), a.cols, rect.width - b.cols);
-                    second.x += first.width;
-                    second.width -= first.width;
+                    const available = rect.width - split.gap;
+                    first.width = std.math.clamp(@as(u16, @intCast(@as(u32, available) * split.ratio.first / split.ratio.total)), a.cols, available - b.cols);
+                    second.x += first.width + split.gap;
+                    second.width = available - first.width;
                 } else {
-                    first.height = std.math.clamp(@as(u16, @intCast(@as(u32, rect.height) * split.ratio.first / split.ratio.total)), a.rows, rect.height - b.rows);
-                    second.y += first.height;
-                    second.height -= first.height;
+                    const available = rect.height - split.gap;
+                    first.height = std.math.clamp(@as(u16, @intCast(@as(u32, available) * split.ratio.first / split.ratio.total)), a.rows, available - b.rows);
+                    second.y += first.height + split.gap;
+                    second.height = available - first.height;
                 }
                 split.first.arrange(first);
                 split.second.arrange(second);
@@ -85,7 +88,7 @@ const Node = struct {
             .split => |split| blk: {
                 const coordinate = if (split.axis == .right) x else y;
                 const boundary = if (split.axis == .right) split.second.rect.x else split.second.rect.y;
-                if (coordinate == boundary or coordinate == @as(i32, boundary) - 1) break :blk self;
+                if (coordinate >= @as(i32, boundary) - split.gap - 1 and coordinate <= boundary) break :blk self;
                 break :blk split.first.separator(x, y) orelse split.second.separator(x, y);
             },
         };
@@ -96,8 +99,8 @@ const Node = struct {
         const horizontal = split.axis == .right;
         const a = split.first.minimum();
         const b = split.second.minimum();
-        const total = if (horizontal) self.rect.width else self.rect.height;
-        const desired = (if (horizontal) x - self.rect.x else y - self.rect.y) - grab_offset;
+        const total = (if (horizontal) self.rect.width else self.rect.height) - split.gap;
+        const desired = (if (horizontal) x - self.rect.x else y - self.rect.y) - grab_offset - split.gap;
         const first: u16 = @intCast(std.math.clamp(desired, if (horizontal) a.cols else a.rows, total - (if (horizontal) b.cols else b.rows)));
         if (first == (if (horizontal) split.first.rect.width else split.first.rect.height)) return false;
         split.ratio = .{ .first = first, .total = total };
@@ -326,6 +329,8 @@ const App = struct {
     offset: [2]u16 = .{ 0, 0 },
     vx: vaxis.Vaxis,
     focused_border_color: vaxis.Color,
+    horizontal_gap: u16,
+    vertical_gap: u16,
     output: protocol.Queue = .{ .limit = 16 * 1024 * 1024 },
     keys: keyboard.Input,
     keyboard_flags: u5 = 5,
@@ -465,7 +470,8 @@ const App = struct {
         const selected = self.focused;
         if (selected.directory_request != null or selected.starting != null) return self.message("This pane is still starting.");
         const rect = if (self.composed) selected.rect else Rect{ .width = self.size.cols, .height = self.size.rows };
-        if (rect.width > self.size.cols or rect.height > self.size.rows or rect.width < (if (axis == .right) @as(u16, 24) else 12) or rect.height < (if (axis == .down) @as(u16, 10) else 5)) {
+        const gap = if (axis == .right) self.horizontal_gap else self.vertical_gap;
+        if (rect.width > self.size.cols or rect.height > self.size.rows or rect.width < (if (axis == .right) 24 + gap else 12) or rect.height < (if (axis == .down) 10 + gap else 5)) {
             try self.message("Not enough space to split this pane.");
             return;
         }
@@ -491,7 +497,7 @@ const App = struct {
         second.* = .{ .rect = rect, .content = .{ .pane = pane } };
         self.cancelResize();
         self.cancelSelection();
-        node.content = .{ .split = .{ .axis = axis, .first = first, .second = second } };
+        node.content = .{ .split = .{ .axis = axis, .gap = gap, .first = first, .second = second } };
         committed = true;
         if (!self.composed) {
             self.composed = true;
@@ -894,7 +900,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     defer environment.deinit();
     var executable: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &executable);
-    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = if (preferences.focused_border_color) |rgb| .{ .rgb = .{ rgb.r, rgb.g, rgb.b } } else .{ .index = 6 }, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator) };
+    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = if (preferences.focused_border_color) |rgb| .{ .rgb = .{ rgb.r, rgb.g, rgb.b } } else .{ .index = 6 }, .horizontal_gap = preferences.horizontal_gap, .vertical_gap = preferences.vertical_gap, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator) };
     defer {
         var writer: std.Io.Writer.Allocating = .init(allocator);
         defer writer.deinit();

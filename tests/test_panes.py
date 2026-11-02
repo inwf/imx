@@ -640,7 +640,7 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
     sessions.clients.append(outer)
     outer.delaybeforesend = 0
     outer.expect(r"[#$] ")
-    outer.sendline("stty -g > pane-before; imx attach dev; printf '\\nWORKSPACE_CLOSED\\n'")
+    outer.sendline("stty -g > pane-before; imx attach dev; printf 'WORKSPACE_CLOSED\\n'")
     outer.expect(r"[#$] ")
     terminal = PaneTerminal(sessions, child=outer)
     terminal.split()
@@ -650,7 +650,8 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
     outer.send("\x1b\\")
     terminal.visible("1: shell")
     outer.send(close)
-    outer.expect_exact("\r\nWORKSPACE_CLOSED\r\n")
+    outer.expect_exact("WORKSPACE_CLOSED\r\n")
+    terminal.wait(lambda: terminal.screen.display[0].startswith("WORKSPACE_CLOSED"))
     outer.sendline("stty -g > pane-after; printf '\\nOUTER_RESTORED\\n'")
     outer.expect_exact("\r\nOUTER_RESTORED\r\n")
     assert (sessions.path / "pane-before").read_text() == (sessions.path / "pane-after").read_text()

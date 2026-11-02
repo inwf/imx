@@ -40,6 +40,8 @@ pub const Settings = struct {
     keybindings: keyboard.Bindings = .{},
     mouse_enabled: bool = false,
     focused_border_color: ?vt.color.RGB = null,
+    horizontal_gap: u16 = 0,
+    vertical_gap: u16 = 0,
     created_format: ?[:0]u8 = null,
     file_missing: bool = false,
 
@@ -165,7 +167,7 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
     if (panes.type != toml.TOML_UNKNOWN) {
         const field = context.child("panes");
         if (panes.type != toml.TOML_TABLE) return field.reject(error.InvalidPanesConfiguration, "expected a table");
-        try validateKeys(field, panes, &.{ "mouse", "focused_border_color" });
+        try validateKeys(field, panes, &.{ "mouse", "focused_border_color", "horizontal_gap", "vertical_gap" });
         const mouse = toml.toml_get(panes, "mouse");
         if (mouse.type != toml.TOML_UNKNOWN) {
             if (mouse.type != toml.TOML_BOOLEAN) return field.child("mouse").reject(error.PaneMouseMustBeBoolean, "expected a boolean (true or false)");
@@ -178,6 +180,15 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
             const value = color.u.str.ptr[0..@intCast(color.u.str.len)];
             if (value.len != 7 or value[0] != '#') return entry.reject(error.InvalidFocusedBorderColor, "expected # followed by six hexadecimal digits (#RRGGBB)");
             preferences.focused_border_color = vt.color.RGB.parse(value) catch return entry.reject(error.InvalidFocusedBorderColor, "expected # followed by six hexadecimal digits (#RRGGBB)");
+        }
+        inline for (.{ "horizontal_gap", "vertical_gap" }) |name| {
+            const gap = toml.toml_get(panes, name);
+            if (gap.type != toml.TOML_UNKNOWN) {
+                const entry = field.child(name);
+                if (gap.type != toml.TOML_INT64) return entry.reject(error.PaneGapMustBeInteger, "expected an integer from 0 to 255");
+                if (gap.u.int64 < 0 or gap.u.int64 > 255) return entry.reject(error.InvalidPaneGap, "expected an integer from 0 to 255");
+                @field(preferences, name) = @intCast(gap.u.int64);
+            }
         }
     }
     const listing = toml.toml_get(root, "list");
@@ -227,6 +238,8 @@ test "default configuration matches built-in settings" {
     try std.testing.expectEqualDeep(defaults.keybindings, preferences.keybindings);
     try std.testing.expectEqual(defaults.mouse_enabled, preferences.mouse_enabled);
     try std.testing.expectEqualDeep(defaults.focused_border_color, preferences.focused_border_color);
+    try std.testing.expectEqual(defaults.horizontal_gap, preferences.horizontal_gap);
+    try std.testing.expectEqual(defaults.vertical_gap, preferences.vertical_gap);
     try std.testing.expectEqualStrings(defaults.createdFormat(), preferences.createdFormat());
 }
 

@@ -61,6 +61,24 @@ mouse = false
 # Exit the entire interface and attach again to apply changes.
 # focused_border_color = "#33AAFF"
 
+# 设置左右相邻窗格边框之间的空白列数，整数范围为 0 至 255，默认 0。
+# 窗格边框保留；间距只添加在窗格之间，不添加到整个界面的外侧。
+# 空间不足时无法继续分屏；修改后退出整个界面并重新 attach 生效。
+#
+# Set the blank columns between side-by-side pane borders, an integer from 0 to 255; default 0.
+# Pane borders remain visible; gaps are added between panes, with no outer padding.
+# Splitting requires enough space; exit the entire interface and attach again to apply changes.
+horizontal_gap = 0
+
+# 设置上下相邻窗格边框之间的空白行数，整数范围为 0 至 255，默认 0。
+# 开启鼠标模式后，两种间距区域都可以拖动调整窗格大小。
+# 缩放终端时保持配置的间距；修改后退出整个界面并重新 attach 生效。
+#
+# Set the blank rows between vertically stacked pane borders, an integer from 0 to 255; default 0.
+# With mouse mode enabled, both gap areas support dragging to resize panes.
+# Gaps remain fixed when the terminal resizes; restart the entire interface to apply changes.
+vertical_gap = 0
+
 [keybindings]
 # key 指定单个字符或按键名称；ASCII 字母和按键名称不区分大小写。
 # 按键名称支持 Enter、Tab、Escape、Space、Backspace、Insert、Delete、Left、Right、Up、Down、

@@ -18,8 +18,10 @@ pub fn finish(writer: *std.Io.Writer, size: sys.Size) !void {
     try writer.writeAll("\x1b[3g");
     var col: usize = 8;
     while (col < size.cols) : (col += 8) try writer.print("\x1b[{d}G\x1bH", .{col + 1});
-    // 在底部追加空行，保留会话内容并为外层提示符提供完整的一行。
-    try writer.print("\x1b[{d};1H\r\n", .{size.rows});
+    // 将当前画面移入历史记录，让外层提示符从左上角开始。
+    try writer.print("\x1b[{d};1H", .{size.rows});
+    for (0..size.rows) |_| try writer.writeAll("\r\n");
+    try writer.writeAll("\x1b[H");
 }
 
 test "finish restores shell display and input after interrupted application output" {
@@ -58,7 +60,7 @@ test "finish restores shell display and input after interrupted application outp
         try std.testing.expectEqual(@as(u5, 0), term.screens.active.kitty_keyboard.current().int());
         try std.testing.expectEqualDeep(colors.palette.current, term.colors.palette.current);
         try std.testing.expectEqualDeep(colors.background, term.colors.background);
-        try std.testing.expectEqual(@as(u16, 23), term.screens.active.cursor.y);
+        try std.testing.expectEqual(@as(u16, 0), term.screens.active.cursor.y);
         try std.testing.expectEqual(@as(u16, 0), term.screens.active.cursor.x);
         for (0..size.cols) |col| try std.testing.expectEqual(col != 0 and col % 8 == 0, term.tabstops.get(col));
         stream.nextSlice("q#é中文");

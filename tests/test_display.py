@@ -7,6 +7,8 @@ import pyte
 import pytest
 
 from test_prompt import setup_shell
+from test_panes import PaneTerminal
+from test_pane_resize import origin
 
 
 @pytest.mark.parametrize("action", ["exit", "detach", "shortcut", "kill", "terminate"])
@@ -48,12 +50,14 @@ def test_return_to_outer_shell_restores_display(sessions, action, modes):
             frontend, = psutil.Process(outer.pid).children()
             frontend.send_signal(signal.SIGTERM)
     outer.expect_exact("BASE:~> ")
-    screen = pyte.Screen(80, 24)
+    screen = pyte.HistoryScreen(80, 24)
     stream = pyte.Stream(screen)
     stream.feed(capture.getvalue())
-    assert screen.cursor.y == 23
+    assert screen.cursor.y == 0
     assert screen.margins is None or screen.margins == (0, 23)
-    assert screen.display[-1].startswith("BASE:~> ")
+    assert screen.display[0].startswith("BASE:~> ")
+    assert all(not row.strip() for row in screen.display[1:])
+    assert any("INNER> " in "".join(cell.data for _, cell in sorted(row.items())) for row in screen.history.top)
 
     start = len(capture.getvalue())
     outer.sendline("stty -g > ../after; seq 1 30; printf '%100s\\n' WRAP_END; printf 'q#AFTER_EXIT\\nSECOND_LINE\\n'")
@@ -107,6 +111,35 @@ def test_detach_uses_resized_terminal_dimensions(sessions, rows, cols):
     child.expect(pexpect.EOF)
     screen = pyte.Screen(cols, rows)
     pyte.Stream(screen).feed(capture.getvalue())
-    assert screen.cursor.y == rows - 1
+    assert screen.cursor.y == 0
     assert screen.cursor.x == 0
     assert screen.margins is None or screen.margins == (0, rows - 1)
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+@pytest.mark.parametrize("action", ["exit", "detach", "shortcut"])
+@pytest.mark.parametrize("number, direction", [(1, "right"), (2, "right"), (2, "down")])
+def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number, direction):
+    setup_shell(sessions, shell)
+    terminal = PaneTerminal(sessions, initialize=False)
+    terminal.split(direction)
+    terminal.visible("2: shell")
+    if number == 2:
+        terminal.child.sendline("imx attach test")
+        terminal.visible("2: test")
+    else:
+        terminal.focus(1)
+    terminal.child.sendline("printf '\\033[10;1HSESSION_BOTTOM\\n'")
+    terminal.visible("SESSION_BOTTOM")
+    if action == "shortcut":
+        terminal.child.send("\x1b\\")
+    else:
+        terminal.child.sendline("exit" if action == "exit" else "imx detach")
+    terminal.visible(f"{number}: shell")
+    left, top = origin(terminal, number)
+    width = 50 if direction == "right" else 100
+    height = 30 if direction == "right" else 15
+    terminal.wait(lambda: "BASE:" in terminal.screen.display[top + 1][left + 1:left + width - 1])
+    assert all(not row[left + 1:left + width - 1].strip() for row in terminal.screen.display[top + 2:top + height - 1])
+    assert terminal.screen.cursor.y == top + 1
+    terminal.command("printf ready", "after-detach", "ready")
