@@ -188,11 +188,11 @@ def test_select_current_session_preserves_screen_and_stays_idle(sessions, confir
 def test_select_in_plain_pane_attaches_to_that_pane(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx select")
     terminal.visible("Enter/Space")
     terminal.child.send("\r")
-    terminal.visible("2: dev")
+    terminal.visible("1: dev")
     terminal.command("printf '%s' \"$IMX_SESSION\"", "selected-session", "dev")
     assert sessions.sessions()[0]["CLIENTS"] == "2"
 

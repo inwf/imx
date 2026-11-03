@@ -381,7 +381,7 @@ const App = struct {
     }
 
     fn availableNumber(self: *const App) usize {
-        var number: usize = 1;
+        var number: usize = 0;
         candidate: while (true) : (number += 1) {
             for (self.panes.items) |pane| if (pane.number == number) continue :candidate;
             return number;
@@ -664,7 +664,7 @@ const App = struct {
                 .shrink_right => return self.resizePane(.right, .shrink),
                 .shrink_up => return self.resizePane(.up, .shrink),
                 .shrink_down => return self.resizePane(.down, .shrink),
-                .focus_1, .focus_2, .focus_3, .focus_4, .focus_5, .focus_6, .focus_7, .focus_8, .focus_9, .focus_10 => return self.focusNumber(@backingInt(action) - @backingInt(keyboard.Action.focus_1) + 1),
+                .focus_0, .focus_1, .focus_2, .focus_3, .focus_4, .focus_5, .focus_6, .focus_7, .focus_8, .focus_9 => return self.focusNumber(@backingInt(action) - @backingInt(keyboard.Action.focus_0)),
                 else => {},
             }
             if (pane.close_requested) return;
@@ -975,7 +975,8 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     defer environment.deinit();
     var executable: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &executable);
-    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = if (preferences.focused_border_color) |rgb| .{ .rgb = .{ rgb.r, rgb.g, rgb.b } } else .{ .index = 6 }, .horizontal_gap = preferences.horizontal_gap, .vertical_gap = preferences.vertical_gap, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator) };
+    const rgb = preferences.focused_border_color;
+    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = .{ .rgb = .{ rgb.r, rgb.g, rgb.b } }, .horizontal_gap = preferences.horizontal_gap, .vertical_gap = preferences.vertical_gap, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator) };
     defer {
         var writer: std.Io.Writer.Allocating = .init(allocator);
         defer writer.deinit();
@@ -987,6 +988,8 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         app.panes.deinit(allocator);
     }
     app.vx.caps.rgb = true;
+    // 使用分号分隔的颜色参数，兼容 VS Code 和 Termux 等终端。
+    app.vx.sgr = .legacy;
     _ = try sys.check(c.tcgetattr(0, &app.termios), "tcgetattr(workspace)");
     const signals = try sys.signalFd(&.{ c.SIGWINCH, c.SIGCHLD, c.SIGHUP, c.SIGTERM, c.SIGINT });
     defer sys.close(signals);

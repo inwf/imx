@@ -119,7 +119,7 @@ def test_detach_uses_resized_terminal_dimensions(sessions, rows, cols):
 
 @pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
 @pytest.mark.parametrize("action", ["exit", "detach", "shortcut"])
-@pytest.mark.parametrize("number, direction", [(1, "right"), (2, "right"), (2, "down")])
+@pytest.mark.parametrize("number, direction", [(0, "right"), (1, "right"), (1, "down")])
 @pytest.mark.parametrize("directory_name", [None, "d" * 39, "d" * 46])
 def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number, direction, directory_name):
     setup_shell(sessions, shell)
@@ -130,7 +130,7 @@ def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number
         terminal.child.sendline(f"cd {shlex.quote(str(directory))}; printf '\\nDISPLAY_DIRECTORY_READY\\n'")
         terminal.child.expect_exact("\r\nDISPLAY_DIRECTORY_READY\r\n")
     terminal.split(direction)
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     width = 50 if direction == "right" else 100
     height = 30 if direction == "right" else 15
 
@@ -142,16 +142,16 @@ def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number
         left, top = origin(terminal, number)
         return terminal.screen.cursor.x - left - 1, terminal.screen.cursor.y - top - 1
 
-    terminal.wait(lambda: "> " in "".join(contents(2)))
+    terminal.wait(lambda: "> " in "".join(contents(1)))
     terminal.child.send("\x0c")
-    terminal.wait(lambda: contents(2)[0].strip() and "> " in "".join(contents(2)))
-    expected_contents = contents(2)
-    expected_cursor = cursor(2)
-    if number == 2:
+    terminal.wait(lambda: contents(1)[0].strip() and "> " in "".join(contents(1)))
+    expected_contents = contents(1)
+    expected_cursor = cursor(1)
+    if number == 1:
         terminal.child.sendline("imx attach test")
-        terminal.visible("2: test")
+        terminal.visible("1: test")
     else:
-        terminal.focus(1)
+        terminal.focus(0)
     terminal.child.sendline("printf '\\033[10;1HSESSION_BOTTOM\\n'")
     terminal.visible("SESSION_BOTTOM")
     if action == "shortcut":

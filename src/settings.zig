@@ -39,7 +39,7 @@ pub const Settings = struct {
     completion_enabled: bool = true,
     keybindings: keyboard.Bindings = .{},
     mouse_enabled: bool = false,
-    focused_border_color: ?vt.color.RGB = null,
+    focused_border_color: vt.color.RGB = .{ .r = 0x96, .g = 0x9c, .b = 0xd5 },
     horizontal_gap: u16 = 0,
     vertical_gap: u16 = 0,
     created_format: ?[:0]u8 = null,

@@ -168,7 +168,7 @@ While attached, press **Alt+D** to split the focused pane left and right, or **A
 
 A new pane shows `starting` while its directory is queried and its shell starts. Other panes remain usable, and typed input is queued for the new shell. Startup has a two-second deadline; a failure closes the new pane and displays the reason. Alt+W also cancels a pending pane.
 
-Use **Alt+Arrow** to focus a neighboring pane. **Alt+1** through **Alt+9** select the number shown in a pane's title; **Alt+0** selects number 10. Pane numbers stay unchanged when another pane closes, and new panes reuse the smallest available number. A missing neighbor or number keeps the current focus. These shortcuts also select plain shell panes; use arrows for numbers above 10, or click with mouse mode enabled.
+Use **Alt+Arrow** to focus a neighboring pane. Pane numbers start at **0**; **Alt+0** through **Alt+9** select the matching number shown in a pane's title. Pane numbers stay unchanged when another pane closes, and new panes reuse the smallest available number. A missing neighbor or number keeps the current focus. These shortcuts also select plain shell panes; use arrows for numbers above 9, or click with mouse mode enabled.
 
 Press **Alt+Z** to temporarily zoom the focused pane to fill the interface; its title shows `[zoom]`. Press it again to restore the layout, proportions, and focus. Other panes retain their terminal dimensions and keep receiving output. Resizing the terminal keeps the pane zoomed; restoring the layout recalculates it using the saved proportions. Focusing another pane, splitting, using a pane resize shortcut, or closing the focused pane restores the split layout before the action. With only one pane, the shortcut leaves the display unchanged.
 
@@ -190,7 +190,7 @@ Closing the terminal discards the layout and terminates the plain pane shells wh
 
 ### 5. Make it yours
 
-Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with settings for the session prompt, completion, the `CREATED` format, and mouse mode, and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
+Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with settings for the session prompt, completion, the `CREATED` format, mouse mode, and focused pane color, and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
 
 The generated file contains the following defaults:
 
@@ -206,6 +206,7 @@ enabled = true
 
 [panes]
 mouse = false
+focused_border_color = "#969CD5"
 ```
 
 The [full configuration template](config.example.toml) lists every option with concise English and Chinese comments; active entries use built-in defaults. Copy the `[keybindings]` entries you want to customize into your configuration. Detailed behavior and when changes take effect are covered below and in the [usage guide](docs/usage.md#配置文件与会话提示符).
@@ -214,12 +215,12 @@ The [full configuration template](config.example.toml) lists every option with c
 - **`list.created_format`** formats the `CREATED` column with `strftime` fields. The default shows `10-30 14:05:09`; `%Y-%m-%d %H:%M:%S` adds the year.
 - **`completion.enabled`** switches Tab completion of commands and session names. The default is `true`.
 - **`panes.mouse`** enables imx mouse focus, separator resizing, history scrolling, and pane text selection. The default is `false`, including when omitted. At shell prompts, the terminal handles selection and copying while this option is off. Restart the interface to apply changes.
-- **`panes.focused_border_color`** sets the focused pane's border and title color with a `"#RRGGBB"` string, such as `"#33AAFF"`. Omit it to use the terminal's cyan color. It applies to attached sessions and plain shell panes. Restart the interface to apply changes.
+- **`panes.focused_border_color`** sets the focused pane's border and title color with a `"#RRGGBB"` string. The default is `"#969CD5"`, including when omitted. It applies to attached sessions and plain shell panes. Restart the interface to apply changes.
 - **`panes.horizontal_gap` / `panes.vertical_gap`** set blank columns / rows between adjacent pane borders. Both default to `0`, accept integers from `0` to `255`, and take effect after restarting the interface.
 - **`keybindings.split_right`**, **`keybindings.split_down`** split the focused pane horizontally across the screen or vertically down it. Defaults are Alt+D and Alt+Shift+D; `alt` means Option on macOS. Each new pane starts a plain shell in the current directory. Restart the interface to apply changes to these bindings. Duplicate shortcuts are rejected.
 - **`keybindings.close_pane`** closes the focused pane and terminates its attached session and programs. The default is Alt+W. Detach first to preserve the session. Restart the interface to apply changes to this binding.
 - **`keybindings.zoom_pane`** temporarily zooms the focused pane and restores the layout when repeated. The default is Alt+Z. Restart the interface to apply changes to this binding.
-- **`keybindings.focus_left`**, **`focus_right`**, **`focus_up`**, **`focus_down`** select a neighboring pane with Alt+Arrow. **`keybindings.focus_1`** through **`focus_10`** select numbered panes with Alt+1 through Alt+9 and Alt+0. Restart the interface to apply changes.
+- **`keybindings.focus_left`**, **`focus_right`**, **`focus_up`**, **`focus_down`** select a neighboring pane with Alt+Arrow. **`keybindings.focus_0`** through **`focus_9`** select panes numbered 0 through 9 with Alt+0 through Alt+9. Restart the interface to apply changes.
 - **`keybindings.resize_left`**, **`resize_right`**, **`resize_up`**, **`resize_down`** grow the focused pane toward the arrow with Alt+Shift+Arrow, moving the edge on that side by one column or row. Restart the interface to apply changes.
 - **`keybindings.shrink_left`**, **`shrink_right`**, **`shrink_up`**, **`shrink_down`** shrink the focused pane with Alt+Ctrl+Arrow, moving the opposite edge in the arrow direction by one column or row. Restart the interface to apply changes.
 - **`keybindings.detach`** sets the shortcut that detaches the current connection. For example, `{ key = 'x', ctrl = true }` uses `Ctrl+x`, and `{ key = 'F12' }` uses F12. `key` accepts a single character or a supported key name; `ctrl`, `alt`, `shift`, and `super` are booleans and default to `false` within an explicit binding. ASCII letter names are case-insensitive; use `shift = true` to require Shift. Changes apply when you reconnect, and switching sessions keeps the current connection's binding. See [keybindings](docs/usage.md#快捷键配置) for supported names and terminal encoding behavior.

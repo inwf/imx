@@ -167,7 +167,7 @@ imx kill dev     # 终止会话
 
 新窗格查询目录和启动 shell 时，标题显示 `starting`。其他窗格仍可操作，期间输入的内容会排队等待新 shell 启动。启动过程的总时限为两秒；失败时关闭这个新窗格并显示原因。按下 Alt+W 也可以取消正在启动的窗格。
 
-使用 **Alt+方向键** 聚焦相邻窗格。**Alt+1** 至 **Alt+9** 对应窗格标题中的编号，**Alt+0** 对应编号 10。关闭窗格后其他窗格的编号保持不变，新窗格复用最小的空闲编号。指定方向没有相邻窗格或编号不存在时保持当前焦点。普通 shell 窗格也可以通过这些快捷键聚焦；编号大于 10 时使用方向快捷键，开启鼠标模式后也可以点击聚焦。
+使用 **Alt+方向键** 聚焦相邻窗格。窗格编号从 **0** 开始，**Alt+0** 至 **Alt+9** 对应窗格标题中的编号。关闭窗格后其他窗格的编号保持不变，新窗格复用最小的空闲编号。指定方向没有相邻窗格或编号不存在时保持当前焦点。普通 shell 窗格也可以通过这些快捷键聚焦；编号大于 9 时使用方向快捷键，开启鼠标模式后也可以点击聚焦。
 
 使用 **Alt+Z** 将当前窗格临时放大到整个界面，标题显示 `[zoom]`；再次使用恢复原有布局、比例和焦点。其他窗格保留各自的终端尺寸并继续接收输出。放大期间缩放终端窗口会保持放大，恢复分屏时按照原比例重新计算布局。切换到其他窗格、继续分屏、使用窗格尺寸调整快捷键或关闭当前窗格时，会先恢复分屏布局。只有一个窗格时，该快捷键保持当前显示。
 
@@ -189,7 +189,7 @@ imx kill dev     # 终止会话
 
 ### 5. 按需配置
 
-执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含会话名称提示、补全、`CREATED` 格式和鼠标模式设置及中英文注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
+执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含会话名称提示、补全、`CREATED` 格式、鼠标模式和聚焦窗格颜色设置及中英文注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
 
 自动生成的配置文件包含以下默认设置：
 
@@ -205,6 +205,7 @@ enabled = true
 
 [panes]
 mouse = false
+focused_border_color = "#969CD5"
 ```
 
 [完整配置模板](config.example.toml)列出全部选项并提供简短的中英文注释，已启用的配置项采用内置默认值。需要自定义快捷键时，把对应的 `[keybindings]` 配置加入自己的文件即可。详细行为和生效时机见下文及[使用说明](docs/usage.md#配置文件与会话提示符)。
@@ -213,12 +214,12 @@ mouse = false
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
 - **`panes.mouse`**：开启 imx 的鼠标聚焦、拖动分隔线、滚轮浏览历史和窗格内文字选择。默认值为 `false`，省略时也关闭；普通 shell 中的选择和复制交给终端处理。修改后重新启动整个界面生效。
-- **`panes.focused_border_color`**：使用 `"#RRGGBB"` 字符串设置聚焦窗格的边框和标题颜色，例如 `"#33AAFF"`；省略时使用终端默认青色。会话窗格和普通 shell 窗格均适用，修改后重新启动整个界面生效。
+- **`panes.focused_border_color`**：使用 `"#RRGGBB"` 字符串设置聚焦窗格的边框和标题颜色，默认值为 `"#969CD5"`，省略时也使用此颜色。会话窗格和普通 shell 窗格均适用，修改后重新启动整个界面生效。
 - **`panes.horizontal_gap` / `panes.vertical_gap`**：分别设置相邻窗格边框之间的空白列数、空白行数。默认均为 `0`，接受 `0` 至 `255` 的整数，重新启动整个界面后生效。
 - **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。退出整个界面并重新进入后，快捷键的修改生效。重复的快捷键会报告配置错误。
 - **`keybindings.close_pane`**：关闭当前聚焦的窗格，并终止其中连接的会话及程序，默认使用 Alt+W。需要保留会话时先 detach。退出整个界面并重新进入后，关闭快捷键的修改生效。
 - **`keybindings.zoom_pane`**：临时放大当前窗格，再次使用恢复原有布局，默认 Alt+Z。修改后重新启动整个界面生效。
-- **`keybindings.focus_left`**、**`focus_right`**、**`focus_up`**、**`focus_down`**：默认使用 Alt+方向键聚焦相邻窗格。**`keybindings.focus_1`** 至 **`focus_10`**：默认使用 Alt+1 至 Alt+9 和 Alt+0 聚焦对应编号的窗格。修改后重新启动整个界面生效。
+- **`keybindings.focus_left`**、**`focus_right`**、**`focus_up`**、**`focus_down`**：默认使用 Alt+方向键聚焦相邻窗格。**`keybindings.focus_0`** 至 **`focus_9`**：默认使用 Alt+0 至 Alt+9 聚焦编号 0 至 9 的窗格。修改后重新启动整个界面生效。
 - **`keybindings.resize_left`**、**`resize_right`**、**`resize_up`**、**`resize_down`**：默认使用 Alt+Shift+方向键向箭头方向扩大当前窗格，将同侧边界移动一列或一行。修改后重新启动整个界面生效。
 - **`keybindings.shrink_left`**、**`shrink_right`**、**`shrink_up`**、**`shrink_down`**：默认使用 Alt+Ctrl+方向键缩小当前窗格，将相反方向的边界沿箭头方向移动一列或一行。修改后重新启动整个界面生效。
 - **`keybindings.detach`**：设置分离当前连接的快捷键。例如，`{ key = 'x', ctrl = true }` 表示 `Ctrl+x`，`{ key = 'F12' }` 表示 F12。`key` 接受单个字符或支持的按键名称；`ctrl`、`alt`、`shift`、`super` 使用布尔值，在显式配置的快捷键中默认为 `false`。ASCII 字母名称不区分大小写，需要 Shift 时设置 `shift = true`。修改后重新连接生效，同一连接切换会话时保留当前设置。支持的按键名称及终端编码行为见[快捷键配置](docs/usage.md#快捷键配置)。

@@ -17,8 +17,8 @@ def measure():
         terminal.screen.resize(lines=60, columns=240)
         terminal.child.setwinsize(60, 240)
         terminal.split()
-        terminal.visible("2: shell")
-        for number in (1, 2):
+        terminal.visible("1: shell")
+        for number in (0, 1):
             terminal.focus(number)
             terminal.child.sendline("printf '%080d\\n' {1..80}")
             terminal.visible("0000000080")
@@ -26,7 +26,7 @@ def measure():
         before = frontend.cpu_times()
         offset = len(terminal.capture.getvalue())
         for iteration in range(200):
-            terminal.focus(iteration % 2 + 1)
+            terminal.focus(iteration % 2)
         after = frontend.cpu_times()
         return {
             "client_cpu_seconds": after.user + after.system - before.user - before.system,

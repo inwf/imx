@@ -20,18 +20,18 @@ def test_disabled_mouse_leaves_shell_selection_to_terminal(sessions, contents):
         path.write_text(contents)
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     assert reporting_modes(terminal) == set()
     terminal.click(3)
     terminal.child.send("\x1b[<0;50;8M\x1b[<32;65;8M\x1b[<0;65;8m\x1b[<64;3;3M")
     terminal.command("stty size", "unchanged-size", "28 48\n")
-    terminal.focused(2)
+    terminal.focused(1)
     assert "\x1b]52;" not in terminal.capture.getvalue()
     assert not any(cell.reverse for row in terminal.screen.buffer.values() for cell in row.values())
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "keyboard-focus", "dev")
     terminal.split("down")
-    terminal.visible("3: shell")
+    terminal.visible("2: shell")
     assert reporting_modes(terminal) == set()
 
 
@@ -43,11 +43,11 @@ def test_application_mouse_reporting_follows_focus_and_detach(sessions, enabled,
     path.write_text(f"[panes]\nmouse = {str(enabled).lower()}\n")
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     shell_modes = {1002, 1006} if enabled else set()
     assert reporting_modes(terminal) == shell_modes
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
+    terminal.visible("1: test")
     destination = sessions.path / "mouse-application.bin"
     terminal.child.sendline(shlex.join([
         sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), "legacy", str(mode),
@@ -61,15 +61,15 @@ def test_application_mouse_reporting_follows_focus_and_detach(sessions, enabled,
     terminal.click(55, 3)
     expected = b"\x1b[<0;4;2M" + (b"" if mode == 9 else b"\x1b[<0;4;2m")
     terminal.wait(lambda: destination.read_bytes() == expected)
-    terminal.focused(2)
+    terminal.focused(1)
     assert json.loads(destination.with_suffix(".json").read_text())["cols"] == 48
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.wait(lambda: reporting_modes(terminal) == shell_modes)
     terminal.command("printf ready", "shell-remains-usable", "ready")
-    terminal.focus(2)
+    terminal.focus(1)
     terminal.wait(lambda: reporting_modes(terminal) == application_modes)
     terminal.child.send("\x1b\\")
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.wait(lambda: reporting_modes(terminal) == shell_modes)
     assert {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "test": "0"}
 
@@ -80,7 +80,7 @@ def test_full_template_disables_mouse_mode(sessions):
     path.write_text((ROOT / "config.example.toml").read_text())
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     assert reporting_modes(terminal) == set()
 
 
@@ -96,13 +96,13 @@ def test_split_and_close_restore_mouse_mode_from_initial_application(sessions, e
     ]))
     terminal.wait(lambda: destination.exists() and reporting_modes(terminal) == {1000, 1006})
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     shell_modes = {1002, 1006} if enabled else set()
     assert reporting_modes(terminal) == shell_modes
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.wait(lambda: reporting_modes(terminal) == {1002 if enabled else 1000, 1006})
     terminal.child.send("\x1bw")
-    terminal.wait(lambda: " 1: " not in terminal.screen.display[0])
-    terminal.focused(2)
+    terminal.wait(lambda: " 0: " not in terminal.screen.display[0])
+    terminal.focused(1)
     assert reporting_modes(terminal) == shell_modes
     terminal.command("printf ready", "remaining-pane", "ready")

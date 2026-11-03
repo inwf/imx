@@ -20,3 +20,7 @@ enabled = true
 # 启用鼠标聚焦、历史滚动、分隔线拖动和文字选择。
 # Enable mouse focus, history scrolling, separator dragging, and text selection.
 mouse = false
+
+# 设置聚焦窗格的边框和标题颜色（"#RRGGBB"）。
+# Set the focused pane's border and title color ("#RRGGBB").
+focused_border_color = "#969CD5"

@@ -41,7 +41,7 @@ def text_terminal(sessions, text="alpha 中文 beta\nsecond line"):
     terminal = PaneTerminal(sessions)
     sessions.command(terminal.child, "printf '\\033[2J\\033[H%s\\n' " + shlex.quote(text))
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     return terminal
 
 
@@ -56,7 +56,7 @@ def test_drag_selects_pane_text_and_preserves_clipboard(sessions, start, end, ex
     terminal = text_terminal(sessions)
     select(terminal, start, end)
     selected(terminal, expected)
-    terminal.focused(1)
+    terminal.focused(0)
     assert any(cell.reverse for row in terminal.screen.buffer.values() for cell in row.values())
     terminal.command("printf ready", "selection-input", "ready")
     terminal.wait(lambda: not any(cell.reverse for row in terminal.screen.buffer.values() for cell in row.values()))
@@ -121,7 +121,7 @@ def test_drag_selection_scrolls_history_and_stops_on_release(sessions):
 def test_shift_drag_selects_text_in_mouse_application(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     destination = sessions.path / "selection-app.bin"
     terminal.child.sendline(shlex.join([sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), "legacy"]))
     terminal.wait(destination.exists)
@@ -146,16 +146,16 @@ def test_layout_changes_cancel_selection_and_preserve_clipboard(sessions, action
     if action == "resize":
         terminal.screen.resize(lines=30, columns=120)
         terminal.child.setwinsize(30, 120)
-        terminal.wait(lambda: " 2: " in terminal.screen.display[0][60:])
+        terminal.wait(lambda: " 1: " in terminal.screen.display[0][60:])
     elif action == "split":
         terminal.split("down")
-        terminal.visible("3: shell")
+        terminal.visible("2: shell")
     elif action == "zoom":
         terminal.child.send("\x1bz")
         terminal.visible("[zoom]")
     else:
         terminal.child.send("\x1bw")
-        terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
+        terminal.wait(lambda: all(" 0: " not in row for row in terminal.screen.display))
     terminal.child.send("\x1b[<32;10;2M\x1b[<0;10;2m")
     terminal.command("printf ready", "after-selection-cancel", "ready")
     assert "\x1b]52;c;" not in terminal.capture.getvalue()[offset:]

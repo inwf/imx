@@ -26,9 +26,9 @@ enabled = true
 # Enable mouse focus, history scrolling, separator dragging, and text selection.
 mouse = false
 
-# 设置聚焦窗格的边框和标题颜色（"#RRGGBB"），省略时使用终端青色。
-# Set the focused pane's border and title color ("#RRGGBB"); omit to use terminal cyan.
-# focused_border_color = "#33AAFF"
+# 设置聚焦窗格的边框和标题颜色（"#RRGGBB"）。
+# Set the focused pane's border and title color ("#RRGGBB").
+focused_border_color = "#969CD5"
 
 # 设置左右相邻窗格之间的空白列数，范围为 0 至 255。
 # Set the blank columns between side-by-side panes, from 0 to 255.
@@ -87,8 +87,9 @@ shrink_right = { key = 'Right', alt = true, ctrl = true }
 shrink_up = { key = 'Up', alt = true, ctrl = true }
 shrink_down = { key = 'Down', alt = true, ctrl = true }
 
-# 按标题中的编号聚焦窗格，Alt+0 对应编号 10。
-# Focus a pane by its title number; Alt+0 selects number 10.
+# 窗格编号从 0 开始，Alt+0 至 Alt+9 聚焦对应编号的窗格。
+# Pane numbers start at 0; Alt+0 through Alt+9 focus the matching pane number.
+focus_0 = { key = '0', alt = true }
 focus_1 = { key = '1', alt = true }
 focus_2 = { key = '2', alt = true }
 focus_3 = { key = '3', alt = true }
@@ -98,4 +99,3 @@ focus_6 = { key = '6', alt = true }
 focus_7 = { key = '7', alt = true }
 focus_8 = { key = '8', alt = true }
 focus_9 = { key = '9', alt = true }
-focus_10 = { key = '0', alt = true }

@@ -20,6 +20,7 @@ pub const Action = enum {
     shrink_right,
     shrink_up,
     shrink_down,
+    focus_0,
     focus_1,
     focus_2,
     focus_3,
@@ -29,7 +30,6 @@ pub const Action = enum {
     focus_7,
     focus_8,
     focus_9,
-    focus_10,
 };
 pub const Modifiers = vaxis.Key.Modifiers;
 
@@ -82,6 +82,7 @@ pub const Bindings = struct {
     shrink_right: Binding = .{ .codepoint = vaxis.Key.right, .mods = .{ .alt = true, .ctrl = true } },
     shrink_up: Binding = .{ .codepoint = vaxis.Key.up, .mods = .{ .alt = true, .ctrl = true } },
     shrink_down: Binding = .{ .codepoint = vaxis.Key.down, .mods = .{ .alt = true, .ctrl = true } },
+    focus_0: Binding = .{ .codepoint = '0', .mods = .{ .alt = true } },
     focus_1: Binding = .{ .codepoint = '1', .mods = .{ .alt = true } },
     focus_2: Binding = .{ .codepoint = '2', .mods = .{ .alt = true } },
     focus_3: Binding = .{ .codepoint = '3', .mods = .{ .alt = true } },
@@ -91,7 +92,6 @@ pub const Bindings = struct {
     focus_7: Binding = .{ .codepoint = '7', .mods = .{ .alt = true } },
     focus_8: Binding = .{ .codepoint = '8', .mods = .{ .alt = true } },
     focus_9: Binding = .{ .codepoint = '9', .mods = .{ .alt = true } },
-    focus_10: Binding = .{ .codepoint = '0', .mods = .{ .alt = true } },
 
     fn action(self: Bindings, event: vaxis.Event, bytes: []const u8) ?Action {
         if (event != .key_press) return null;

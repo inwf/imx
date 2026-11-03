@@ -89,9 +89,9 @@ def measure_panes():
     try:
         terminal = PaneTerminal(environment)
         terminal.split()
-        terminal.visible("2: shell")
+        terminal.visible("1: shell")
         terminal.child.sendline("imx attach second")
-        terminal.visible("2: second")
+        terminal.visible("1: second")
         frontend = psutil.Process(terminal.child.pid)
         clients = [frontend] + [process for process in frontend.children(recursive=True)
                                 if process.exe() == str(BINARY) and process.name() != "imx-server"]

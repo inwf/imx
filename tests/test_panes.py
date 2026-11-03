@@ -55,7 +55,8 @@ class PaneTerminal:
         ))
 
     def focus(self, number):
-        self.child.send(f"\x1b{number % 10}")
+        assert 0 <= number <= 9
+        self.child.send(f"\x1b{number}")
         self.focused(number)
 
     def click(self, col, row=3):
@@ -73,25 +74,27 @@ def test_panes_inherit_directory_and_attach_independent_sessions(sessions):
     directory.mkdir()
     sessions.command(terminal.child, f"cd {shlex.quote(str(directory))}")
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
+    assert terminal.screen.buffer[0][50].fg == "969cd5"
+    assert terminal.screen.buffer[0][54].fg == "969cd5"
     terminal.command("pwd", "right-directory", f"{directory}\n")
     terminal.command("printf '%s' \"$IMX_SESSION\"", "right-unattached", "")
     assert [row["NAME"] for row in sessions.sessions()] == ["dev"]
 
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
+    terminal.visible("1: test")
     terminal.command("printf '%s' \"$IMX_SESSION\"", "right-session", "test")
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "left-session", "dev")
-    terminal.focus(2)
-    terminal.child.send("\x1b\\")
-    terminal.visible("2: shell")
-    terminal.command("pwd", "detached-directory", f"{directory}\n")
-    sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "test": "0"})
-
     terminal.focus(1)
     terminal.child.send("\x1b\\")
     terminal.visible("1: shell")
+    terminal.command("pwd", "detached-directory", f"{directory}\n")
+    sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "test": "0"})
+
+    terminal.focus(0)
+    terminal.child.send("\x1b\\")
+    terminal.visible("0: shell")
     terminal.command("pwd", "left-detached-directory", f"{directory}\n")
     assert all(row["CLIENTS"] == "0" for row in sessions.sessions())
 
@@ -99,12 +102,12 @@ def test_panes_inherit_directory_and_attach_independent_sessions(sessions):
 def test_nested_splits_resize_and_close_without_ending_sessions(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.split("down")
-    terminal.visible("3: shell")
+    terminal.visible("2: shell")
     terminal.command("stty size", "third-size", "13 48\n")
     terminal.child.sendline("exit")
-    terminal.wait(lambda: all("3: shell" not in row for row in terminal.screen.display))
+    terminal.wait(lambda: all("2: shell" not in row for row in terminal.screen.display))
     terminal.command("stty size", "second-size", "28 48\n")
     terminal.screen.resize(lines=12, columns=40)
     terminal.child.setwinsize(12, 40)
@@ -123,9 +126,9 @@ def test_configured_split_shortcuts(sessions):
     path.write_text("[keybindings]\nsplit_right = { key = 'F6' }\nsplit_down = { key = 'F7' }\n")
     terminal = PaneTerminal(sessions)
     terminal.child.send("\x1b[17~")
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.send("\x1b[18~")
-    terminal.visible("3: shell")
+    terminal.visible("2: shell")
 
 
 @pytest.mark.parametrize("right, down", [
@@ -136,26 +139,26 @@ def test_configured_split_shortcuts(sessions):
 def test_default_split_shortcuts_across_terminal_encodings(sessions, right, down):
     terminal = PaneTerminal(sessions)
     terminal.child.send(right)
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.command("stty size", "right-size", "28 48\n")
     terminal.child.send(down)
-    terminal.visible("3: shell")
+    terminal.visible("2: shell")
     terminal.command("stty size", "down-size", "13 48\n")
 
 
 def test_directional_focus_follows_pane_geometry_and_stays_at_edges(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.split("down")
-    terminal.visible("3: shell")
-    for direction, number in [("D", 1), ("C", 2), ("B", 3)]:
+    terminal.visible("2: shell")
+    for direction, number in [("D", 0), ("C", 1), ("B", 2)]:
         terminal.child.send(f"\x1b[1;3{direction}")
         terminal.focused(number)
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.split("down")
-    terminal.visible("4: shell")
-    for direction, number in [("A", 1), ("C", 2), ("B", 3), ("D", 4), ("D", 4), ("B", 4), ("A", 1)]:
+    terminal.visible("3: shell")
+    for direction, number in [("A", 0), ("C", 1), ("B", 2), ("D", 3), ("D", 3), ("B", 3), ("A", 0)]:
         terminal.child.send(f"\x1b[1;3{direction}")
         terminal.focused(number)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "focused-session", "dev")
@@ -166,60 +169,65 @@ def test_numbered_focus_matches_titles_after_closing_panes(sessions):
     terminal.screen.resize(lines=90, columns=240)
     terminal.child.setwinsize(90, 240)
     terminal.split()
-    terminal.visible("2: shell")
-    for number, (source, direction) in enumerate([(2, "down"), (1, "down"), (1, "right"), (2, "right"), (3, "right"), (4, "right"), (1, "down"), (2, "down")], start=3):
+    terminal.visible("1: shell")
+    for number, (source, direction) in enumerate([(1, "down"), (0, "down"), (0, "right"), (1, "right"), (2, "right"), (3, "right"), (0, "down"), (1, "down")], start=2):
         terminal.focus(source)
         terminal.split(direction)
         terminal.visible(f"{number}: shell")
-    for number in range(1, 11):
-        terminal.focus(number)
-    terminal.focus(2)
-    terminal.child.send("\x1bw")
-    terminal.wait(lambda: all(" 2: " not in row for row in terminal.screen.display))
-    terminal.focus(10)
-    terminal.child.send("\x1b2")
-    terminal.command("printf ready", "missing-number", "ready")
+    terminal.split()
+    terminal.visible("10: shell")
+    terminal.focus(9)
+    terminal.child.send("\x1b[1;3C")
     terminal.focused(10)
+    for number in range(10):
+        terminal.focus(number)
     terminal.focus(1)
+    terminal.child.send("\x1bw")
+    terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
+    terminal.focus(9)
+    terminal.child.send("\x1b1")
+    terminal.command("printf ready", "missing-number", "ready")
+    terminal.focused(9)
+    terminal.focus(0)
 
 
 def test_new_panes_reuse_the_smallest_available_number(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.split("down")
-    terminal.visible("3: shell")
+    terminal.visible("2: shell")
     identities = set()
     for iteration in range(12):
-        terminal.focus(2)
-        terminal.child.send("\x1bw")
-        terminal.wait(lambda: all(" 2: " not in row for row in terminal.screen.display))
-        terminal.visible("3: shell")
         terminal.focus(1)
-        terminal.split("down")
+        terminal.child.send("\x1bw")
+        terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
         terminal.visible("2: shell")
-        terminal.focus(3)
+        terminal.focus(0)
+        terminal.split("down")
+        terminal.visible("1: shell")
         terminal.focus(2)
+        terminal.focus(1)
         identity = sessions.path / f"pane-identity-{iteration}"
         terminal.child.sendline(f"printf '%s' \"$IMX_PANE\" > {shlex.quote(str(identity))}")
         terminal.wait(lambda: identity.exists() and identity.read_text() != "")
         assert identity.read_text() not in identities
         identities.add(identity.read_text())
         terminal.command("printf '%s' \"$IMX_SESSION\"", f"plain-shell-{iteration}", "")
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.child.send("\x1bw")
-    terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
-    terminal.focus(3)
+    terminal.wait(lambda: all(" 0: " not in row for row in terminal.screen.display))
+    terminal.focus(2)
     terminal.split("down")
-    terminal.visible("1: shell")
-    for number in (2, 3, 1):
+    terminal.visible("0: shell")
+    for number in (1, 2, 0):
         terminal.focus(number)
 
 
 @pytest.mark.parametrize("mode, left, right, first, second", [
-    ("legacy", "\x1b[1;3D", "\x1b[1;3C", "\x1b1", "\x1b2"),
-    ("kitty", "\x1b[57350;3u", "\x1b[57351;3u", "\x1b[49;3u", "\x1b[50;3u"),
-    ("modify", "\x1b[1;3D", "\x1b[1;3C", "\x1b[27;3;49~", "\x1b[27;3;50~"),
+    ("legacy", "\x1b[1;3D", "\x1b[1;3C", "\x1b0", "\x1b1"),
+    ("kitty", "\x1b[57350;3u", "\x1b[57351;3u", "\x1b[48;3u", "\x1b[49;3u"),
+    ("modify", "\x1b[1;3D", "\x1b[1;3C", "\x1b[27;3;48~", "\x1b[27;3;49~"),
 ])
 def test_focus_shortcuts_in_fullscreen_applications(sessions, mode, left, right, first, second):
     terminal = PaneTerminal(sessions)
@@ -227,8 +235,8 @@ def test_focus_shortcuts_in_fullscreen_applications(sessions, mode, left, right,
     terminal.child.sendline(shlex.join([sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), mode]))
     terminal.wait(destination.exists)
     terminal.split()
-    terminal.visible("2: shell")
-    for shortcut, number in [(left, 1), (right, 2), (first, 1), (second, 2)]:
+    terminal.visible("1: shell")
+    for shortcut, number in [(left, 0), (right, 1), (first, 0), (second, 1)]:
         terminal.child.send(shortcut)
         terminal.focused(number)
     terminal.command("printf ready", "focused-shell", "ready")
@@ -238,15 +246,15 @@ def test_focus_shortcuts_in_fullscreen_applications(sessions, mode, left, right,
 def test_configured_focus_shortcuts(sessions):
     path = sessions.home / ".config/imx/config.toml"
     path.parent.mkdir(parents=True)
-    path.write_text("[keybindings]\nfocus_1 = { key = 'F9' }\nfocus_left = { key = 'F10' }\n")
+    path.write_text("[keybindings]\nfocus_0 = { key = 'F9' }\nfocus_left = { key = 'F10' }\n")
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.send("\x1b[20~")
-    terminal.focused(1)
-    terminal.focus(2)
+    terminal.focused(0)
+    terminal.focus(1)
     terminal.child.send("\x1b[21~")
-    terminal.focused(1)
+    terminal.focused(0)
 
 
 @pytest.mark.parametrize("color", [None, "#33aAfF", "#000000", "#FFFFFF"])
@@ -256,19 +264,16 @@ def test_configured_border_color_follows_focus(sessions, color, mouse):
     path.parent.mkdir(parents=True)
     path.write_text(f"[panes]\nmouse = {str(mouse).lower()}\n" + ("" if color is None else f'focused_border_color = "{color}"\n'))
     child = sessions.spawn(rows=30, cols=100)
-    if color is None:
-        expected = "\x1b[36m"
-    else:
-        red, green, blue = bytes.fromhex(color[1:])
-        expected = f"\x1b[38:2:{red}:{green}:{blue}m"
+    red, green, blue = bytes.fromhex((color or "#969CD5")[1:])
+    expected = f"\x1b[38;2;{red};{green};{blue}m"
     child.send("\x1bd")
     child.expect_exact(expected)
-    child.expect_exact("2:")
+    child.expect_exact("1:")
     ready = sessions.path / "border-ready"
     child.sendline(f"printf ready > {shlex.quote(str(ready))}")
     sessions.wait(lambda: ready.exists() and ready.read_text() == "ready")
-    second = "\x1b[<0;55;3M\x1b[<0;55;3m" if mouse else "\x1b2"
-    for shortcut, title in [("\x1b1", "1: dev"), (second, "2: shell"), ("\x1b1", "1: dev")]:
+    second = "\x1b[<0;55;3M\x1b[<0;55;3m" if mouse else "\x1b1"
+    for shortcut, title in [("\x1b0", "0: dev"), (second, "1: shell"), ("\x1b0", "0: dev")]:
         child.send(shortcut)
         child.expect_exact(expected)
         child.expect_exact(title)
@@ -282,14 +287,14 @@ def test_configured_border_color_follows_focus(sessions, color, mouse):
 def test_directional_focus_reveals_panes_in_a_small_terminal(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.screen.resize(lines=6, columns=15)
     terminal.child.setwinsize(6, 15)
     terminal.child.send("\x1b[1;3D")
-    terminal.focused(1)
+    terminal.focused(0)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "small-focused-session", "dev")
     terminal.child.send("\x1b[1;3C")
-    terminal.focused(2)
+    terminal.focused(1)
 
 
 @pytest.mark.parametrize("initial", [False, True])
@@ -301,12 +306,12 @@ def test_directional_focus_reveals_panes_in_a_small_terminal(sessions):
 def test_close_shortcut_terminates_focused_session_and_jobs(sessions, initial, mode, shortcut):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
-    target, remaining, pane_id = ("dev", "test", 1) if initial else ("test", "dev", 2)
+    terminal.visible("1: test")
+    target, remaining, pane_id = ("dev", "test", 0) if initial else ("test", "dev", 1)
     if initial:
-        terminal.focus(1)
+        terminal.focus(0)
     row = next(row for row in sessions.sessions() if row["NAME"] == target)
     shell_pid = int(row["PID"])
     backend_pid = psutil.Process(shell_pid).ppid()
@@ -330,12 +335,12 @@ def test_close_shortcut_terminates_focused_session_and_jobs(sessions, initial, m
 def test_detach_then_close_in_one_write_preserves_session(sessions, initial):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
-    target, remaining, pane_id = ("dev", "test", 1) if initial else ("test", "dev", 2)
+    terminal.visible("1: test")
+    target, remaining, pane_id = ("dev", "test", 0) if initial else ("test", "dev", 1)
     if initial:
-        terminal.focus(1)
+        terminal.focus(0)
     pid = int(next(row for row in sessions.sessions() if row["NAME"] == target)["PID"])
     terminal.child.send("\x1b\\\x1bw")
     terminal.wait(lambda: all(f"{pane_id}:" not in row for row in terminal.screen.display))
@@ -347,13 +352,13 @@ def test_detach_then_close_in_one_write_preserves_session(sessions, initial):
 def test_close_session_shared_with_another_pane(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach dev")
-    terminal.visible("2: dev")
+    terminal.visible("1: dev")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "2")
     terminal.child.send("\x1bw")
-    terminal.wait(lambda: all("2:" not in row for row in terminal.screen.display))
-    terminal.visible("1: shell")
+    terminal.wait(lambda: all("1:" not in row for row in terminal.screen.display))
+    terminal.visible("0: shell")
     assert sessions.sessions() == []
     terminal.command("printf ready", "remaining-shell", "ready")
 
@@ -365,18 +370,18 @@ def test_configured_close_shortcut(sessions, key, shortcut):
     path.write_text(f"[keybindings]\nclose_pane = {{ key = '{key}' }}\n")
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.send(shortcut)
-    terminal.wait(lambda: all("2:" not in row for row in terminal.screen.display))
+    terminal.wait(lambda: all("1:" not in row for row in terminal.screen.display))
     assert sessions.sessions()[0]["CLIENTS"] == "1"
 
 
 def test_closing_pane_waits_for_backend_without_blocking_other_panes(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
+    terminal.visible("1: test")
     row = next(row for row in sessions.sessions() if row["NAME"] == "test")
     backend = psutil.Process(psutil.Process(int(row["PID"])).ppid())
     backend.suspend()
@@ -386,7 +391,7 @@ def test_closing_pane_waits_for_backend_without_blocking_other_panes(sessions):
         terminal.command("printf responsive", "healthy-pane", "responsive")
     finally:
         backend.resume()
-    terminal.wait(lambda: all("2:" not in row for row in terminal.screen.display))
+    terminal.wait(lambda: all("1:" not in row for row in terminal.screen.display))
     sessions.wait(lambda: [row["NAME"] for row in sessions.sessions()] == ["dev"])
 
 
@@ -404,12 +409,12 @@ def test_close_uses_attached_sessions_runtime_directory(sessions):
     try:
         terminal = PaneTerminal(sessions)
         terminal.split()
-        terminal.visible("2: shell")
+        terminal.visible("1: shell")
         terminal.child.sendline(f"IMX_DIR={shlex.quote(str(other.runtime))} imx attach dev")
-        terminal.visible("2: dev")
+        terminal.visible("1: dev")
         assert other.sessions()[0]["CLIENTS"] == "1"
         terminal.child.send("\x1bw")
-        terminal.wait(lambda: all("2:" not in row for row in terminal.screen.display))
+        terminal.wait(lambda: all("1:" not in row for row in terminal.screen.display))
         assert other.sessions() == []
         assert sessions.sessions()[0]["CLIENTS"] == "1"
         terminal.command("printf '%s' \"$IMX_SESSION\"", "remaining-session", "dev")
@@ -426,9 +431,9 @@ def test_pane_terminal_modes_mouse_coordinates_and_detach(sessions, mode, encode
     terminal = PaneTerminal(sessions)
     sessions.command(terminal.child, "printf '\\033[2J\\033[HLEFT_SESSION\\n'")
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
+    terminal.visible("1: test")
     destination = sessions.path / "application.bin"
     terminal.child.sendline(shlex.join([sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), mode]))
     terminal.wait(lambda: destination.with_suffix(".json").exists() and destination.exists())
@@ -449,7 +454,7 @@ def test_pane_terminal_modes_mouse_coordinates_and_detach(sessions, mode, encode
     terminal.wait(lambda: b"\x1b[<0;4;2M\x1b[<0;4;2m" in destination.read_bytes())
     terminal.child.send("\x1b[<0;55;3M\x1b[<32;3;3M\x1b[<0;3;3m")
     terminal.wait(lambda: b"\x1b[<0;4;2M\x1b[<0;1;2m" in destination.read_bytes())
-    paste = "\x1b[200~pasted 中文\x1bw\x1bd\x1bD\x1b[119;3u\x1b1\x1b[1;3D\x1b[201~"
+    paste = "\x1b[200~pasted 中文\x1bw\x1bd\x1bD\x1b[119;3u\x1b0\x1b[1;3D\x1b[201~"
     terminal.child.send(paste)
     terminal.wait(lambda: paste.encode() in destination.read_bytes())
     terminal.child.send("\x1b[119;3:3u")
@@ -457,7 +462,7 @@ def test_pane_terminal_modes_mouse_coordinates_and_detach(sessions, mode, encode
     terminal.wait(lambda: destination.read_bytes().endswith(encoded))
     assert {row["NAME"] for row in sessions.sessions()} == {"dev", "test"}
     terminal.child.send("\x1b\\")
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     assert psutil.pid_exists(state["pid"])
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "test": "0"})
 
@@ -465,14 +470,14 @@ def test_pane_terminal_modes_mouse_coordinates_and_detach(sessions, mode, encode
 def test_detaching_one_pane_preserves_other_connection_to_same_session(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach dev")
-    terminal.visible("2: dev")
+    terminal.visible("1: dev")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "2")
     terminal.child.send("\x1b\\")
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "1")
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.command("printf '%s' \"$IMX_SESSION\"", "remaining-session", "dev")
 
 
@@ -480,14 +485,14 @@ def test_detaching_one_pane_preserves_other_connection_to_same_session(sessions)
 def test_exiting_pane_terminates_its_ordinary_shell_jobs(sessions, close):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     path = sessions.path / "ordinary-job"
     terminal.child.sendline(f"sleep 600 & printf '%s' $! > {shlex.quote(str(path))}")
     terminal.wait(lambda: path.exists() and path.read_text().isdigit())
     pid = int(path.read_text())
     assert psutil.pid_exists(pid)
     terminal.child.send(close)
-    terminal.wait(lambda: all("2: shell" not in row for row in terminal.screen.display))
+    terminal.wait(lambda: all("1: shell" not in row for row in terminal.screen.display))
     sessions.wait(lambda: not psutil.pid_exists(pid))
     assert sessions.sessions()[0]["NAME"] == "dev"
 
@@ -501,7 +506,7 @@ def test_new_pane_starts_selected_shell_in_current_directory(sessions, shell):
     terminal.child.sendline(f"cd {shlex.quote(str(directory))}")
     sessions.wait(lambda: sessions.sessions()[0]["DIRECTORY"] == str(directory))
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.command("pwd", "shell-directory", f"{directory}\n")
 
 
@@ -515,16 +520,16 @@ def test_split_and_following_input_in_one_write(sessions):
 def test_pane_detaches_while_its_backend_is_paused(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
+    terminal.visible("1: test")
     rows = {row["NAME"]: row for row in sessions.sessions()}
     backend = psutil.Process(psutil.Process(int(rows["test"]["PID"])).ppid())
     backend.suspend()
     try:
         terminal.child.send("\x1b\\")
-        terminal.visible("2: shell")
-        terminal.focus(1)
+        terminal.visible("1: shell")
+        terminal.focus(0)
         terminal.command("printf responsive", "healthy-pane", "responsive")
     finally:
         backend.resume()
@@ -533,33 +538,33 @@ def test_pane_detaches_while_its_backend_is_paused(sessions):
 def test_pane_reaps_completed_session_backends(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach test")
-    terminal.visible("2: test")
+    terminal.visible("1: test")
     rows = {row["NAME"]: row for row in sessions.sessions()}
     backend_pid = psutil.Process(int(rows["test"]["PID"])).ppid()
     terminal.child.sendline("exit")
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     sessions.wait(lambda: not psutil.pid_exists(backend_pid))
 
 
 def test_switching_in_a_pane_updates_its_title_and_split_directory(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach second")
-    terminal.visible("2: second")
+    terminal.visible("1: second")
     directory = sessions.path / "switched directory"
     directory.mkdir()
     terminal.child.sendline(f"cd {shlex.quote(str(directory))}; imx attach third")
-    terminal.visible("2: third")
+    terminal.visible("1: third")
     terminal.split("down")
-    terminal.visible("3: shell")
+    terminal.visible("2: shell")
     terminal.command("pwd", "switched-directory", f"{directory}\n")
     assert {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "second": "0", "third": "1"}
-    terminal.focus(2)
+    terminal.focus(1)
     terminal.child.send("\x1bw")
-    terminal.wait(lambda: all("2:" not in row for row in terminal.screen.display))
+    terminal.wait(lambda: all("1:" not in row for row in terminal.screen.display))
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "second": "0"})
     terminal.command("printf ready", "remaining-shell", "ready")
 
@@ -570,23 +575,23 @@ def test_configured_detach_and_mouse_focus(sessions):
     path.write_text("[panes]\nmouse = true\n[keybindings]\ndetach = { key = 'F12' }\n")
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.child.sendline("imx attach second")
-    terminal.visible("2: second")
+    terminal.visible("1: second")
     right_style = terminal.screen.buffer[0][50]
     assert right_style.bold
     terminal.click(3)
     terminal.wait(lambda: terminal.screen.buffer[0][0].bold)
     assert not terminal.screen.buffer[0][50].bold
     terminal.child.send("\x1b[24~")
-    terminal.visible("1: shell")
+    terminal.visible("0: shell")
     assert {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "0", "second": "1"}
 
 
 def test_small_terminal_preserves_panes_and_rejects_extra_splits(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.screen.resize(lines=6, columns=15)
     terminal.child.setwinsize(6, 15)
     terminal.command("stty size", "minimum-size", "4 10\n")
@@ -595,23 +600,23 @@ def test_small_terminal_preserves_panes_and_rejects_extra_splits(sessions):
     terminal.screen.resize(lines=30, columns=100)
     terminal.child.setwinsize(30, 100)
     terminal.command("stty size", "enlarged-size", "28 48\n")
-    terminal.visible("1: dev")
-    terminal.visible("2: shell")
-    assert all("3: shell" not in row for row in terminal.screen.display)
+    terminal.visible("0: dev")
+    terminal.visible("1: shell")
+    assert all("2: shell" not in row for row in terminal.screen.display)
 
 
 def test_output_in_one_pane_preserves_other_pane_input_and_close_cleanup(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     path = sessions.path / "ordinary-background-job"
     terminal.child.sendline(f"sleep 600 & printf '%s' $! > {shlex.quote(str(path))}")
     terminal.wait(lambda: path.exists() and path.read_text().isdigit())
     job = psutil.Process(int(path.read_text()))
-    terminal.focus(1)
+    terminal.focus(0)
     terminal.child.sendline("yes CONTINUOUS_OUTPUT")
     terminal.visible("CONTINUOUS_OUTPUT")
-    terminal.focus(2)
+    terminal.focus(1)
     terminal.command("printf responsive", "output-responsive", "responsive")
     terminal.child.close(force=True)
     sessions.wait(lambda: not job.is_running())
@@ -622,7 +627,7 @@ def test_output_in_one_pane_preserves_other_pane_input_and_close_cleanup(session
 def test_idle_panes_wait_for_events(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
-    terminal.visible("2: shell")
+    terminal.visible("1: shell")
     terminal.command("printf ready", "idle-ready", "ready")
     time.sleep(0.2)
     terminal.pump()
@@ -644,11 +649,11 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
     outer.expect(r"[#$] ")
     terminal = PaneTerminal(sessions, child=outer)
     terminal.split()
-    terminal.visible("2: shell")
-    outer.send(close)
-    terminal.wait(lambda: all("2: shell" not in row for row in terminal.screen.display))
-    outer.send("\x1b\\")
     terminal.visible("1: shell")
+    outer.send(close)
+    terminal.wait(lambda: all("1: shell" not in row for row in terminal.screen.display))
+    outer.send("\x1b\\")
+    terminal.visible("0: shell")
     outer.send(close)
     outer.expect_exact("WORKSPACE_CLOSED\r\n")
     terminal.wait(lambda: terminal.screen.display[0].startswith("WORKSPACE_CLOSED"))
@@ -658,7 +663,7 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
     assert sessions.sessions()[0]["CLIENTS"] == "0"
 
 
-@pytest.mark.parametrize("binding", ["split_right", "split_down", "close_pane", "focus_left", "focus_1", "resize_left", "resize_right", "resize_up", "resize_down", "shrink_left", "shrink_right", "shrink_up", "shrink_down"])
+@pytest.mark.parametrize("binding", ["split_right", "split_down", "close_pane", "focus_left", *[f"focus_{number}" for number in range(10)], "resize_left", "resize_right", "resize_up", "resize_down", "shrink_left", "shrink_right", "shrink_up", "shrink_down"])
 def test_conflicting_shortcuts_report_configuration_option(sessions, binding):
     path = sessions.home / ".config/imx/config.toml"
     path.parent.mkdir(parents=True)

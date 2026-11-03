@@ -30,13 +30,13 @@ def measure(count):
         terminal.screen.resize(lines=60, columns=240)
         terminal.child.setwinsize(60, 240)
         terminal.split()
-        terminal.visible("2: shell")
-        sources = [1, 2, 1, 2, 3, 4]
-        for number, source in zip(range(3, count + 1), sources):
+        terminal.visible("1: shell")
+        sources = [0, 1, 0, 1, 2, 3]
+        for number, source in zip(range(2, count), sources):
             terminal.focus(source)
             terminal.split("down")
             terminal.visible(f"{number}: shell")
-        terminal.focus(1)
+        terminal.focus(0)
         gate = sessions.path / "render-gate"
         terminal.child.sendline(shlex.join([sys.executable, str(Path(__file__).resolve()), "--producer", str(gate)]))
         terminal.visible("RENDER_READY")
