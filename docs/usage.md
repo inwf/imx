@@ -138,7 +138,7 @@ enabled = true
 mouse = false
 ```
 
-仓库根目录的 [config.example.toml](../config.example.toml) 提供完整配置模板，以中英文注释说明每项配置的用途、默认值和生效时机。可以将需要的选项合并到自己的配置文件，同一个分组只声明一次。快捷键使用内置默认值，需要自定义时添加对应的 `[keybindings]` 选项。
+仓库根目录的 [config.example.toml](../config.example.toml) 列出全部选项并提供简短的中英文注释，已启用的配置项采用内置默认值。可以将需要的选项合并到自己的配置文件，同一个分组只声明一次。需要自定义快捷键时添加对应的 `[keybindings]` 选项。
 
 ### 聚焦窗格颜色
 

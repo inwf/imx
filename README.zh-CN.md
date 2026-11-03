@@ -201,7 +201,7 @@ enabled = true
 mouse = false
 ```
 
-[完整配置模板](config.example.toml)使用中英文注释说明全部选项的用途、默认值和生效时机。快捷键使用内置默认值；需要自定义时，把对应的 `[keybindings]` 配置加入自己的文件即可。模板也说明了 `alt` 对应 macOS 的 Option，`super` 对应 macOS 的 Command。
+[完整配置模板](config.example.toml)列出全部选项并提供简短的中英文注释，已启用的配置项采用内置默认值。需要自定义快捷键时，把对应的 `[keybindings]` 配置加入自己的文件即可。详细行为和生效时机见下文及[使用说明](docs/usage.md#配置文件与会话提示符)。
 
 - **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。

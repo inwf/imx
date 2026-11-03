@@ -202,7 +202,7 @@ enabled = true
 mouse = false
 ```
 
-The [full configuration template](config.example.toml) documents every option, its default, and when changes take effect, with English and Chinese comments. Shortcuts use their built-in defaults; copy the `[keybindings]` entries you want to customize into your configuration. The template also explains `alt` (Option on macOS) and `super` (Command on macOS).
+The [full configuration template](config.example.toml) lists every option with concise English and Chinese comments; active entries use built-in defaults. Copy the `[keybindings]` entries you want to customize into your configuration. Detailed behavior and when changes take effect are covered below and in the [usage guide](docs/usage.md#配置文件与会话提示符).
 
 - **`prompt.show_session`** shows `[dev] ` before the prompt of new Bash, Zsh, and Fish shells inside sessions, keeping the prompt's path, colors, and theme. The next `imx attach` installs the integration between `# BEGIN imx shell integration` and `# END imx shell integration` markers in your shell startup files. Set the option to `false` and attach again to remove it. The default is `true`, including when the option is omitted.
 - **`list.created_format`** formats the `CREATED` column with `strftime` fields. The default shows `10-30 14:05:09`; `%Y-%m-%d %H:%M:%S` adds the year.
