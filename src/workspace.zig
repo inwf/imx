@@ -254,7 +254,7 @@ const Pane = struct {
             if (now >= request.deadline) return error.SessionDirectoryTimeout;
             if (query_events & c.POLLOUT != 0) try request.output.flush(request.fd, true);
             if (query_events & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
-                if (try request.read(allocator)) |path| {
+                if (try request.read(allocator, self.app.io)) |path| {
                     var transferred = false;
                     defer if (!transferred) allocator.free(path);
                     if (self.directory_source) |id| for (self.app.panes.items) |source| {

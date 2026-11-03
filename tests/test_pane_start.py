@@ -1,3 +1,4 @@
+import os
 import shlex
 import time
 
@@ -5,6 +6,31 @@ import psutil
 import pytest
 
 from test_panes import PaneTerminal
+
+
+@pytest.mark.parametrize("attached", [False, True])
+@pytest.mark.parametrize("name, shell_name", [
+    (b'quote"name', "'quote\"name'"),
+    (b"back\\slash", "'back\\slash'"),
+    (b"line\nbreak", "$'line\\nbreak'"),
+    (b"tab\tname", "$'tab\\tname'"),
+    (b"invalid\xff", "$'invalid\\377'"),
+])
+def test_split_inherits_directory_bytes(sessions, attached, name, shell_name):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("2: shell")
+    if attached:
+        terminal.child.sendline("imx attach second")
+        terminal.visible("2: second")
+    directory = os.fsencode(sessions.path) + b"/" + name
+    os.mkdir(directory)
+    terminal.command(f"cd {shell_name}; printf ready", "directory-ready", "ready")
+    terminal.split("down")
+    terminal.visible("3: shell")
+    destination = sessions.path / "inherited-directory"
+    terminal.child.sendline(f"pwd -P > {shlex.quote(str(destination))}")
+    terminal.wait(lambda: destination.exists() and destination.read_bytes() == directory + b"\n")
 
 
 @pytest.mark.parametrize("timeout", [False, True])

@@ -35,13 +35,17 @@ pub const Request = struct {
         self.bytes.deinit(allocator);
     }
 
-    pub fn read(self: *Request, allocator: std.mem.Allocator) !?[]u8 {
+    pub fn read(self: *Request, allocator: std.mem.Allocator, io: std.Io) !?[]u8 {
         if (!try self.reader.receive(allocator, self.fd)) {
             if (!self.acknowledged or self.reader.bytes.items.len != self.reader.offset) return error.InvalidResponse;
             const info = try std.json.parseFromSlice(protocol.SessionInfo, allocator, self.bytes.items, .{});
             defer info.deinit();
-            if (!std.mem.eql(u8, info.value.name, self.name) or info.value.pid <= 0 or !std.fs.path.isAbsolute(info.value.directory)) return error.InvalidResponse;
-            return try allocator.dupe(u8, info.value.directory);
+            if (!std.mem.eql(u8, info.value.name, self.name) or info.value.pid <= 0) return error.InvalidResponse;
+            var link_buffer: [64]u8 = undefined;
+            const link = try std.fmt.bufPrint(&link_buffer, "/proc/{d}/cwd", .{info.value.pid});
+            var directory: [std.fs.max_path_bytes]u8 = undefined;
+            const length = try std.Io.Dir.readLinkAbsolute(io, link, &directory);
+            return try allocator.dupe(u8, directory[0..length]);
         }
         while (try self.reader.next()) |message| switch (message.tag) {
             .ok => {
