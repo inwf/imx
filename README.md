@@ -104,10 +104,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-Install a specific published version, such as `v0.10.2`:
+Install a specific published version, such as `v0.11.0`:
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.10.2/install.sh | bash -s -- v0.10.2
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.11.0/install.sh | bash -s -- v0.11.0
 ```
 
 The installer places the license and completion files under the same prefix and removes its temporary download and extraction files when it finishes. System installations provide the Fish completion file under both `/usr/local` and `/usr`. With a custom prefix, Bash and Fish find the completion files through `XDG_DATA_DIRS` and Zsh through `fpath`.
@@ -174,7 +174,9 @@ Mouse mode defaults to off (`panes.mouse = false`). At ordinary shell prompts, d
 
 With mouse mode enabled, drag a separator with the left mouse button to resize adjacent panes. Both edges of the separator accept dragging, including in nested splits. Programs receive their updated terminal dimensions while you drag. Each pane keeps at least 12 columns and 5 rows including its border; the adjusted proportions are retained when the terminal resizes.
 
-Press **Alt+Shift+Left/Right** to decrease/increase the focused pane's width by one column, or **Alt+Shift+Up/Down** to decrease/increase its height by one row. These shortcuts work with mouse mode off and preserve focus. Nested layouts use the nearest split along the requested axis, resizing all panes that share that region. The same minimum sizes and proportions apply; the layout stays unchanged when no matching split exists or a minimum size is reached.
+Press **Alt+Shift+Arrow** to grow the focused pane toward the arrow, or **Alt+Ctrl+Arrow** to shrink it by moving the opposite edge in the arrow direction. For example, Alt+Shift+Up moves the top edge up, and Alt+Ctrl+Down moves the top edge down. Each keypress moves the selected separator by one column or row. These shortcuts work with mouse mode off, preserve focus, and notify programs of their updated terminal dimensions.
+
+Nested layouts select the nearest enclosing split that controls the requested edge, resizing all panes that share that region. A pane surrounded by neighbors can have each of its four edges adjusted separately. Outer screen edges stay fixed; the layout stays unchanged when the requested edge has no separator or a minimum size is reached. Each pane keeps at least 12 columns and 5 rows including its border. Gaps stay fixed, and the adjusted proportions are retained when the terminal resizes.
 
 Set `panes.horizontal_gap` for blank columns between side-by-side pane borders and `panes.vertical_gap` for blank rows between top and bottom pane borders. Both default to `0` and accept integers from `0` to `255`. Gaps stay fixed during terminal resizing and support dragging when mouse mode is enabled. Restart the interface to apply changes.
 
@@ -215,7 +217,8 @@ The [full configuration template](config.example.toml) lists every option with c
 - **`keybindings.split_right`**, **`keybindings.split_down`** split the focused pane horizontally across the screen or vertically down it. Defaults are Alt+D and Alt+Shift+D; `alt` means Option on macOS. Each new pane starts a plain shell in the current directory. Restart the interface to apply changes to these bindings. Duplicate shortcuts are rejected.
 - **`keybindings.close_pane`** closes the focused pane and terminates its attached session and programs. The default is Alt+W. Detach first to preserve the session. Restart the interface to apply changes to this binding.
 - **`keybindings.focus_left`**, **`focus_right`**, **`focus_up`**, **`focus_down`** select a neighboring pane with Alt+Arrow. **`keybindings.focus_1`** through **`focus_10`** select numbered panes with Alt+1 through Alt+9 and Alt+0. Restart the interface to apply changes.
-- **`keybindings.resize_left`**, **`resize_right`**, **`resize_up`**, **`resize_down`** resize the focused pane with Alt+Shift+Arrow. Left/Up decrease width/height by one column/row; Right/Down increase it. Restart the interface to apply changes.
+- **`keybindings.resize_left`**, **`resize_right`**, **`resize_up`**, **`resize_down`** grow the focused pane toward the arrow with Alt+Shift+Arrow, moving the edge on that side by one column or row. Restart the interface to apply changes.
+- **`keybindings.shrink_left`**, **`shrink_right`**, **`shrink_up`**, **`shrink_down`** shrink the focused pane with Alt+Ctrl+Arrow, moving the opposite edge in the arrow direction by one column or row. Restart the interface to apply changes.
 - **`keybindings.detach`** sets the shortcut that detaches the current connection. For example, `{ key = 'x', ctrl = true }` uses `Ctrl+x`, and `{ key = 'F12' }` uses F12. `key` accepts a single character or a supported key name; `ctrl`, `alt`, `shift`, and `super` are booleans and default to `false` within an explicit binding. ASCII letter names are case-insensitive; use `shift = true` to require Shift. Changes apply when you reconnect, and switching sessions keeps the current connection's binding. See [keybindings](docs/usage.md#快捷键配置) for supported names and terminal encoding behavior.
 
 Syntax errors, unknown options, and wrong value types are reported when you attach or list sessions. Diagnostics include the configuration path and, for option errors, the full option name and its requirements. The [configuration section](docs/usage.md#配置文件与会话提示符) of the usage guide lists the startup files and describes how they are edited.

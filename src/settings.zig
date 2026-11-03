@@ -147,17 +147,19 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
     if (bindings.type != toml.TOML_UNKNOWN) {
         const field = context.child("keybindings");
         if (bindings.type != toml.TOML_TABLE) return field.reject(error.InvalidKeybindingsConfiguration, "expected a table");
+        const actions = std.enums.values(keyboard.Action);
+        @setEvalBranchQuota(actions.len * actions.len * 4);
         for (0..@intCast(bindings.u.tab.size)) |index| {
             const name = std.mem.span(bindings.u.tab.key[index]);
             if (std.meta.stringToEnum(keyboard.Action, name) == null) return field.child(name).reject(error.UnknownConfigurationOption, "unknown configuration option");
         }
-        inline for (std.enums.values(keyboard.Action)) |action| {
+        inline for (actions) |action| {
             const binding = toml.toml_get(bindings, @tagName(action));
             if (binding.type != toml.TOML_UNKNOWN) @field(preferences.keybindings, @tagName(action)) = try parseBinding(field.child(@tagName(action)), binding);
         }
-        inline for (std.enums.values(keyboard.Action), 0..) |action, index| {
+        inline for (actions, 0..) |action, index| {
             const value = @field(preferences.keybindings, @tagName(action));
-            inline for (std.enums.values(keyboard.Action)[0..index]) |previous| {
+            inline for (actions[0..index]) |previous| {
                 const other = @field(preferences.keybindings, @tagName(previous));
                 if (value.codepoint == other.codepoint and value.mods.eql(other.mods)) return field.child(@tagName(action)).reject(error.DuplicateKeybinding, "shortcut conflicts with keybindings." ++ @tagName(previous));
             }

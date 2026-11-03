@@ -69,12 +69,19 @@ focus_right = { key = 'Right', alt = true }
 focus_up = { key = 'Up', alt = true }
 focus_down = { key = 'Down', alt = true }
 
-# 调整当前窗格大小：Left/Up 减少一列/一行，Right/Down 增加一列/一行。
-# Resize the focused pane: Left/Up remove one column/row; Right/Down add one column/row.
+# 向箭头方向扩大当前窗格，将同侧边界移动一列或一行。
+# Grow the focused pane by moving the edge on the arrow's side one column or row.
 resize_left = { key = 'Left', alt = true, shift = true }
 resize_right = { key = 'Right', alt = true, shift = true }
 resize_up = { key = 'Up', alt = true, shift = true }
 resize_down = { key = 'Down', alt = true, shift = true }
+
+# 缩小当前窗格，将相反方向的边界沿箭头方向移动一列或一行。
+# Shrink the focused pane by moving the opposite edge one column or row in the arrow direction.
+shrink_left = { key = 'Left', alt = true, ctrl = true }
+shrink_right = { key = 'Right', alt = true, ctrl = true }
+shrink_up = { key = 'Up', alt = true, ctrl = true }
+shrink_down = { key = 'Down', alt = true, ctrl = true }
 
 # 按标题中的编号聚焦窗格，Alt+0 对应编号 10。
 # Focus a pane by its title number; Alt+0 selects number 10.

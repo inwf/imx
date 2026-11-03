@@ -57,7 +57,18 @@ detach 或会话退出后，外层 shell 提示符从左上角开始，原来的
 
 Alt+方向键按屏幕位置聚焦相邻窗格，优先选择边缘最近且靠近当前窗格中心的窗格。到达边缘时保持当前焦点。Alt+1 至 Alt+9 对应标题中的窗格编号，Alt+0 对应编号 10；编号不存在时保持当前焦点。关闭窗格后剩余编号保持不变，新窗格复用最小的空闲编号。普通 shell 窗格也可以聚焦，编号大于 10 时使用方向快捷键，开启鼠标模式后也可以点击聚焦。通过 `keybindings.focus_left`、`focus_right`、`focus_up`、`focus_down` 和 `focus_1` 至 `focus_10` 配置这些快捷键，修改后重新启动整个界面生效。
 
-Alt+Shift+左/右方向键减少或增加当前窗格的一列宽度，Alt+Shift+上/下方向键减少或增加一行高度，关闭鼠标模式时同样有效。调整过程中保持焦点，并通知程序更新终端尺寸。嵌套布局沿当前窗格向外寻找最近的对应方向分隔位置，共享该区域的窗格一起调整。例如，右侧区域有上下两个窗格时，调整其中一个窗格的宽度会同时调整这两个窗格。每个窗格至少保留包含边框的 12 列、5 行；没有对应分隔位置或达到最小尺寸时保持布局。间距保持固定，调整后的比例随终端缩放保留。通过 `keybindings.resize_left`、`resize_right`、`resize_up`、`resize_down` 配置这些快捷键，修改后重新启动整个界面生效。
+Alt+Shift+方向键向箭头方向扩大当前窗格，Alt+Ctrl+方向键将相反方向的边界沿箭头方向移动，缩小当前窗格。每次将选中的分隔线移动一列或一行，关闭鼠标模式时同样有效。调整过程中保持焦点，并通知程序更新终端尺寸。
+
+| 方向键 | 扩大：Alt+Shift | 缩小：Alt+Ctrl |
+| --- | --- | --- |
+| 向左 | 左边界向左移动 | 右边界向左移动 |
+| 向右 | 右边界向右移动 | 左边界向右移动 |
+| 向上 | 上边界向上移动 | 下边界向上移动 |
+| 向下 | 下边界向下移动 | 上边界向下移动 |
+
+扩大操作与相反方向的缩小操作控制同一条边界。例如，Alt+Shift+上方向键将上边界向上移动，Alt+Ctrl+下方向键将上边界向下移动。四周都有相邻窗格时，可以分别操作四条边界。屏幕外侧边界保持固定，指定边界没有分隔线时保持布局。
+
+嵌套布局沿当前窗格向外寻找控制指定边界的最近分隔位置，共享该区域的窗格一起调整。例如，右侧区域有上下两个窗格时，调整其中一个窗格的左边界会同时调整这两个窗格。每个窗格至少保留包含边框的 12 列、5 行；达到最小尺寸时保持布局。间距保持固定，调整后的比例随终端缩放保留。通过 `keybindings.resize_left`、`resize_right`、`resize_up`、`resize_down` 配置扩大快捷键，通过 `keybindings.shrink_left`、`shrink_right`、`shrink_up`、`shrink_down` 配置缩小快捷键，修改后重新启动整个界面生效。
 
 分离快捷键（默认 Alt+\\）只分离当前聚焦窗格的连接，随后回到该窗格的普通 shell。其他窗格保持连接，即使它们连接同一个会话。会话中的 shell 退出后，所在窗格返回普通 shell；普通 shell 退出后关闭窗格，剩余窗格重新分配空间。最后一个窗格关闭后退出整个界面。
 
@@ -84,12 +95,18 @@ split_down = { key = 'd', alt = true, shift = true }
 # 关闭当前窗格并终止其中的会话；需要保留会话时先 detach。
 # Close the focused pane and terminate its session; detach first to keep the session running.
 close_pane = { key = 'w', alt = true }
-# 减少或增加当前窗格的一列宽度或一行高度。
-# Decrease or increase the focused pane's width or height by one column or row.
+# 向箭头方向扩大当前窗格，将同侧边界移动一列或一行。
+# Grow the focused pane by moving the edge on the arrow's side one column or row.
 resize_left = { key = 'Left', alt = true, shift = true }
 resize_right = { key = 'Right', alt = true, shift = true }
 resize_up = { key = 'Up', alt = true, shift = true }
 resize_down = { key = 'Down', alt = true, shift = true }
+# 缩小当前窗格，将相反方向的边界沿箭头方向移动一列或一行。
+# Shrink the focused pane by moving the opposite edge one column or row in the arrow direction.
+shrink_left = { key = 'Left', alt = true, ctrl = true }
+shrink_right = { key = 'Right', alt = true, ctrl = true }
+shrink_up = { key = 'Up', alt = true, ctrl = true }
+shrink_down = { key = 'Down', alt = true, ctrl = true }
 ```
 
 `super` 对应 macOS 的 Command，`alt` 对应 macOS 的 Option。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏、聚焦、调整大小和关闭窗格的快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。

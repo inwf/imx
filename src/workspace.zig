@@ -16,7 +16,22 @@ const Rect = render.Rect;
 const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Axis = enum { right, down };
-const Direction = enum { left, right, up, down };
+const Direction = enum {
+    left,
+    right,
+    up,
+    down,
+
+    fn opposite(self: Direction) Direction {
+        return switch (self) {
+            .left => .right,
+            .right => .left,
+            .up => .down,
+            .down => .up,
+        };
+    }
+};
+const Resize = enum { grow, shrink };
 const MouseMode = @FieldType(vt.input.MouseEncodeOptions, "event");
 
 const CloseRequest = struct {
@@ -111,15 +126,15 @@ const Node = struct {
         return true;
     }
 
-    const ResizeTarget = struct { node: *Node, first: bool };
-
-    fn resizeTarget(self: *Node, pane: *Pane, axis: Axis) ?ResizeTarget {
+    fn resizeTarget(self: *Node, pane: *Pane, edge: Direction) ?*Node {
         if (self.content == .pane) return null;
         const split = self.content.split;
         const first = split.first.find(pane) != null;
         const child = if (first) split.first else split.second;
-        if (child.resizeTarget(pane, axis)) |target| return target;
-        return if (split.axis == axis) .{ .node = self, .first = first } else null;
+        if (child.resizeTarget(pane, edge)) |target| return target;
+        const axis: Axis = if (edge == .left or edge == .right) .right else .down;
+        const before = edge == .left or edge == .up;
+        return if (split.axis == axis and first != before) self else null;
     }
 
     fn find(self: *Node, pane: *Pane) ?*Node {
@@ -465,16 +480,17 @@ const App = struct {
         }
     }
 
-    fn resizePane(self: *App, direction: Direction) !void {
+    fn resizePane(self: *App, direction: Direction, resize: Resize) !void {
         if (!self.composed or self.focused.close_requested) return;
         const horizontal = direction == .left or direction == .right;
-        const target = self.root.resizeTarget(self.focused, if (horizontal) .right else .down) orelse return;
+        const edge = if (resize == .grow) direction else direction.opposite();
+        const target = self.root.resizeTarget(self.focused, edge) orelse return;
         self.cancelResize();
         self.cancelSelection();
-        const first = target.node.content.split.first.rect;
+        const first = target.content.split.first.rect;
         const current: i32 = if (horizontal) first.width else first.height;
         const step: i32 = if (direction == .left or direction == .up) -1 else 1;
-        if (target.node.resizeFirst(current + (if (target.first) step else -step))) try self.arrange();
+        if (target.resizeFirst(current + step)) try self.arrange();
     }
 
     fn remove(self: *App, index: usize) !void {
@@ -616,10 +632,14 @@ const App = struct {
                 .focus_right => return self.focusDirection(.right),
                 .focus_up => return self.focusDirection(.up),
                 .focus_down => return self.focusDirection(.down),
-                .resize_left => return self.resizePane(.left),
-                .resize_right => return self.resizePane(.right),
-                .resize_up => return self.resizePane(.up),
-                .resize_down => return self.resizePane(.down),
+                .resize_left => return self.resizePane(.left, .grow),
+                .resize_right => return self.resizePane(.right, .grow),
+                .resize_up => return self.resizePane(.up, .grow),
+                .resize_down => return self.resizePane(.down, .grow),
+                .shrink_left => return self.resizePane(.left, .shrink),
+                .shrink_right => return self.resizePane(.right, .shrink),
+                .shrink_up => return self.resizePane(.up, .shrink),
+                .shrink_down => return self.resizePane(.down, .shrink),
                 .focus_1, .focus_2, .focus_3, .focus_4, .focus_5, .focus_6, .focus_7, .focus_8, .focus_9, .focus_10 => return self.focusNumber(@backingInt(action) - @backingInt(keyboard.Action.focus_1) + 1),
                 else => {},
             }

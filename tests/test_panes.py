@@ -658,7 +658,7 @@ def test_closing_last_pane_restores_outer_terminal(sessions, close):
     assert sessions.sessions()[0]["CLIENTS"] == "0"
 
 
-@pytest.mark.parametrize("binding", ["split_right", "split_down", "close_pane", "focus_left", "focus_1", "resize_left", "resize_right", "resize_up", "resize_down"])
+@pytest.mark.parametrize("binding", ["split_right", "split_down", "close_pane", "focus_left", "focus_1", "resize_left", "resize_right", "resize_up", "resize_down", "shrink_left", "shrink_right", "shrink_up", "shrink_down"])
 def test_conflicting_shortcuts_report_configuration_option(sessions, binding):
     path = sessions.home / ".config/imx/config.toml"
     path.parent.mkdir(parents=True)
