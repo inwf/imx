@@ -1,6 +1,8 @@
 import io
+import os
 import re
 import shlex
+import signal
 
 import pexpect
 import pytest
@@ -74,7 +76,9 @@ def test_progress_follows_stderr_terminal(downloaded, operation, redirect):
     downloaded.assert_no_temporary_files()
 
 
-def test_cancel_download_preserves_installation_and_session(downloaded):
+@pytest.mark.parametrize("operation", ["install", "update"])
+@pytest.mark.parametrize("cancellation", ["interrupt", "hangup", "terminate"])
+def test_cancel_download_preserves_installation_and_session(downloaded, operation, cancellation):
     assert downloaded.install().returncode == 0
     session = downloaded.spawn()
     downloaded.command(session, "printf 'DOWNLOAD_CANCEL_HISTORY\\n'")
@@ -82,14 +86,22 @@ def test_cancel_download_preserves_installation_and_session(downloaded):
     original_pid = downloaded.sessions()[0]["PID"]
     limit_download_rate(downloaded)
     output = io.StringIO()
+    if operation == "update":
+        arguments = [str(downloaded.binary), "update", "--force"]
+    else:
+        url = f"{downloaded.environment['IMX_RELEASE_BASE_URL']}/download/v{VERSION}/install.sh"
+        arguments = ["/bin/bash", "--noprofile", "--norc", "-c", f"set -o pipefail; curl -fsSL {shlex.quote(url)} | bash"]
     child = pexpect.spawn(
-        str(downloaded.binary), ["update", "--force"], env=downloaded.environment,
+        arguments[0], arguments[1:], env=downloaded.environment,
         cwd=str(downloaded.path), encoding="utf-8", timeout=20,
     )
     child.logfile_read = output
     try:
         wait_for_download_progress(child)
-        child.sendcontrol("c")
+        if cancellation == "interrupt":
+            child.sendcontrol("c")
+        else:
+            os.killpg(child.pid, signal.SIGHUP if cancellation == "hangup" else signal.SIGTERM)
         child.expect(pexpect.EOF)
     finally:
         child.close(force=True)

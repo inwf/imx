@@ -41,6 +41,7 @@ staged_binary=
 privileged=()
 cleanup() {
     local status=$?
+    trap '' HUP INT TERM
     trap - EXIT
     if [[ -n $staged_binary && -e $staged_binary ]]; then
         if [[ ${#privileged[@]} -gt 0 ]]; then
@@ -53,6 +54,9 @@ cleanup() {
     exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 download() {
     local progress=(--silent)

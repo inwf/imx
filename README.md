@@ -312,7 +312,7 @@ When upgrading from v0.4.1, the existing shared backend continues to manage its 
 <summary><strong>What update and uninstall touch</strong></summary>
 
 
-- Update keeps the current installation prefix, whether it is a system directory, a custom `IMX_PREFIX`, or reached through a symlink. A failed download, a checksum mismatch, or a canceled `sudo` prompt leaves the installation and all sessions untouched.
+- Update keeps the current installation prefix, whether it is a system directory, a custom `IMX_PREFIX`, or reached through a symlink. A failed or canceled download, a checksum mismatch, or a canceled `sudo` prompt leaves the installation and all sessions untouched. Download and extraction directories are removed when installation finishes or receives SIGINT, SIGHUP, or SIGTERM.
 - Uninstall terminates sessions through Linux session IDs and pidfd, then cleans up the socket, lock files, license and completion files, the configuration file, the integration blocks it recorded in shell startup files, and every recorded runtime directory. When imx was reached through a symlink, the real executable and the links used to call it are removed. An integration block that was edited by hand stops the uninstall and is reported with its path.
 - Both operate on the current user only. Sessions and runtime files of other users are untouched, and a system-installed executable and its license and completion files are shared.
 
