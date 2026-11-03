@@ -137,7 +137,7 @@ def test_shift_drag_selects_text_in_mouse_application(sessions):
     assert "\x1b]52;" not in terminal.capture.getvalue()
 
 
-@pytest.mark.parametrize("action", ["resize", "split", "close"])
+@pytest.mark.parametrize("action", ["resize", "split", "close", "zoom"])
 def test_layout_changes_cancel_selection_and_preserve_clipboard(sessions, action):
     terminal = text_terminal(sessions)
     select(terminal, (2, 2), (7, 2), release=False)
@@ -150,6 +150,9 @@ def test_layout_changes_cancel_selection_and_preserve_clipboard(sessions, action
     elif action == "split":
         terminal.split("down")
         terminal.visible("3: shell")
+    elif action == "zoom":
+        terminal.child.send("\x1bz")
+        terminal.visible("[zoom]")
     else:
         terminal.child.send("\x1bw")
         terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))

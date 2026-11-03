@@ -313,7 +313,7 @@ const Pane = struct {
                     if (n != 0) return error.PaneExecFailed;
                     sys.close(startup.fd);
                     self.starting = null;
-                    self.app.dirty = true;
+                    if (self.app.visible(self)) self.app.dirty = true;
                 }
             }
         }
@@ -352,6 +352,7 @@ const App = struct {
     resize_drag: ?struct { node: ?*Node, grab_offset: i32 } = null,
     selection_drag: ?struct { pane: ?*Pane } = null,
     composed: bool = false,
+    zoomed: bool = false,
     dirty: bool = false,
     repaint: bool = true,
     next_frame: i64 = 0,
@@ -365,6 +366,19 @@ const App = struct {
     keys: keyboard.Input,
     keyboard_flags: u5 = 5,
     status: ?[]u8 = null,
+
+    fn visible(self: *const App, pane: *const Pane) bool {
+        return !self.zoomed or pane == self.focused;
+    }
+
+    fn setZoom(self: *App, enabled: bool) !void {
+        if (self.zoomed == enabled or (enabled and (!self.composed or self.panes.items.len < 2))) return;
+        self.cancelResize();
+        self.cancelSelection();
+        self.mouse_pane = null;
+        self.zoomed = enabled;
+        try self.arrange();
+    }
 
     fn availableNumber(self: *const App) usize {
         var number: usize = 1;
@@ -402,8 +416,13 @@ const App = struct {
         const minimum = self.root.minimum();
         const canvas: Rect = .{ .width = @max(self.size.cols, minimum.cols), .height = @max(self.size.rows, minimum.rows) };
         self.root.arrange(canvas);
+        if (self.zoomed) {
+            const focused_minimum = self.root.find(self.focused).?.minimum();
+            self.focused.rect = .{ .width = @max(self.size.cols, focused_minimum.cols), .height = @max(self.size.rows, focused_minimum.rows) };
+        }
         self.updateOffset();
         for (self.panes.items) |pane| {
+            if (!self.visible(pane)) continue;
             const size: sys.Size = .{ .cols = pane.rect.width - 2, .rows = pane.rect.height - 2 };
             if (pane.term.cols != size.cols or pane.term.rows != size.rows) {
                 if (pane.fd >= 0) try size.set(pane.fd);
@@ -417,7 +436,7 @@ const App = struct {
 
     fn updateOffset(self: *App) void {
         const previous = self.offset;
-        const canvas = self.root.rect;
+        const canvas = if (self.zoomed) self.focused.rect else self.root.rect;
         const active = self.focused.rect;
         const dragging = if (self.resize_drag) |drag| drag.node != null else false;
         self.offset = .{
@@ -429,6 +448,7 @@ const App = struct {
 
     fn focus(self: *App, pane: *Pane) !void {
         if (self.focused == pane) return;
+        try self.setZoom(false);
         self.cancelResize();
         self.cancelSelection();
         if (!self.mouse_enabled) self.mouse_pane = null;
@@ -441,7 +461,7 @@ const App = struct {
 
     fn focusDirection(self: *App, direction: Direction) !void {
         if (!self.composed) return;
-        const active = self.focused.rect;
+        const active = if (self.zoomed) self.root.find(self.focused).?.rect else self.focused.rect;
         const horizontal = direction == .left or direction == .right;
         const backward = direction == .left or direction == .up;
         const start: i32 = if (horizontal) active.x else active.y;
@@ -482,6 +502,7 @@ const App = struct {
 
     fn resizePane(self: *App, direction: Direction, resize: Resize) !void {
         if (!self.composed or self.focused.close_requested) return;
+        try self.setZoom(false);
         const horizontal = direction == .left or direction == .right;
         const edge = if (resize == .grow) direction else direction.opposite();
         const target = self.root.resizeTarget(self.focused, edge) orelse return;
@@ -499,6 +520,7 @@ const App = struct {
         const pane = self.panes.items[index];
         if (self.panes.items.len > 1) _ = self.root.remove(self.allocator, pane);
         _ = self.panes.orderedRemove(index);
+        if (pane == self.focused or self.panes.items.len < 2) self.zoomed = false;
         if (self.mouse_pane == pane) self.mouse_pane = null;
         if (self.panes.items.len > 0 and self.focused == pane) self.focused = self.panes.items[@min(index, self.panes.items.len - 1)];
         pane.deinit();
@@ -520,6 +542,7 @@ const App = struct {
     fn split(self: *App, axis: Axis) !void {
         const selected = self.focused;
         if (selected.directory_request != null or selected.starting != null) return self.message("This pane is still starting.");
+        try self.setZoom(false);
         const rect = if (self.composed) selected.rect else Rect{ .width = self.size.cols, .height = self.size.rows };
         const gap = if (axis == .right) self.horizontal_gap else self.vertical_gap;
         if (rect.width > self.size.cols or rect.height > self.size.rows or rect.width < (if (axis == .right) 24 + gap else 12) or rect.height < (if (axis == .down) 10 + gap else 5)) {
@@ -605,8 +628,9 @@ const App = struct {
         }
         if (self.repaint) self.vx.screen.clear();
         for (self.panes.items) |pane| {
+            if (!self.visible(pane)) continue;
             var title_buffer: [128]u8 = undefined;
-            const title = try std.fmt.bufPrint(&title_buffer, " {d}: {s} ", .{ pane.number, if (pane.directory_request != null or pane.starting != null) "starting" else if (pane.attached) |state| state.value.session else "shell" });
+            const title = try std.fmt.bufPrint(&title_buffer, " {d}: {s}{s} ", .{ pane.number, if (pane.directory_request != null or pane.starting != null) "starting" else if (pane.attached) |state| state.value.session else "shell", if (self.zoomed) " [zoom]" else "" });
             if (pane.hold_until == null and pane.render_pending) {
                 try pane.state.update(self.allocator, &pane.term);
                 pane.render_pending = false;
@@ -647,7 +671,11 @@ const App = struct {
             switch (action) {
                 .split_right => try self.split(.right),
                 .split_down => try self.split(.down),
-                .close_pane => pane.close_requested = true,
+                .close_pane => {
+                    try self.setZoom(false);
+                    pane.close_requested = true;
+                },
+                .zoom_pane => try self.setZoom(!self.zoomed),
                 else => unreachable,
             }
             return;
@@ -732,12 +760,12 @@ const App = struct {
             self.resize_drag = null;
             self.cancelSelection();
             self.selection_drag = null;
-            if (self.root.separator(x, y)) |node| {
+            if (!self.zoomed) if (self.root.separator(x, y)) |node| {
                 const divider = node.content.split;
                 self.mouse_pane = null;
                 self.resize_drag = .{ .node = node, .grab_offset = if (divider.axis == .right) x - divider.second.rect.x else y - divider.second.rect.y };
                 return;
-            }
+            };
         }
         if (self.resize_drag) |drag| {
             const released = mouse.type == .release and (mouse.button == .left or mouse.button == .none);
@@ -770,6 +798,7 @@ const App = struct {
         const captured = if (mouse.type == .drag or mouse.type == .release) self.mouse_pane else null;
         if (mouse.type == .release) self.mouse_pane = null;
         for (self.panes.items) |pane| {
+            if (!self.visible(pane)) continue;
             if (captured) |target| {
                 if (pane != target) continue;
             } else if (!pane.rect.contains(x, y)) continue;
@@ -852,7 +881,7 @@ fn renderHold(handler: *Handler, held: bool) void {
         pane.hold_until = (sys.monotonicMilliseconds() catch @panic("failed to read render clock")) + 1000;
     } else pane.hold_until = null;
     pane.render_pending = true;
-    pane.app.dirty = true;
+    if (pane.app.visible(pane)) pane.app.dirty = true;
 }
 
 fn writeClipboard(handler: *Handler, request: vt.clipboard.Write) void {
@@ -1035,7 +1064,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
             if (after_poll >= until) {
                 pane.hold_until = null;
                 pane.render_pending = true;
-                app.dirty = true;
+                if (app.visible(pane)) app.dirty = true;
             }
         };
         if (count == 0) {
@@ -1114,7 +1143,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                         pane.control = null;
                         pane.detaching = false;
                     } else pane.attached = try std.json.parseFromSlice(context.State, allocator, buffer[0..n], .{ .allocate = .alloc_always });
-                    app.dirty = true;
+                    if (app.visible(pane)) app.dirty = true;
                 }
             }
             if (pane.closing) |*request| {
@@ -1195,7 +1224,9 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                     pane.stream.nextSlice(buffer[0..n]);
                     pane.render_pending = true;
                     if (pane.stream.handler.semantic_failure) return error.TerminalStateFailure;
-                    if (app.composed) app.dirty = true else try app.output.append(allocator, buffer[0..n]);
+                    if (app.composed) {
+                        if (app.visible(pane)) app.dirty = true;
+                    } else try app.output.append(allocator, buffer[0..n]);
                 }
             }
         }

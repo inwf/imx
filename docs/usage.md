@@ -57,6 +57,10 @@ detach 或会话退出后，外层 shell 提示符从左上角开始，原来的
 
 Alt+方向键按屏幕位置聚焦相邻窗格，优先选择边缘最近且靠近当前窗格中心的窗格。到达边缘时保持当前焦点。Alt+1 至 Alt+9 对应标题中的窗格编号，Alt+0 对应编号 10；编号不存在时保持当前焦点。关闭窗格后剩余编号保持不变，新窗格复用最小的空闲编号。普通 shell 窗格也可以聚焦，编号大于 10 时使用方向快捷键，开启鼠标模式后也可以点击聚焦。通过 `keybindings.focus_left`、`focus_right`、`focus_up`、`focus_down` 和 `focus_1` 至 `focus_10` 配置这些快捷键，修改后重新启动整个界面生效。
 
+Alt+Z 将当前窗格临时放大到整个界面，标题显示 `[zoom]`；再次使用恢复原有布局、比例和焦点。其他窗格保留终端尺寸，程序和历史记录继续更新。缩放整个终端窗口时保持放大状态，恢复分屏后按照保存的比例和最小尺寸重新计算布局，固定间距继续生效。
+
+切换到其他窗格、继续分屏、使用窗格尺寸调整快捷键或关闭当前窗格时，先恢复分屏布局再执行操作。聚焦当前编号、指定不存在的编号或没有相邻窗格的方向时，继续保持放大。关闭放大的普通 shell 窗格会显示剩余窗格；其他窗格退出时，当前窗格继续放大，剩余一个窗格时结束放大状态。分离会话后，同一窗格的普通 shell 继续保持放大。放大期间，鼠标操作作用于可见窗格。只有一个窗格时，Alt+Z 保持当前显示。通过 `keybindings.zoom_pane` 配置快捷键，修改后重新启动整个界面生效。
+
 Alt+Shift+方向键向箭头方向扩大当前窗格，Alt+Ctrl+方向键将相反方向的边界沿箭头方向移动，缩小当前窗格。每次将选中的分隔线移动一列或一行，关闭鼠标模式时同样有效。调整过程中保持焦点，并通知程序更新终端尺寸。
 
 | 方向键 | 扩大：Alt+Shift | 缩小：Alt+Ctrl |
@@ -95,6 +99,9 @@ split_down = { key = 'd', alt = true, shift = true }
 # 关闭当前窗格并终止其中的会话；需要保留会话时先 detach。
 # Close the focused pane and terminate its session; detach first to keep the session running.
 close_pane = { key = 'w', alt = true }
+# 临时放大当前窗格，再次使用恢复原有布局。
+# Temporarily zoom the focused pane; repeat to restore the layout.
+zoom_pane = { key = 'z', alt = true }
 # 向箭头方向扩大当前窗格，将同侧边界移动一列或一行。
 # Grow the focused pane by moving the edge on the arrow's side one column or row.
 resize_left = { key = 'Left', alt = true, shift = true }
@@ -109,7 +116,7 @@ shrink_up = { key = 'Up', alt = true, ctrl = true }
 shrink_down = { key = 'Down', alt = true, ctrl = true }
 ```
 
-`super` 对应 macOS 的 Command，`alt` 对应 macOS 的 Option。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏、聚焦、调整大小和关闭窗格的快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。
+`super` 对应 macOS 的 Command，`alt` 对应 macOS 的 Option。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏、聚焦、临时放大、调整大小和关闭窗格的快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。
 
 ## 切换会话
 
@@ -187,7 +194,7 @@ detach = { key = 'x', ctrl = true }
 
 `key` 为必填字符串，可以使用单个 Unicode 字符，或者 `Enter`、`Tab`、`Escape`、`Space`、`Backspace`、`Insert`、`Delete`、`Left`、`Right`、`Up`、`Down`、`Page_Up`、`Page_Down`、`Home`、`End`、`F1` 至 `F12`。ASCII 字母和按键名称不区分大小写。`ctrl`、`alt`、`shift`、`super` 为可选布尔值，在显式配置的快捷键中默认为 `false`；需要 Shift 时设置 `shift = true`。例如，`{ key = 'x', ctrl = true, shift = true }` 表示 `Ctrl+Shift+x`，`{ key = 'F12' }` 表示 F12。
 
-分离快捷键由客户端在建立连接时读取。修改后分离并重新连接即可生效，会话中的程序继续运行。同一连接切换会话时保留当前快捷键设置；同时连接的其他客户端继续使用各自建立连接时读取的设置。分屏、聚焦、调整大小和关闭窗格的快捷键在启动整个界面时读取，修改后退出界面并重新进入生效。已有配置文件可以手动添加 `[keybindings]` 部分。
+分离快捷键由客户端在建立连接时读取。修改后分离并重新连接即可生效，会话中的程序继续运行。同一连接切换会话时保留当前快捷键设置；同时连接的其他客户端继续使用各自建立连接时读取的设置。分屏、聚焦、临时放大、调整大小和关闭窗格的快捷键在启动整个界面时读取，修改后退出界面并重新进入生效。已有配置文件可以手动添加 `[keybindings]` 部分。
 
 快捷键支持普通终端、Kitty 键盘协议和 xterm 的 modifyOtherKeys 编码。终端需要能够发送所配置组合的编码；某些普通终端无法区分 `Ctrl+Shift+x` 与 `Ctrl+x`，此类组合需要扩展键盘协议。普通编码中的 `Ctrl+i` 与 Tab、`Ctrl+m` 与 Enter、`Ctrl+h` 与部分终端的 Backspace 共用字节，因此配置其中一个组合时，共用编码也会触发。单独的 Escape 等待 100 毫秒，以便识别以 Escape 开头的组合键。
 

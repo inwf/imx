@@ -62,6 +62,10 @@ split_down = { key = 'd', alt = true, shift = true }
 # Close the focused pane and terminate its session and programs; detach first to keep the session.
 close_pane = { key = 'w', alt = true }
 
+# 临时放大当前窗格，再次使用恢复原有布局。
+# Temporarily zoom the focused pane; repeat to restore the layout.
+zoom_pane = { key = 'z', alt = true }
+
 # 按方向聚焦相邻窗格。
 # Focus a neighboring pane in the given direction.
 focus_left = { key = 'Left', alt = true }
