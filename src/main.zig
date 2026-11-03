@@ -72,13 +72,14 @@ fn execute(init: std.process.Init.Minimal) !void {
     defer preferences.deinit(allocator);
     var records = try registry.Registry.init(allocator, io, false);
     defer records.deinit();
-    if (tag == .attach) try records.lockIntegration();
     if (preferences.file_missing) preferences = try settings.load(allocator, io, .{ .create_default = true });
-    if (tag == .attach) try shell.synchronize(allocator, io, &records, preferences.show_session, config.env("SHELL") orelse "/bin/sh");
     if (tag == .attach and config.env("IMX_SESSION") == null and config.env(@import("pane_context.zig").variable) == null) {
-        records.finishSetup();
         try records.unlock();
         return @import("workspace.zig").run(allocator, io, init.environ, name, preferences);
+    }
+    if (tag == .attach) {
+        try records.lockIntegration();
+        try shell.synchronize(allocator, io, &records, preferences.show_session, config.env("SHELL") orelse "/bin/sh");
     }
     var root = try config.Config.init(allocator, io);
     defer root.deinit();

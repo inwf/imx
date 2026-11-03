@@ -6,6 +6,7 @@ import shutil
 import stat
 
 import pexpect
+import psutil
 import pytest
 
 
@@ -262,6 +263,30 @@ def test_concurrent_prompt_installation_has_one_block(sessions):
     assert len(sessions.sessions()) == len(children)
     assert path.read_text().count(BEGIN) == 1
     assert (sessions.home / ".profile").read_text().count(BEGIN) == 1
+
+
+def test_connection_process_serializes_shell_setup(sessions):
+    path, original = setup_shell(sessions, "bash")
+    settings(sessions, True)
+    sessions.run("list")
+    lock = sessions.home / ".local/state/imx/integration.lock"
+    descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        child = sessions.spawn(initialize=False)
+        manager = psutil.Process(child.pid)
+        connection = sessions.wait(lambda: next((
+            process for process in manager.children()
+            if any(file.path == str(lock) for file in process.open_files())
+        ), None))
+        assert connection.exe() == str(sessions.binary)
+        assert all(file.path != str(lock) for file in manager.open_files())
+        assert path.read_text() == original
+        assert not list(sessions.runtime.glob("session-*.sock"))
+    finally:
+        os.close(descriptor)
+    child.expect_exact("[dev] BASE:")
+    assert path.read_text().count(BEGIN) == 1
 
 
 @pytest.mark.parametrize("value, error", [
