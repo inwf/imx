@@ -77,6 +77,10 @@ PSS 表示按比例分摊共享页面后的物理内存。后台、客户端、s
 
 2026-11-03 在上述 x86_64 WSL2 环境和默认编译模式下，使用 240×60 终端创建两个包含文字的窗格，交替切换焦点 200 次。三次测量中，分屏管理进程 CPU 时间的中位数为 0.18 秒，发送到终端的数据中位数为 948,347 字节。焦点切换保留未变化的窗格内容缓存，并更新边框、光标及输入模式；可见区域移动时重新绘制。
 
+### 实时预览
+
+2026-11-03 在上述环境中，对 240×60 彩色终端画面的 238×50 预览进行 30 次 shell 命令更新。三次测量的首次完整画面中位数为 261,039 字节，后续更新合计为 133,307 字节，后台 CPU 时间为 0.01 秒。首次画面单独统计，后续传输只包含发生变化的行。会话共用更新状态，各预览连接分别记录已接收的行，界面复用内容缓存。
+
 ### 后台连续输出
 
 无人连接时使用 `seq` 输出 500,000 行：
@@ -129,3 +133,11 @@ TMPDIR="$PWD/work/runtime" uv run --frozen --project tests python tests/benchmar
 ```
 
 结果写入 `work/benchmark-focus.json`，同样支持 `IMX_BINARY` 和 `--report`。
+
+测量实时预览：
+
+```bash
+TMPDIR="$PWD/work/runtime" uv run --frozen --project tests python tests/benchmark_select.py
+```
+
+结果写入 `work/benchmark-select.json`，同样支持 `IMX_BINARY` 和 `--report`。CPU 时间按系统时钟精度采样。

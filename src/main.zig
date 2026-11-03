@@ -111,4 +111,5 @@ test {
     _ = @import("settings.zig");
     _ = @import("update.zig");
     _ = @import("pane_render.zig");
+    _ = @import("preview.zig");
 }

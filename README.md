@@ -335,6 +335,8 @@ On 2026-11-02, a 240×60 terminal with 2, 4, or 8 panes was measured while one p
 
 On 2026-11-03, switching focus 200 times between two panes in a 240×60 terminal used a median of 0.18 seconds of workspace process CPU time across three runs. Focus changes reuse cached pane contents and redraw when the visible region changes. Run `tests/benchmark_focus.py` to repeat the measurement.
 
+On the same system, 30 updates to a 238×50 live preview of a colored terminal screen transferred a median of 133,307 bytes and used 0.01 seconds of backend CPU time across three runs. Previews send changed rows and reuse rendering buffers. Run `tests/benchmark_select.py` to repeat the measurement.
+
 ## Documentation
 
 | Looking for                                                  | Start here                               |

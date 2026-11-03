@@ -36,6 +36,7 @@ const Selector = struct {
     initial_deadline: ?i64 = null,
     message: ?[]const u8 = null,
     dirty: bool = true,
+    repaint: bool = true,
     preview_dirty: bool = false,
 
     fn freeNames(self: *Selector, names: [][]const u8) void {
@@ -95,6 +96,7 @@ const Selector = struct {
         self.names = names;
         self.selected = selected;
         self.dirty = true;
+        self.repaint = true;
         if (!retained or !std.meta.eql(previous_rect, self.previewRect())) try self.preview();
     }
 
@@ -103,6 +105,7 @@ const Selector = struct {
         self.disconnect();
         self.message = null;
         self.dirty = true;
+        self.repaint = true;
         self.stream.nextSlice("\x1bc");
         const name = self.selectedName() orelse return;
         const rect = self.previewRect() orelse return;
@@ -138,6 +141,7 @@ const Selector = struct {
             self.disconnect();
             self.message = "Preview unavailable: session ended or backend does not support previews.";
             self.dirty = true;
+            self.repaint = true;
             return;
         }
         while (try self.reader.next()) |message| {
@@ -146,6 +150,7 @@ const Selector = struct {
                 .done => {
                     if (message.payload.len != 0) return error.InvalidMessage;
                     if (self.stream.handler.semantic_failure) return error.TerminalStateFailure;
+                    if (self.message != null) self.repaint = true;
                     self.message = null;
                     self.initial_deadline = null;
                     self.next_request = try sys.monotonicMilliseconds() + frame_interval_ms;
@@ -155,6 +160,7 @@ const Selector = struct {
                     self.message = if (std.mem.eql(u8, message.payload, "SessionNotFound")) "Session ended." else "Preview unsupported by this session's backend.";
                     self.disconnect();
                     self.dirty = true;
+                    self.repaint = true;
                     return;
                 },
                 else => return error.InvalidMessage,
@@ -178,7 +184,7 @@ const Selector = struct {
     }
 
     fn draw(self: *Selector) !void {
-        self.vx.screen.clear();
+        if (self.repaint) self.vx.screen.clear();
         const window = self.vx.window();
         _ = window.printSegment(.{ .text = "Sessions", .style = .{ .bold = true } }, .{ .wrap = .none });
         const height = self.listHeight();
@@ -190,7 +196,7 @@ const Selector = struct {
         }
         if (self.previewRect()) |rect| {
             try self.state.update(self.allocator, &self.term);
-            try render.draw(self.allocator, &self.cache, &self.vx.screen, &self.term, &self.state, rect, .{ 0, 0 }, false, .default, self.selectedName() orelse "Preview", true);
+            try render.draw(self.allocator, &self.cache, &self.vx.screen, &self.term, &self.state, rect, .{ 0, 0 }, false, .default, self.selectedName() orelse "Preview", self.repaint);
             if (self.message) |message| _ = window.printSegment(.{ .text = message }, .{ .row_offset = rect.y + 1, .col_offset = 1, .wrap = .none });
         }
         if (self.names.len == 0 and self.size.rows > 1) _ = window.printSegment(.{ .text = "No sessions." }, .{ .row_offset = 1, .wrap = .none });
@@ -200,6 +206,7 @@ const Selector = struct {
         try self.vx.render(&self.frame.writer);
         try self.output.append(self.allocator, self.frame.written());
         self.dirty = false;
+        self.repaint = false;
     }
 
     fn resize(self: *Selector) !void {
@@ -221,6 +228,7 @@ const Selector = struct {
                 self.message = "Preview is not responding.";
                 self.initial_deadline = null;
                 self.dirty = true;
+                self.repaint = true;
             };
             if (self.output.pending().len == 0) {
                 if (self.dirty) try self.draw();
@@ -273,6 +281,7 @@ const Selector = struct {
                     self.disconnect();
                     self.message = "Session disconnected.";
                     self.dirty = true;
+                    self.repaint = true;
                 },
                 else => return err,
             };

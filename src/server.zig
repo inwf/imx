@@ -4,6 +4,7 @@ const c = sys.c;
 const config = @import("config.zig");
 const protocol = @import("protocol.zig");
 const terminal = @import("terminal.zig");
+const preview = @import("preview.zig");
 const Stream = @TypeOf(@as(*terminal.vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Allocator = std.mem.Allocator;
@@ -22,7 +23,9 @@ const Client = struct {
     preview_primary: bool = false,
     size: sys.Size = .{ .rows = 24, .cols = 80 },
     snapshot: ?[]u8 = null,
+    snapshot_owned: bool = true,
     snapshot_offset: usize = 0,
+    preview_frame: preview.Frame = .{},
     closing: bool = false,
     supports_switch: bool = false,
     switch_peer: ?*Client = null,
@@ -50,6 +53,7 @@ const Session = struct {
     clients: std.ArrayList(*Client) = .empty,
     previews: std.ArrayList(*Client) = .empty,
     revision: u64 = 0,
+    preview_source: preview.Source = .{},
     leader: ?*Client = null,
     input_client: ?*Client = null,
     exited: bool = false,
@@ -115,6 +119,7 @@ const Server = struct {
                     break;
                 }
             }
+            if (session.previews.items.len == 0) session.preview_source.deinit(self.allocator);
         }
         if (client.switch_peer) |other| {
             client.switch_peer = null;
@@ -150,7 +155,8 @@ const Server = struct {
         client.reader.deinit(self.allocator);
         client.output.deinit(self.allocator);
         client.live.deinit(self.allocator);
-        if (client.snapshot) |snapshot| self.allocator.free(snapshot);
+        if (client.snapshot_owned) if (client.snapshot) |snapshot| self.allocator.free(snapshot);
+        client.preview_frame.deinit(self.allocator);
         self.allocator.destroy(client);
     }
 
@@ -168,7 +174,8 @@ const Server = struct {
         const active = session.term.screens.active_key;
         if (client.preview_primary) session.term.screens.switchTo(.primary);
         defer session.term.screens.switchTo(active);
-        client.snapshot = try terminal.preview(self.allocator, &session.term, client.size);
+        client.snapshot = try client.preview_frame.render(self.allocator, &session.preview_source, &session.term, client.size, session.revision);
+        client.snapshot_owned = false;
         client.preview_revision = session.revision;
         client.preview_pending = false;
         try self.updateClient(client);
@@ -193,6 +200,7 @@ const Server = struct {
             try self.respond(client, .failure, "SessionNotFound");
         }
         session.previews.deinit(self.allocator);
+        session.preview_source.deinit(self.allocator);
         try self.unwatch(session.fd, session.id);
         session.stream.deinit();
         session.term.deinit(self.allocator);
@@ -536,7 +544,7 @@ const Server = struct {
                         try client.output.message(self.allocator, .output, snapshot[client.snapshot_offset..][0..count]);
                         client.snapshot_offset += count;
                         if (client.snapshot_offset == snapshot.len) {
-                            self.allocator.free(snapshot);
+                            if (client.snapshot_owned) self.allocator.free(snapshot);
                             client.snapshot = null;
                             client.snapshot_offset = 0;
                             if (client.preview != null) try client.output.message(self.allocator, .done, "");

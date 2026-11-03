@@ -7,9 +7,11 @@ import time
 
 import pexpect
 import psutil
+import pyte
 import pytest
 
 from conftest import ROOT
+from preview_client import PreviewClient
 from test_panes import PaneTerminal
 
 
@@ -27,6 +29,30 @@ def selector(sessions, rows=30, cols=100):
 
 def shown(terminal, text):
     return any(text in row for row in terminal.screen.display)
+
+
+def test_preview_clients_keep_independent_updates(sessions):
+    session = sessions.spawn("dev", rows=30, cols=100)
+    sessions.command(session, "printf '\\033[2J\\033[H'; printf 'STABLE 中文 %060d\\n' {1..15}")
+    with PreviewClient(sessions, "dev", 25, 80) as first, PreviewClient(sessions, "dev", 20, 60) as second:
+        screens = [pyte.Screen(80, 25), pyte.Screen(60, 20)]
+        streams = [pyte.Stream(screen) for screen in screens]
+        initial = first.frame()
+        streams[0].feed(initial.decode())
+        streams[1].feed(second.frame().decode())
+        sessions.command(session, "printf '\\033[5;1H\\033[32mCHANGED_A\\033[0m\\033[K'")
+        delta = first.frame()
+        assert len(delta) < len(initial) // 2
+        streams[0].feed(delta.decode())
+        sessions.command(session, "printf '\\033[6;1HCHANGED_B\\033[K'")
+        streams[0].feed(first.frame().decode())
+        streams[1].feed(second.frame().decode())
+        for screen in screens:
+            assert any("CHANGED_A" in row for row in screen.display)
+            assert any("CHANGED_B" in row for row in screen.display)
+            assert any("STABLE 中文" in row for row in screen.display)
+            assert screen.buffer[4][0].fg == "00cd00"
+        assert sessions.sessions()[0]["CLIENTS"] == "1"
 
 
 def cancel(terminal, key="q"):
