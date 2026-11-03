@@ -571,9 +571,12 @@ const Server = struct {
                 session.stream.nextSlice(buffer[0..count]);
                 if (session.stream.handler.semantic_failure) return error.TerminalStateFailure;
                 try self.changed(session);
+                const output_limit = @max(protocol.max_queue, @as(usize, session.term.cols) * session.term.rows * 128);
                 var i: usize = 0;
                 while (i < session.clients.items.len) {
                     const client = session.clients.items[i];
+                    // 保留连接经历的最大屏幕容量，窗口缩小时也能发送完已有输出。
+                    client.live.limit = @max(client.live.limit, output_limit);
                     // 屏幕快照必须先发送，期间产生的输出保存在有容量限制的队列中。
                     client.live.message(self.allocator, .output, buffer[0..count]) catch |err| switch (err) {
                         error.SlowClient => {

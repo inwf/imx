@@ -336,6 +336,38 @@ def test_select_large_rgb_frame_is_fully_delivered(sessions):
     cancel(terminal)
 
 
+@pytest.mark.parametrize("initial_size", [(160, 320), (24, 80)])
+def test_large_rgb_output_survives_a_paused_terminal(sessions, initial_size):
+    session = sessions.spawn("colors", rows=initial_size[0], cols=initial_size[1])
+    if initial_size != (160, 320):
+        session.setwinsize(160, 320)
+        sessions.wait(lambda: "160 320" in sessions.command(session, "stty size"))
+    ready = sessions.path / "ready"
+    complete = sessions.path / "complete"
+    gate = sessions.path / "gate"
+    os.mkfifo(gate)
+    session.sendline(
+        f"printf ready > {shlex.quote(str(ready))}; read -r trigger < {shlex.quote(str(gate))}; "
+        f"{shlex.quote(sys.executable)} {shlex.quote(str(ROOT / 'tests/select_output.py'))} --colors; "
+        f"printf complete > {shlex.quote(str(complete))}; printf '\\nBURST_COMPLETE\\n'"
+    )
+    sessions.wait(ready.exists)
+    os.kill(session.pid, signal.SIGSTOP)
+    try:
+        with gate.open("w") as stream:
+            stream.write("start\n")
+        sessions.wait(complete.exists)
+        assert sessions.sessions()[0]["CLIENTS"] == "1"
+        session.setwinsize(24, 80)
+    finally:
+        os.kill(session.pid, signal.SIGCONT)
+    session.expect_exact("\r\nBURST_COMPLETE\r\n")
+    assert len(session.before) > 256 * 1024
+    assert "\x1b[38;2;20;10;30mX" in session.before
+    assert "\x1b[38;2;61;154;215mX" in session.before
+    session.expect_exact("IMX_PROMPT> ")
+
+
 def test_select_empty_and_noninteractive(sessions):
     result = sessions.run("select", check=False)
     assert result.returncode == 1

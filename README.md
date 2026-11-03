@@ -260,7 +260,7 @@ List queries run concurrently with a shared one-second deadline. `STATUS` shows 
 | Session names   | 1-64 characters: ASCII letters, digits, dots, underscores, and hyphens; `.` and `..` are reserved |
 | History         | 10,000-line target within a 2 MiB budget, trimmed in complete terminal pages |
 | Terminal size   | Up to 512 columns × 256 rows; the most recent connection sets the size |
-| Session output queues | 256 KiB per queue; a connection that falls behind is disconnected and the session keeps running |
+| Backend output queues | Per connection: at least 256 KiB, allowing 128 bytes per screen cell, up to 16 MiB; memory is allocated as needed. Connections exceeding the limit are disconnected while the session keeps running |
 | Pane rendering queue | Up to 16 MiB for a complete screen update; rendering waits for queued output to drain |
 
 Pane rendering updates changed rows, reuses UTF-8 and frame buffers, and combines continuous output with a minimum refresh interval of 16 ms. Idle clients wait for events.

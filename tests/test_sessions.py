@@ -371,8 +371,9 @@ def test_vim_survives_detach_and_restores_document(sessions):
     assert "BEFORE_VIM" in sessions.run("cat", "dev").stdout
 
 
-def test_slow_terminal_detaches_without_stopping_output(sessions):
-    child = sessions.spawn()
+@pytest.mark.parametrize("size", [(24, 80), (160, 320)])
+def test_slow_terminal_detaches_without_stopping_output(sessions, size):
+    child = sessions.spawn(rows=size[0], cols=size[1])
     done = sessions.path / "slow-output.done"
     child.sendline(f"seq 1 1000000; printf DONE > '{done}'")
     sessions.wait(done.exists, timeout=30)
