@@ -95,16 +95,31 @@ const Node = struct {
     }
 
     fn resizeTo(self: *Node, x: i32, y: i32, grab_offset: i32) bool {
+        const split = self.content.split;
+        return self.resizeFirst((if (split.axis == .right) x - self.rect.x else y - self.rect.y) - grab_offset - split.gap);
+    }
+
+    fn resizeFirst(self: *Node, desired: i32) bool {
         const split = &self.content.split;
         const horizontal = split.axis == .right;
         const a = split.first.minimum();
         const b = split.second.minimum();
         const total = (if (horizontal) self.rect.width else self.rect.height) - split.gap;
-        const desired = (if (horizontal) x - self.rect.x else y - self.rect.y) - grab_offset - split.gap;
         const first: u16 = @intCast(std.math.clamp(desired, if (horizontal) a.cols else a.rows, total - (if (horizontal) b.cols else b.rows)));
         if (first == (if (horizontal) split.first.rect.width else split.first.rect.height)) return false;
         split.ratio = .{ .first = first, .total = total };
         return true;
+    }
+
+    const ResizeTarget = struct { node: *Node, first: bool };
+
+    fn resizeTarget(self: *Node, pane: *Pane, axis: Axis) ?ResizeTarget {
+        if (self.content == .pane) return null;
+        const split = self.content.split;
+        const first = split.first.find(pane) != null;
+        const child = if (first) split.first else split.second;
+        if (child.resizeTarget(pane, axis)) |target| return target;
+        return if (split.axis == axis) .{ .node = self, .first = first } else null;
     }
 
     fn find(self: *Node, pane: *Pane) ?*Node {
@@ -450,6 +465,18 @@ const App = struct {
         }
     }
 
+    fn resizePane(self: *App, direction: Direction) !void {
+        if (!self.composed or self.focused.close_requested) return;
+        const horizontal = direction == .left or direction == .right;
+        const target = self.root.resizeTarget(self.focused, if (horizontal) .right else .down) orelse return;
+        self.cancelResize();
+        self.cancelSelection();
+        const first = target.node.content.split.first.rect;
+        const current: i32 = if (horizontal) first.width else first.height;
+        const step: i32 = if (direction == .left or direction == .up) -1 else 1;
+        if (target.node.resizeFirst(current + (if (target.first) step else -step))) try self.arrange();
+    }
+
     fn remove(self: *App, index: usize) !void {
         self.cancelResize();
         self.cancelSelection();
@@ -589,6 +616,10 @@ const App = struct {
                 .focus_right => return self.focusDirection(.right),
                 .focus_up => return self.focusDirection(.up),
                 .focus_down => return self.focusDirection(.down),
+                .resize_left => return self.resizePane(.left),
+                .resize_right => return self.resizePane(.right),
+                .resize_up => return self.resizePane(.up),
+                .resize_down => return self.resizePane(.down),
                 .focus_1, .focus_2, .focus_3, .focus_4, .focus_5, .focus_6, .focus_7, .focus_8, .focus_9, .focus_10 => return self.focusNumber(@backingInt(action) - @backingInt(keyboard.Action.focus_1) + 1),
                 else => {},
             }
