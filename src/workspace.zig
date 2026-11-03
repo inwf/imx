@@ -372,12 +372,7 @@ const App = struct {
         const minimum = self.root.minimum();
         const canvas: Rect = .{ .width = @max(self.size.cols, minimum.cols), .height = @max(self.size.rows, minimum.rows) };
         self.root.arrange(canvas);
-        const active = self.focused.rect;
-        const dragging = if (self.resize_drag) |drag| drag.node != null else false;
-        self.offset = .{
-            @min(if (dragging) self.offset[0] else active.x, canvas.width - self.size.cols),
-            @min(if (dragging) self.offset[1] else active.y, canvas.height - self.size.rows),
-        };
+        self.updateOffset();
         for (self.panes.items) |pane| {
             const size: sys.Size = .{ .cols = pane.rect.width - 2, .rows = pane.rect.height - 2 };
             if (pane.term.cols != size.cols or pane.term.rows != size.rows) {
@@ -390,6 +385,18 @@ const App = struct {
         self.repaint = true;
     }
 
+    fn updateOffset(self: *App) void {
+        const previous = self.offset;
+        const canvas = self.root.rect;
+        const active = self.focused.rect;
+        const dragging = if (self.resize_drag) |drag| drag.node != null else false;
+        self.offset = .{
+            @min(if (dragging) self.offset[0] else active.x, canvas.width - self.size.cols),
+            @min(if (dragging) self.offset[1] else active.y, canvas.height - self.size.rows),
+        };
+        if (!std.meta.eql(previous, self.offset)) self.repaint = true;
+    }
+
     fn focus(self: *App, pane: *Pane) !void {
         if (self.focused == pane) return;
         self.cancelResize();
@@ -398,7 +405,8 @@ const App = struct {
         if (self.focused.term.modes.get(.focus_event)) try self.focused.input.append(self.allocator, "\x1b[O");
         self.focused = pane;
         if (pane.term.modes.get(.focus_event)) try pane.input.append(self.allocator, "\x1b[I");
-        try self.arrange();
+        self.updateOffset();
+        self.dirty = true;
     }
 
     fn focusDirection(self: *App, direction: Direction) !void {
@@ -509,6 +517,7 @@ const App = struct {
             try self.vx.resize(self.allocator, &writer.writer, .{ .cols = self.size.cols, .rows = self.size.rows, .x_pixel = 0, .y_pixel = 0 });
             try self.output.append(self.allocator, writer.written());
         }
+        try self.arrange();
         try self.focus(pane);
     }
 

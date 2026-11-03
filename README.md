@@ -333,6 +333,8 @@ See the [performance guide](docs/performance.md) for the measurement environment
 
 On 2026-11-02, a 240×60 terminal with 2, 4, or 8 panes was measured while one pane updated a line 2,000 times with a 1 ms wait between updates. Across three runs per layout, median client CPU time was 0.21, 0.21, and 0.23 s; client PSS was 8.54, 9.49, and 9.43 MiB. Run `tests/benchmark_panes.py` with the test environment to reproduce this measurement.
 
+On 2026-11-03, switching focus 200 times between two panes in a 240×60 terminal used a median of 0.18 seconds of workspace process CPU time across three runs. Focus changes reuse cached pane contents and redraw when the visible region changes. Run `tests/benchmark_focus.py` to repeat the measurement.
+
 ## Documentation
 
 | Looking for                                                  | Start here                               |
