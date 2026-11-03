@@ -24,6 +24,9 @@ def test_unicode_input_reaches_application_unchanged(sessions, mode, layout):
     destination = sessions.path / "unicode-input.bin"
     terminal.child.sendline(shlex.join([sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), mode]))
     terminal.wait(destination.exists)
+    if mode == "kitty":
+        sequence = "\x1b[>31u" if layout == "single" else "\x1b[=31u"
+        terminal.wait(lambda: sequence in terminal.capture.getvalue())
     text = "中文输入测试你好世界é界👩‍🚀"
     expected = ("".join(f"\x1b[{ord(char)};;{ord(char)}u" for char in text) if layout != "single" and mode == "kitty" else text).encode()
     terminal.child.send(text)

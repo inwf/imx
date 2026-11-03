@@ -57,13 +57,11 @@ pub const State = struct {
         self.deadline = if (self.gesture.left_drag_autoscroll == .none) null else self.deadline orelse now + scroll_interval_ms;
     }
 
-    pub fn release(self: *State, term: *vt.Terminal, x: i32, y: i32, now: i64) !bool {
+    pub fn release(self: *State, term: *vt.Terminal, x: i32, y: i32, now: i64) !void {
         try self.move(term, x, y, now);
-        const valid = self.gesture.validatedLeftClickPin(&term.screens) != null;
         self.gesture.release(term, .{ .pin = term.screens.active.pages.pin(.{ .viewport = position(term, x, y).viewport }) });
         self.pointer = null;
         self.deadline = null;
-        return valid;
     }
 
     pub fn tick(self: *State, term: *vt.Terminal, now: i64) !void {

@@ -37,14 +37,12 @@ enabled = true
 [panes]
 # 默认关闭 imx 的鼠标模式，普通 shell 中可以直接拖动选择文字，使用终端的复制快捷键。
 # 设置为 true 启用鼠标点击聚焦、滚轮浏览历史、拖动分隔线调整大小和窗格内文字选择。
-# 开启时，窗格内选区在松开鼠标后通过 OSC 52 复制，需要终端支持并允许访问剪贴板。
 # 关闭时通过 Alt+方向键或 Alt+数字切换窗格；终端本地选区可能跨越多个窗格。
 # 窗格内程序主动请求的鼠标输入仍然有效；关闭时只传给当前聚焦的窗格。
 # 修改后退出整个界面并重新 attach 生效；省略此项也默认关闭。
 #
 # imx mouse mode is disabled by default; drag to select text at shell prompts and use the terminal's copy shortcut.
 # Set true to enable click-to-focus, history scrolling, separator resizing, and text selection within panes.
-# When enabled, pane selections are copied on release via OSC 52; the terminal must support and allow clipboard access.
 # When disabled, use Alt+Arrow or Alt+number to focus panes; native terminal selections may span multiple panes.
 # Applications can still request mouse input; with this option disabled, only the focused pane receives it.
 # Exit the entire interface and attach again to apply changes; omitting this option also disables mouse mode.

@@ -653,20 +653,6 @@ const App = struct {
         }
     }
 
-    fn copySelection(self: *App, pane: *Pane) !void {
-        const screen = pane.term.screens.active;
-        const sel = screen.selection orelse return;
-        const text = try screen.selectionString(self.allocator, .{ .sel = sel });
-        defer self.allocator.free(text);
-        if (text.len == 0) return;
-        const encoder = std.base64.standard.Encoder;
-        const encoded = try self.allocator.alloc(u8, encoder.calcSize(text.len));
-        defer self.allocator.free(encoded);
-        try self.output.append(self.allocator, "\x1b]52;c;");
-        try self.output.append(self.allocator, encoder.encode(encoded, text));
-        try self.output.append(self.allocator, "\x1b\\");
-    }
-
     fn handleMouse(self: *App, mouse: vaxis.Mouse) !void {
         const x: i32 = @as(i32, mouse.col) + self.offset[0];
         const y: i32 = @as(i32, mouse.row) + self.offset[1];
@@ -711,7 +697,7 @@ const App = struct {
                 const py = y - pane.rect.y - 1;
                 const now = try sys.monotonicMilliseconds();
                 if (released) {
-                    if (try pane.selection.release(&pane.term, px, py, now)) try self.copySelection(pane);
+                    try pane.selection.release(&pane.term, px, py, now);
                 } else if (mouse.type == .drag and mouse.button == .left) {
                     try pane.selection.move(&pane.term, px, py, now);
                 }
