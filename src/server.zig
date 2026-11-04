@@ -31,6 +31,8 @@ const Client = struct {
     closing: bool = false,
     supports_switch: bool = false,
     supports_rename: bool = false,
+    supports_readonly: bool = false,
+    read_only: bool = false,
     switch_peer: ?*Client = null,
     switch_name: ?[]u8 = null,
     switch_sent: bool = false,
@@ -148,11 +150,14 @@ const Server = struct {
                 }
             }
             if (session.leader == client) {
-                session.leader = if (session.clients.items.len > 0) session.clients.items[0] else null;
-                if (session.leader) |leader| try self.resize(session, leader.size);
+                session.leader = null;
+                for (session.clients.items) |candidate| if (!candidate.read_only) {
+                    session.leader = candidate;
+                    break;
+                };
+                if (session.leader) |leader| try self.resize(session, leader.size) else try self.focus(session, false);
             }
             if (session.clients.items.len == 0) {
-                try self.focus(session, false);
                 try terminal.trim(&session.term);
             }
         }
@@ -165,9 +170,26 @@ const Server = struct {
         self.allocator.destroy(client);
     }
 
-    fn resize(self: *Server, session: *Session, size: sys.Size) !void {
+    fn resize(self: *Server, session: *Session, size: sys.Size) anyerror!void {
         try size.set(session.fd);
         try session.term.resize(self.allocator, .{ .rows = size.rows, .cols = size.cols });
+        var index: usize = 0;
+        while (index < session.clients.items.len) {
+            const client = session.clients.items[index];
+            if (client.read_only) {
+                // 尺寸通知与后续程序输出共用有序队列。
+                client.live.message(self.allocator, .resize, &size.encode()) catch |err| switch (err) {
+                    error.SlowClient => {
+                        try signalClient(client);
+                        try self.dropClient(client);
+                        continue;
+                    },
+                    else => return err,
+                };
+                try self.updateClient(client);
+            }
+            index += 1;
+        }
         try self.changed(session);
     }
 
@@ -321,8 +343,9 @@ const Server = struct {
 
     fn request(self: *Server, client: *Client, msg: protocol.Message) !void {
         if (client.closing) return error.InvalidMessage;
+        if (client.read_only) return error.ReadOnlyClient;
         if (client.preview != null and msg.tag != .preview) return error.InvalidMessage;
-        if (client.switch_name != null and msg.tag != .switch_session) return error.InvalidMessage;
+        if (client.switch_name != null and msg.tag != .switch_session and msg.tag != .switch_readonly) return error.InvalidMessage;
         switch (msg.tag) {
             .preview => {
                 if (client.session != null or client.snapshot != null or client.preview_pending or client.output.pending().len != 0) return error.InvalidMessage;
@@ -347,7 +370,7 @@ const Server = struct {
                 client.preview_pending = true;
                 try self.sendPreview(client);
             },
-            .attach => {
+            .attach, .attach_readonly => {
                 if (client.session != null or client.snapshot != null or msg.payload.len < 5) return error.InvalidMessage;
                 const fields = try protocol.Attach.decode(msg.payload);
                 client.size = fields.size;
@@ -357,15 +380,20 @@ const Server = struct {
                 while (environment.next()) |entry| {
                     if (std.mem.eql(u8, entry, protocol.client_marker)) client.supports_switch = true;
                     if (std.mem.eql(u8, entry, protocol.rename_marker)) client.supports_rename = true;
+                    if (std.mem.eql(u8, entry, protocol.readonly_marker)) client.supports_readonly = true;
                 }
-                const session = self.sessions.get(fields.name) orelse try self.create(fields.name, fields.cwd, fields.shell, fields.environment, client.size);
-                try self.resize(session, client.size);
+                const read_only = msg.tag == .attach_readonly;
+                const session = self.sessions.get(fields.name) orelse if (read_only) return error.SessionNotFound else try self.create(fields.name, fields.cwd, fields.shell, fields.environment, client.size);
+                if (!read_only) try self.resize(session, client.size);
                 client.snapshot = try terminal.restore(self.allocator, &session.term);
                 client.session = session;
-                session.leader = client;
+                client.read_only = read_only;
+                const first_writer = session.leader == null;
+                if (!read_only) session.leader = client;
                 try session.clients.append(self.allocator, client);
-                if (session.clients.items.len == 1) try self.focus(session, true);
+                if (!read_only and first_writer) try self.focus(session, true);
                 try self.respond(client, .ok, "");
+                if (read_only) try self.respond(client, .resize, &(sys.Size{ .cols = session.term.cols, .rows = session.term.rows }).encode());
             },
             .switch_prepare => {
                 if (client.session != null or client.switch_peer != null or client.switch_name != null) return error.InvalidMessage;
@@ -384,13 +412,14 @@ const Server = struct {
                 client.switch_peer = active;
                 active.switch_peer = client;
             },
-            .switch_session => {
+            .switch_session, .switch_readonly => {
                 if (client.session != null or client.switch_sent) return error.InvalidMessage;
                 const active = client.switch_peer orelse return error.SwitchClientDisconnected;
+                if (msg.tag == .switch_readonly and !active.supports_readonly) return error.ReadOnlyUnsupportedByClient;
                 const name = client.switch_name orelse return error.InvalidMessage;
                 const fields = try protocol.Attach.decode(msg.payload);
                 if (!std.mem.eql(u8, fields.name, name)) return error.InvalidSessionName;
-                self.respond(active, .switch_session, msg.payload) catch |err| {
+                self.respond(active, msg.tag, msg.payload) catch |err| {
                     if (err == error.SlowClient) return error.SwitchClientBusy;
                     return err;
                 };
@@ -604,7 +633,7 @@ const Server = struct {
                         try signalClient(client);
                         return self.dropClient(client);
                     },
-                    error.SessionNotFound, error.SessionAlreadyExists, error.SessionBusy, error.BackendTimeout, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed, error.SwitchOutsideSession, error.NoAttachedClient, error.SwitchUnsupportedByClient, error.SwitchInProgress, error.SwitchClientDisconnected, error.SwitchClientBusy => {
+                    error.SessionNotFound, error.SessionAlreadyExists, error.SessionBusy, error.BackendTimeout, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed, error.SwitchOutsideSession, error.NoAttachedClient, error.SwitchUnsupportedByClient, error.SwitchInProgress, error.SwitchClientDisconnected, error.SwitchClientBusy, error.ReadOnlyClient, error.ReadOnlyUnsupportedByClient => {
                         client.closing = true;
                         try self.respond(client, .failure, @errorName(err));
                     },
@@ -898,8 +927,10 @@ fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8,
         if (std.mem.indexOfScalar(u8, entry, '=') == null) return error.InvalidMessage;
         if (std.mem.startsWith(u8, entry, "IMX_SESSION=") or std.mem.startsWith(u8, entry, "IMX_DIR=")) continue;
         if (std.mem.startsWith(u8, entry, protocol.client_marker_prefix)) continue;
+        if (std.mem.startsWith(u8, entry, protocol.readonly_marker_prefix)) continue;
         if (std.mem.startsWith(u8, entry, protocol.rename_marker_prefix) or std.mem.startsWith(u8, entry, identity.variable ++ "=")) continue;
         if (std.mem.startsWith(u8, entry, @import("pane_context.zig").variable ++ "=")) continue;
+        if (std.mem.startsWith(u8, entry, @import("pane_context.zig").readonly_variable ++ "=")) continue;
         try envp.append(allocator, @ptrCast(entry.ptr));
     }
     const session_env = try std.fmt.allocPrintSentinel(allocator, "IMX_SESSION={s}", .{name}, 0);

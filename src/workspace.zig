@@ -224,6 +224,7 @@ const Pane = struct {
         _ = environment.swapRemove("IMX_SESSION");
         _ = environment.swapRemove(@import("session_identity.zig").variable);
         try environment.put(context.variable, self.address);
+        try environment.put(context.readonly_variable, "1");
         var envp: std.ArrayList(?[*:0]const u8) = .empty;
         defer {
             for (envp.items) |entry| if (entry) |value| allocator.free(std.mem.span(value));
@@ -240,6 +241,7 @@ const Pane = struct {
         const name = try allocator.dupeSentinel(u8, session orelse "", 0);
         defer allocator.free(name);
         const attach_argv = [_:null]?[*:0]const u8{ executable, "attach", "--", name };
+        const readonly_argv = [_:null]?[*:0]const u8{ executable, "attach", "--read-only", "--", name };
         const shell_argv = [_:null]?[*:0]const u8{ executable, "-l" };
         var ready: [2]c_int = undefined;
         _ = try sys.check(c.pipe2(&ready, c.O_CLOEXEC | c.O_NONBLOCK), "pipe2(pane readiness)");
@@ -252,7 +254,8 @@ const Pane = struct {
             if (c.dup3(ready[1], 3, c.O_CLOEXEC) < 0) c._exit(126);
             if (std.os.linux.errno(std.os.linux.close_range(4, std.math.maxInt(c_int), .{ .UNSHARE = false, .CLOEXEC = false })) != .SUCCESS) c._exit(126);
             sys.unblockSignals() catch c._exit(126);
-            if (c.chdir(cwd) == 0) _ = c.execve(executable, @ptrCast(if (session != null) &attach_argv else &shell_argv), @ptrCast(envp.items.ptr));
+            const argv: [*:null]const ?[*:0]const u8 = if (session != null) (if (app.initial_read_only) &readonly_argv else &attach_argv) else &shell_argv;
+            if (c.chdir(cwd) == 0) _ = c.execve(executable, @ptrCast(argv), @ptrCast(envp.items.ptr));
             const failure = c.__errno_location().*;
             _ = c.write(3, &failure, @sizeOf(c_int));
             c._exit(126);
@@ -321,6 +324,7 @@ const Pane = struct {
     }
 
     fn closeSession(self: *Pane, state: context.State) !void {
+        if (state.read_only) return;
         const app = self.app;
         var root = try config.Config.initPath(app.allocator, app.io, state.directory);
         defer root.deinit();
@@ -367,6 +371,7 @@ const App = struct {
     keys: keyboard.Input,
     keyboard_flags: u5 = 5,
     status: ?[]u8 = null,
+    initial_read_only: bool = false,
 
     fn visible(self: *const App, pane: *const Pane) bool {
         return !self.zoomed or pane == self.focused;
@@ -970,7 +975,7 @@ fn encodeKey(writer: *std.Io.Writer, key: vaxis.Key, released: bool, term: *vt.T
     try vt.input.encodeKey(writer, .{ .action = if (released) .release else .press, .key = mapped, .mods = .{ .ctrl = key.mods.ctrl, .alt = key.mods.alt, .shift = key.mods.shift, .super = key.mods.super, .caps_lock = key.mods.caps_lock, .num_lock = key.mods.num_lock }, .consumed_mods = .{ .shift = true }, .utf8 = text, .unshifted_codepoint = codepoint }, options);
 }
 
-pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, name: []const u8, preferences: @import("settings.zig").Settings) !void {
+pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, name: []const u8, preferences: @import("settings.zig").Settings, read_only: bool) !void {
     _ = try sys.check(c.prctl(c.PR_SET_CHILD_SUBREAPER, @as(c_ulong, 1), @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)), "prctl(pane children)");
     var environment = try environ.createMap(allocator);
     defer environment.deinit();
@@ -989,6 +994,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         app.panes.deinit(allocator);
     }
     app.vx.caps.rgb = true;
+    app.initial_read_only = read_only;
     // 使用分号分隔的颜色参数，兼容 VS Code 和 Termux 等终端。
     app.vx.sgr = .legacy;
     _ = try sys.check(c.tcgetattr(0, &app.termios), "tcgetattr(workspace)");

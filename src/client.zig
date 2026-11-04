@@ -8,6 +8,8 @@ const connection = @import("connection.zig");
 const keyboard = @import("keyboard.zig");
 const display = @import("display.zig");
 const pane_context = @import("pane_context.zig");
+const readonly = @import("readonly.zig");
+const settings = @import("settings.zig");
 
 pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, payload: []const u8, created_format: [:0]const u8) !void {
     const customized = tag == .list and !std.mem.eql(u8, created_format, sys.default_created_format);
@@ -98,11 +100,13 @@ fn attachPayload(allocator: std.mem.Allocator, io: std.Io, name: []const u8) ![]
         const entry = std.mem.span(environ[0]);
         if (std.mem.startsWith(u8, entry, protocol.client_marker_prefix)) continue;
         if (std.mem.startsWith(u8, entry, protocol.rename_marker_prefix)) continue;
+        if (std.mem.startsWith(u8, entry, protocol.readonly_marker_prefix)) continue;
         try payload.appendSlice(allocator, entry);
         try payload.append(allocator, 0);
     }
     try payload.appendSlice(allocator, protocol.client_marker ++ "\x00");
     try payload.appendSlice(allocator, protocol.rename_marker ++ "\x00");
+    if (pane_context.supportsReadOnly()) try payload.appendSlice(allocator, protocol.readonly_marker ++ "\x00");
     if (payload.items.len > protocol.max_payload) return error.EnvironmentTooLarge;
     return payload.toOwnedSlice(allocator);
 }
@@ -121,9 +125,10 @@ fn acknowledgement(allocator: std.mem.Allocator, fd: c_int) !?[]u8 {
     return null;
 }
 
-fn requireAcknowledgement(allocator: std.mem.Allocator, fd: c_int, switching: bool) !void {
+fn requireAcknowledgement(allocator: std.mem.Allocator, fd: c_int, switching: bool, read_only: bool) !void {
     if (try acknowledgement(allocator, fd)) |failure| {
         defer allocator.free(failure);
+        if (read_only and std.mem.eql(u8, failure, "InvalidMessage")) return error.ReadOnlyUnsupportedByBackend;
         if (switching and std.mem.eql(u8, failure, "InvalidMessage")) return error.SwitchUnsupportedByBackend;
         try sys.writeAll(2, "imx: ", false);
         try sys.writeAll(2, failure, false);
@@ -132,24 +137,25 @@ fn requireAcknowledgement(allocator: std.mem.Allocator, fd: c_int, switching: bo
     }
 }
 
-pub fn switchSession(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, source: []const u8, name: []const u8) !void {
+pub fn switchSession(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, source: []const u8, name: []const u8, read_only: bool) !void {
     const fd = try connection.open(allocator, io, root, source, false);
     defer sys.close(fd);
     const payload = try attachPayload(allocator, io, name);
     defer allocator.free(payload);
     try protocol.send(fd, .switch_prepare, name);
-    try requireAcknowledgement(allocator, fd, true);
+    try requireAcknowledgement(allocator, fd, true, read_only);
     // 保持连接，防止新后台在终端完成切换前因没有客户端而退出。
-    const target = try connection.open(allocator, io, root, name, true);
+    const target = try connection.open(allocator, io, root, name, !read_only);
     defer sys.close(target);
     try sys.socketTimeout(fd, 15_000);
-    try protocol.send(fd, .switch_session, payload);
-    try requireAcknowledgement(allocator, fd, false);
+    try protocol.send(fd, if (read_only) .switch_readonly else .switch_session, payload);
+    try requireAcknowledgement(allocator, fd, false, read_only);
 }
 
 const SwitchAttempt = union(enum) { ready: c_int, failed: []u8 };
 
-fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, bytes: []const u8) !SwitchAttempt {
+fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, bytes: []const u8, read_only: bool) !SwitchAttempt {
+    if (read_only and !pane_context.supportsReadOnly()) return error.ReadOnlyUnsupportedByWorkspace;
     const payload = try allocator.dupe(u8, bytes);
     defer allocator.free(payload);
     const request = try protocol.Attach.decode(payload);
@@ -160,8 +166,12 @@ fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.C
     errdefer sys.close(fd);
     const size = try sys.Size.get(0);
     @memcpy(payload[0..4], &size.encode());
-    try protocol.send(fd, .attach, payload);
+    try protocol.send(fd, if (read_only) .attach_readonly else .attach, payload);
     if (try acknowledgement(allocator, fd)) |failure| {
+        if (read_only and std.mem.eql(u8, failure, "InvalidMessage")) {
+            allocator.free(failure);
+            return error.ReadOnlyUnsupportedByBackend;
+        }
         sys.close(fd);
         return .{ .failed = failure };
     }
@@ -170,16 +180,18 @@ fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.C
     return .{ .ready = fd };
 }
 
-pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name: []const u8, root: *const config.Config, records: *const registry.Registry, bindings: keyboard.Bindings) !void {
+pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, initial_fd: c_int, name: []const u8, root: *const config.Config, records: *const registry.Registry, preferences: settings.Settings, initially_read_only: bool) !void {
+    const bindings = preferences.keybindings;
     var fd = initial_fd;
     defer sys.close(fd);
+    if (initially_read_only and !pane_context.supportsReadOnly()) return error.ReadOnlyUnsupportedByWorkspace;
     const payload = try attachPayload(allocator, io, name);
     defer allocator.free(payload);
-    try protocol.send(fd, .attach, payload);
-    try requireAcknowledgement(allocator, fd, false);
+    try protocol.send(fd, if (initially_read_only) .attach_readonly else .attach, payload);
+    try requireAcknowledgement(allocator, fd, false, initially_read_only);
     const pane = try pane_context.connect();
     defer if (pane) |context| sys.close(context);
-    if (pane) |context| try pane_context.send(allocator, context, name, root.path, bindings.detach);
+    if (pane) |context| try pane_context.send(allocator, context, name, root.path, bindings.detach, initially_read_only);
     try sys.socketTimeout(fd, 0);
     const signal = try sys.signalFd(&.{ c.SIGWINCH, c.SIGTERM, c.SIGHUP, c.SIGINT });
     defer sys.close(signal);
@@ -209,22 +221,35 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
     defer input.deinit(allocator);
     var output: protocol.Queue = .{};
     defer output.deinit(allocator);
+    var viewer: ?readonly.View = null;
+    defer if (viewer) |*view| view.deinit();
+    if (initially_read_only) {
+        viewer = try readonly.View.init(allocator, io, environ, name);
+        try viewer.?.start(&output, preferences.mouse_enabled);
+    }
     var reader: protocol.Reader = .{};
     defer reader.deinit(allocator);
     var connected = true;
     var detaching = false;
-    var keys: keyboard.Input = .{ .bindings = bindings };
+    var keys: keyboard.Input = .{ .bindings = bindings, .report_events = initially_read_only };
     var prepared: ?c_int = null;
+    var prepared_read_only = false;
     defer if (prepared) |next| sys.close(next);
     var prepared_name: ?[]u8 = null;
     defer if (prepared_name) |value| allocator.free(value);
     var switch_deadline: i64 = 0;
-    client_loop: while (connected or output.pending().len > 0) {
+    client_loop: while (connected or output.pending().len > 0 or (viewer != null and viewer.?.dirty)) {
+        if (viewer) |*view| {
+            if (view.dirty and output.pending().len == 0 and try sys.monotonicMilliseconds() >= view.frameDeadline()) try view.draw(&output);
+        }
         if (connected) {
             if (keys.deadline) |deadline| {
                 if (try sys.monotonicMilliseconds() >= deadline) {
                     const result = keys.expire();
-                    if (result.bytes.len != 0) try input.message(allocator, .input, result.bytes);
+                    if (viewer) |*view| {
+                        if (closeReadOnly(bindings, result)) return;
+                        view.input(result);
+                    } else if (result.bytes.len != 0) try input.message(allocator, .input, result.bytes);
                     if (result.action != null) {
                         detaching = true;
                         if (input.pending().len == 0) return;
@@ -249,6 +274,12 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                 timeout = if (timeout < 0) remaining else @min(timeout, remaining);
             }
         }
+        if (viewer) |*view| {
+            if (view.dirty and output.pending().len == 0) {
+                const remaining: c_int = @intCast(@max(0, view.frameDeadline() - try sys.monotonicMilliseconds()));
+                timeout = if (timeout < 0) remaining else @min(timeout, remaining);
+            }
+        }
         const count = c.poll(&pollfds, pollfds.len, timeout);
         if (count < 0) {
             if (c.__errno_location().* == c.EINTR) continue;
@@ -256,14 +287,19 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
         }
         if (count == 0) {
             if (connected and keys.deadline != null) continue;
+            if (viewer != null and viewer.?.dirty and output.pending().len == 0) continue;
             return if (prepared != null) error.SwitchTimeout else error.TerminalOutputBlocked;
         }
         if (pollfds[2].revents & c.POLLIN != 0) {
             var info: c.struct_signalfd_siginfo = undefined;
             while ((try sys.read(signal, std.mem.asBytes(&info))) != null) {
                 if (info.ssi_signo == c.SIGWINCH) {
-                    const next_size = try sys.Size.get(0);
-                    try input.message(allocator, .resize, &next_size.encode());
+                    if (viewer) |*view| {
+                        try view.resize(&output);
+                    } else {
+                        const next_size = try sys.Size.get(0);
+                        try input.message(allocator, .resize, &next_size.encode());
+                    }
                 } else return;
             }
         }
@@ -271,14 +307,23 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
             var buffer: [keyboard.Input.read_size]u8 = undefined;
             if (try sys.readPty(0, &buffer)) |n| {
                 if (n == 0) return;
-                const result = try keys.feed(buffer[0..n], try sys.monotonicMilliseconds());
-                if (result.bytes.len != 0) try input.message(allocator, .input, result.bytes);
-                if (result.action) |action| {
-                    switch (action) {
-                        .detach => detaching = true,
-                        else => unreachable,
+                const now = try sys.monotonicMilliseconds();
+                if (viewer) |*view| {
+                    for (buffer[0..n]) |byte| {
+                        const result = try keys.feed(&.{byte}, now);
+                        if (closeReadOnly(bindings, result)) return;
+                        view.input(result);
                     }
-                    if (input.pending().len == 0) return;
+                } else {
+                    const result = try keys.feed(buffer[0..n], now);
+                    if (result.bytes.len != 0) try input.message(allocator, .input, result.bytes);
+                    if (result.action) |action| {
+                        switch (action) {
+                            .detach => detaching = true,
+                            else => unreachable,
+                        }
+                        if (input.pending().len == 0) return;
+                    }
                 }
             }
         }
@@ -289,16 +334,21 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
             };
             while (try reader.next()) |msg| {
                 switch (msg.tag) {
-                    .output => try output.append(allocator, msg.payload),
+                    .output => if (viewer) |*view| try view.receive(msg.payload) else try output.append(allocator, msg.payload),
+                    .resize => {
+                        if (viewer) |*view| try view.sourceSize(try sys.Size.decode(msg.payload)) else return error.InvalidMessage;
+                    },
                     .renamed => {
                         try config.validateName(msg.payload);
-                        if (pane) |context| try pane_context.send(allocator, context, msg.payload, root.path, bindings.detach);
+                        if (viewer) |*view| try view.rename(msg.payload);
+                        if (pane) |context| try pane_context.send(allocator, context, msg.payload, root.path, bindings.detach, viewer != null);
                     },
-                    .switch_session => {
+                    .switch_session, .switch_readonly => {
                         if (prepared != null) return error.InvalidMessage;
                         const pending = keys.takePending();
-                        if (pending.len != 0) try input.message(allocator, .input, pending);
-                        const attempt = prepareSwitch(allocator, io, root, msg.payload) catch |err| {
+                        if (viewer == null and pending.len != 0) try input.message(allocator, .input, pending);
+                        prepared_read_only = msg.tag == .switch_readonly;
+                        const attempt = prepareSwitch(allocator, io, root, msg.payload, prepared_read_only) catch |err| {
                             if (err == error.OutOfMemory) return err;
                             try input.message(allocator, .switch_result, @errorName(err));
                             continue;
@@ -323,17 +373,22 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
                         sys.close(fd);
                         fd = next;
                         prepared = null;
-                        if (pane) |context| try pane_context.send(allocator, context, prepared_name.?, root.path, bindings.detach);
+                        if (pane) |context| try pane_context.send(allocator, context, prepared_name.?, root.path, bindings.detach, prepared_read_only);
+                        if (viewer) |*view| view.deinit();
+                        viewer = null;
+                        output.deinit(allocator);
+                        output = .{};
+                        if (prepared_read_only) {
+                            viewer = try readonly.View.init(allocator, io, environ, prepared_name.?);
+                            try viewer.?.start(&output, preferences.mouse_enabled);
+                        } else try output.append(allocator, display.reset);
                         allocator.free(prepared_name.?);
                         prepared_name = null;
                         reader.deinit(allocator);
                         reader = .{};
                         input.deinit(allocator);
                         input = .{};
-                        keys = .{ .bindings = bindings };
-                        output.deinit(allocator);
-                        output = .{};
-                        try output.append(allocator, display.reset);
+                        keys = .{ .bindings = bindings, .report_events = prepared_read_only };
                         connected = true;
                         continue :client_loop;
                     },
@@ -362,6 +417,12 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
         // POLLHUP 可以和未读取的数据同时到达，继续读取直到取得 EOF。
         if (pollfds[1].revents & c.POLLHUP != 0 and pollfds[1].revents & c.POLLIN == 0) connected = false;
     }
+}
+
+fn closeReadOnly(bindings: keyboard.Bindings, result: keyboard.Input.Result) bool {
+    if (result.action == .detach) return true;
+    const event = result.event orelse return false;
+    return event == .key_press and bindings.close_pane.matches(event.key_press, result.bytes);
 }
 
 pub fn resetDisplay() !void {

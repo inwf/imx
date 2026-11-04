@@ -4,11 +4,12 @@ const sys = @import("sys.zig");
 const update = @import("update.zig");
 
 pub const Command = enum { attach, list, ls, select, cat, detach, kill, rename, update, uninstall, help };
-pub const Invocation = struct { command: Command, name: []const u8 = "", new_name: ?[]const u8 = null, rename_current: bool = false, update_mode: update.Mode = .normal };
+pub const Invocation = struct { command: Command, name: []const u8 = "", new_name: ?[]const u8 = null, rename_current: bool = false, read_only: bool = false, update_mode: update.Mode = .normal };
 pub const Result = union(enum) { help: ?Command, version, run: Invocation };
 pub const root_options = [_][]const u8{ "-h", "--help", "-v", "--version" };
 pub const help_options = [_][]const u8{ "-h", "--help" };
 pub const update_options = help_options ++ [_][]const u8{ "--check", "--force" };
+pub const attach_options = help_options ++ [_][]const u8{ "-r", "--read-only" };
 
 const root_params = clap.parseParamsComptime(
     \\-h, --help     Show help.
@@ -25,7 +26,13 @@ fn parameters(comptime command: Command) []const clap.Param(clap.Help) {
             \\--force     Install the latest release even if this version is already installed or newer.
             \\
         ),
-        .attach, .cat, .kill, .rename, .help => &comptime clap.parseParamsComptime(
+        .attach => &comptime clap.parseParamsComptime(
+            \\-h, --help       Show help for this command.
+            \\-r, --read-only  Observe an existing session without input or resizing it.
+            \\<str>...
+            \\
+        ),
+        .cat, .kill, .rename, .help => &comptime clap.parseParamsComptime(
             \\-h, --help  Show help for this command.
             \\<str>...
             \\
@@ -105,7 +112,7 @@ pub fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Resul
                 .attach, .cat, .kill => {
                     if (result.positionals[0].len == 0) return fail(allocator, "Missing session name. Run 'imx {s} --help' for usage.", .{@tagName(candidate)});
                     const session = result.positionals[0][0];
-                    return .{ .run = .{ .command = candidate, .name = session } };
+                    return .{ .run = .{ .command = candidate, .name = session, .read_only = if (comptime candidate == .attach) result.args.@"read-only" != 0 else false } };
                 },
                 else => return .{ .run = .{ .command = candidate } },
             }
@@ -116,7 +123,7 @@ pub fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Resul
 
 fn description(command: Command) []const u8 {
     return switch (command) {
-        .attach => "Create or attach to a session. Inside a session, switch the current connection.\nAlt+D splits left and right; Alt+Shift+D splits top and bottom. Alt is Option on macOS.\nNew panes start a plain shell in the focused pane's directory.\nAlt+Arrow focuses a neighbor; pane numbers start at 0, and Alt+0 through Alt+9 select matching numbers.\nAlt+Z zooms the focused pane; repeat to restore the layout and proportions.\nOther panes keep running. Focusing another pane, splitting, resizing a pane or closing restores the layout.\nAlt+Shift+Arrow grows the pane; Alt+Ctrl+Arrow shrinks it.\nBoth move a separator in the arrow direction by one column or row. Mouse mode is optional.\nGrowth moves the edge on that side; shrinking moves the opposite edge. Outer edges stay fixed.\nAlt+W closes the focused pane and terminates its attached session and programs.\nDetach first (default: Alt+\\), then close the pane to keep the session running.\nClosing the last pane exits the interface. Configure shortcuts in config.toml under [keybindings].\n",
+        .attach => "Create or attach to a session. Inside a session, switch the current connection.\nAlt+D splits left and right; Alt+Shift+D splits top and bottom. Alt is Option on macOS.\nNew panes start a plain shell in the focused pane's directory.\nAlt+Arrow focuses a neighbor; pane numbers start at 0, and Alt+0 through Alt+9 select matching numbers.\nAlt+Z zooms the focused pane; repeat to restore the layout and proportions.\nOther panes keep running. Focusing another pane, splitting, resizing a pane or closing restores the layout.\nAlt+Shift+Arrow grows the pane; Alt+Ctrl+Arrow shrinks it.\nBoth move a separator in the arrow direction by one column or row. Mouse mode is optional.\nGrowth moves the edge on that side; shrinking moves the opposite edge. Outer edges stay fixed.\nAlt+W closes the focused pane. Writable connections terminate their session and programs;\ndetach first (default: Alt+\\) to keep them running. Read-only connections preserve their session.\nClosing the last pane exits the interface. Configure shortcuts in config.toml under [keybindings].\n",
         .list, .ls => "List sessions, including their shell PID, connections, directory, creation time and status.\nOutput is tab-separated when redirected. This is the default command.\n",
         .select => "Choose a session with a live preview. Requires an interactive terminal.\nUp/Down or j/k move the selection; Enter or Space attaches to it.\nEsc or q cancels. Inside a session, selection switches the current connection.\nPreviews preserve session sizes and connection counts.\n",
         .cat => "Print retained history and the active screen as plain text.\nHistory uses a 10,000-line target and a 2 MiB scrollback budget.\nScrollback limits are applied in complete terminal pages.\n",
@@ -135,6 +142,7 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
     const writer = &output.writer;
     if (command) |value| {
         try writer.writeAll(description(value));
+        if (value == .attach) try writer.writeAll("\nUse -r or --read-only to observe an existing session. Input and terminal resizing\ndo not affect its programs. PageUp/PageDown and Up/Down browse retained history,\nHome goes to the oldest retained output, End follows live output, and Left/Right pan.\nThe detach shortcut and Alt+W close a read-only connection while keeping its session.\nInside a session, -r switches the current connection to read-only viewing.\n");
         try writer.print("\nUsage: imx {s} [options]{s}\n\n", .{ @tagName(value), switch (value) {
             .attach, .cat, .kill => " [--] <name>",
             .rename => " [--] [old-name] <new-name>",
@@ -142,7 +150,7 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
             else => "",
         } });
         inline for (std.enums.values(Command)) |candidate| {
-            if (value == candidate) try clap.help(writer, clap.Help, parameters(candidate)[0..if (candidate == .update) 3 else 1], .{ .description_on_new_line = false });
+            if (value == candidate) try clap.help(writer, clap.Help, parameters(candidate)[0..if (candidate == .update) 3 else if (candidate == .attach) 2 else 1], .{ .description_on_new_line = false });
         }
         if (value == .attach or value == .cat or value == .kill or value == .rename) try writer.writeAll("\nNames contain 1-64 ASCII letters, digits, dots, underscores or hyphens.\nUse '--' before names beginning with '-': imx attach -- -dash\n");
     } else {

@@ -43,7 +43,7 @@ Each session has an independent backend process with one event loop thread. The 
   <tr>
     <td valign="top">
       <h3>Shared connections</h3>
-      Several terminals can attach to one session at once and share its input and output.
+      Several terminals can attach to one session at once. Use <code>attach -r</code> to observe its output and history while preserving program input and terminal size.
     </td>
     <td valign="top">
       <h3>Session prompt</h3>
@@ -153,6 +153,8 @@ imx kill dev     # terminate the session
 
 Reattaching restores the screen, colors, and retained history. Full-screen programs such as Vim return with the document as you left it.
 
+Use `imx attach --read-only dev` (or `imx attach -r dev`) to observe an existing session. Keyboard input, pasted text, mouse events, and local window resizing do not affect its programs. **PageUp/PageDown** and **Up/Down** browse retained history, **Home** goes to its beginning, **End** follows live output, and **Left/Right** pan horizontally. The view follows the program cursor when the source is larger than the local window. The footer identifies read-only connections; **Alt+W** and the detach shortcut keep the session running. Inside a session, this command switches the current connection to read-only viewing, including when the name stays the same.
+
 Exiting or detaching restores normal terminal display and input modes, moves the previous screen into scrollback, and places the outer shell prompt at the top left. In split mode this applies within the affected pane. Closing the last pane also returns to the top left of the outer terminal.
 
 To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal moves to `dev2`, and both sessions keep their programs and history. If the target does not exist, it is created using the current directory, environment, and `$SHELL`. Run `imx attach dev1` to return. Other terminals attached to `dev1` stay connected. See [session switching](docs/usage.md#切换会话) for connection selection, error handling, and version requirements.
@@ -184,7 +186,7 @@ Set `panes.horizontal_gap` for blank columns between side-by-side pane borders a
 
 With mouse mode enabled, drag over text to highlight a selection within its pane. Double-click selects a word; triple-click selects a line. Dragging beyond the top or bottom scrolls through history. Applications that handle mouse input keep receiving it; hold Shift while dragging to select text. Keyboard reporting follows the focused program, preserving normal input-method text entry at shell prompts.
 
-Panes can be split repeatedly. With mouse mode enabled, scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Press **Alt+W** to close the focused pane and terminate its attached session and programs. Other clients attached to that session are disconnected too. To keep the session running, detach first (default `Alt+\`), then press Alt+W. Closing a plain shell pane terminates its programs. At a plain shell prompt, `exit` or `Ctrl+D` on an empty command line also closes the pane. Closing the last pane exits the interface.
+Panes can be split repeatedly. With mouse mode enabled, scrolling the mouse wheel reads a pane's history when its application is not handling mouse input. Press **Alt+W** to close the focused pane. For a writable connection, this terminates its attached session and programs and disconnects other clients; detach first (default `Alt+\`) to keep the session running. Closing a read-only pane preserves its session. Closing a plain shell pane terminates its programs. At a plain shell prompt, `exit` or `Ctrl+D` on an empty command line also closes the pane. Closing the last pane exits the interface.
 
 Closing the terminal discards the layout and terminates the plain pane shells while attached sessions keep running. Layouts are held only in the current client and are not saved. Set `keybindings.split_right`, `keybindings.split_down`, and `keybindings.close_pane` to use other shortcuts.
 
@@ -218,7 +220,7 @@ The [full configuration template](config.example.toml) lists every option with c
 - **`panes.focused_border_color`** sets the focused pane's border and title color with a `"#RRGGBB"` string. The default is `"#969CD5"`, including when omitted. It applies to attached sessions and plain shell panes. Restart the interface to apply changes.
 - **`panes.horizontal_gap` / `panes.vertical_gap`** set blank columns / rows between adjacent pane borders. Both default to `0`, accept integers from `0` to `255`, and take effect after restarting the interface.
 - **`keybindings.split_right`**, **`keybindings.split_down`** split the focused pane horizontally across the screen or vertically down it. Defaults are Alt+D and Alt+Shift+D; `alt` means Option on macOS. Each new pane starts a plain shell in the current directory. Restart the interface to apply changes to these bindings. Duplicate shortcuts are rejected.
-- **`keybindings.close_pane`** closes the focused pane and terminates its attached session and programs. The default is Alt+W. Detach first to preserve the session. Restart the interface to apply changes to this binding.
+- **`keybindings.close_pane`** closes the focused pane. Writable connections terminate their session and programs; detach first to preserve them. Read-only connections preserve their session. The default is Alt+W. Restart the interface to apply changes to this binding.
 - **`keybindings.zoom_pane`** temporarily zooms the focused pane and restores the layout when repeated. The default is Alt+Z. Restart the interface to apply changes to this binding.
 - **`keybindings.focus_left`**, **`focus_right`**, **`focus_up`**, **`focus_down`** select a neighboring pane with Alt+Arrow. **`keybindings.focus_0`** through **`focus_9`** select panes numbered 0 through 9 with Alt+0 through Alt+9. Restart the interface to apply changes.
 - **`keybindings.resize_left`**, **`resize_right`**, **`resize_up`**, **`resize_down`** grow the focused pane toward the arrow with Alt+Shift+Arrow, moving the edge on that side by one column or row. Restart the interface to apply changes.
@@ -236,6 +238,7 @@ The interactive client manages a PTY and a terminal model for each pane. libvaxi
 | Command                     | Purpose                                                      |
 | --------------------------- | ------------------------------------------------------------ |
 | `imx attach dev`            | Create or attach to `dev`; inside a session, switch the current terminal to `dev` |
+| `imx attach -r dev`         | Observe existing `dev` with local history browsing; preserve program input and size |
 | `imx list`, `imx ls`, `imx` | List all sessions                                            |
 | `imx select`               | Interactively choose a session with a live preview           |
 | `imx cat dev`               | Print retained history and the active screen as text         |
@@ -256,7 +259,7 @@ A session's life:
 2. **Detach.** Closing the terminal, a dropped connection, the configured shortcut (default `Alt+\`), or `imx detach` inside the session all leave the session running.
 3. **Return or finish.** `imx attach dev` restores the screen and history. The session ends when the shell exits or with `imx kill dev`.
 
-Session lists include `NAME`, `PID`, `CLIENTS`, `CREATED`, `STATUS`, and `DIRECTORY`, in that order. Terminal output uses column widths calculated from the headings and session contents; piped or redirected output is tab-separated. `DIRECTORY` shows the session shell's current actual directory, following `cd` and directory renames. Special characters are escaped to preserve the output structure; see [session lists](docs/usage.md#会话列表) for details.
+Session lists include `NAME`, `PID`, `CLIENTS`, `CREATED`, `STATUS`, and `DIRECTORY`, in that order. `CLIENTS` counts both writable and read-only connections. Terminal output uses column widths calculated from the headings and session contents; piped or redirected output is tab-separated. `DIRECTORY` shows the session shell's current actual directory, following `cd` and directory renames. Special characters are escaped to preserve the output structure; see [session lists](docs/usage.md#会话列表) for details.
 
 `CREATED` shows the creation time in the backend's local timezone, by default as `MM-DD HH:mm:ss` such as `10-30 14:05:09`. Each list command reads `list.created_format`, so format changes apply to existing sessions on the next query. Reattaching keeps the creation time.
 
@@ -270,7 +273,7 @@ List queries run concurrently with a shared one-second deadline. `STATUS` shows 
 | --------------- | ------------------------------------------------------------ |
 | Session names   | 1-64 characters: ASCII letters, digits, dots, underscores, and hyphens; `.` and `..` are reserved |
 | History         | 10,000-line target within a 2 MiB budget, trimmed in complete terminal pages |
-| Terminal size   | Up to 512 columns × 256 rows; the most recent connection sets the size |
+| Terminal size   | Up to 512 columns × 256 rows; the most recent writable connection sets the size |
 | Backend output queues | Per connection: at least 256 KiB, allowing 128 bytes per screen cell, up to 16 MiB; memory is allocated as needed. Connections exceeding the limit are disconnected while the session keeps running |
 | Pane rendering queue | Up to 16 MiB for a complete screen update; rendering waits for queued output to drain |
 

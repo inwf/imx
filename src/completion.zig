@@ -17,7 +17,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, kind: []const u8, prefix: [
     defer preferences.deinit(allocator);
     if (!preferences.completion_enabled) return;
     if (options) {
-        const values = if (std.mem.eql(u8, kind[8..], "update")) &cli.update_options else &cli.help_options;
+        const values: []const []const u8 = if (std.mem.eql(u8, kind[8..], "update")) &cli.update_options else if (std.mem.eql(u8, kind[8..], "attach")) &cli.attach_options else &cli.help_options;
         for (values) |option| try candidate(option, prefix);
         return;
     }
