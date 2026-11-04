@@ -130,6 +130,15 @@ const Plan = struct {
         for (self.runtimes.items) |runtime| if (runtime.session_name == null and std.mem.eql(u8, runtime.path, canonical)) return;
         var runtime = try config.Config.initPath(self.allocator, self.io, canonical);
         defer runtime.deinit();
+        const files = try (std.Io.Dir{ .handle = runtime.dir_fd }).openDir(self.io, ".", .{ .iterate = true });
+        defer files.close(self.io);
+        var iterator = files.iterate();
+        while (try iterator.next(self.io)) |entry| {
+            if (!@import("session_identity.zig").isFile(entry.name)) continue;
+            const path_name = try std.fs.path.join(self.allocator, &.{ canonical, entry.name });
+            defer self.allocator.free(path_name);
+            try self.addFile(path_name, false);
+        }
         const names = try sessions.names(self.allocator, self.io, &runtime, ".lock");
         defer {
             for (names) |name| self.allocator.free(name);

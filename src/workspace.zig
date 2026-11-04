@@ -222,6 +222,7 @@ const Pane = struct {
         var environment = try app.environ.createMap(allocator);
         defer environment.deinit();
         _ = environment.swapRemove("IMX_SESSION");
+        _ = environment.swapRemove(@import("session_identity.zig").variable);
         try environment.put(context.variable, self.address);
         var envp: std.ArrayList(?[*:0]const u8) = .empty;
         defer {

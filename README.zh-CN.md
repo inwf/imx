@@ -240,6 +240,8 @@ focused_border_color = "#969CD5"
 | `imx cat dev`               | 输出保留的历史和当前屏幕文字             |
 | `imx detach`                | 在会话内部执行，分离该会话的全部连接     |
 | `imx kill dev`              | 终止会话，包括 shell、前台作业和后台作业 |
+| `imx rename work`           | 将当前会话重命名为 `work`               |
+| `imx rename dev work`       | 将指定会话 `dev` 重命名为 `work`        |
 | `imx update`                | 检查并在当前安装目录安装更新的发布版本   |
 | `imx uninstall`             | 终止当前用户的会话并卸载                 |
 | `imx -v`、`imx --version`    | 查看版本                                 |
@@ -258,6 +260,8 @@ focused_border_color = "#969CD5"
 `CREATED` 按后台进程的本地时区显示创建时间，默认格式为 `MM-DD HH:mm:ss`，例如 `10-30 14:05:09`。每次查看列表都会读取 `list.created_format`，修改后在下一次查询时应用到已有会话。重新进入会话时保留原来的创建时间。
 
 列表并发查询后台，共享一秒查询期限。`STATUS` 显示 `running`、`unresponsive` 或 `error:<错误名称>`，无法获取的字段显示 `-`。连接后台和等待命令响应使用两秒超时。
+
+`imx rename work` 修改当前会话名称，`imx rename dev work` 修改指定会话名称。程序、历史、目录、创建时间和连接继续保留，已连接的分屏立即更新标题。启用提示符集成时，Bash、Zsh、Fish 在下一次显示提示符时更新名称和 `IMX_SESSION`。目标名称已被使用时报告错误。详细行为和后台版本要求见[重命名会话](docs/usage.md#重命名会话)。
 
 ### 限制
 
@@ -289,7 +293,8 @@ focused_border_color = "#969CD5"
 | ----------------- | ------------------------------------------------------------ |
 | `HOME`            | 需要为绝对路径；保存运行目录记录，并提供默认的运行目录和配置目录 |
 | `SHELL`           | 创建新会话时运行的 shell；未设置时使用 `/bin/sh`             |
-| `IMX_SESSION`     | imx 在会话内部设置的会话名称，供会话切换、`imx detach` 和会话提示符使用 |
+| `IMX_SESSION`     | 当前会话名称，提示符集成会在重命名后更新此变量               |
+| `IMX_SESSION_ID`  | imx 自动设置的内部会话标识，供命令在重命名后定位当前会话     |
 | `IMX_DIR`         | 指定绝对路径的运行目录，优先于 `XDG_RUNTIME_DIR`             |
 | `XDG_RUNTIME_DIR` | 未设置 `IMX_DIR` 时，使用该目录下的 `imx/`                   |
 | `XDG_CONFIG_HOME` | 存放 `imx/config.toml`，并决定 Fish 的配置目录               |

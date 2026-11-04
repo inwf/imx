@@ -7,7 +7,7 @@ function __imx_candidates
             set kind commands
         case 2
             switch $words[2]
-                case attach cat kill
+                case attach cat kill rename
                     if string match -q -- '-*' "$current"
                         set kind options-$words[2]
                     else
@@ -23,7 +23,7 @@ function __imx_candidates
         case 3
             test "$words[3]" = --; or return
             switch $words[2]
-                case attach cat kill
+                case attach cat kill rename
                     set kind sessions
                 case '*'
                     return

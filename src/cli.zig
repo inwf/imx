@@ -3,8 +3,8 @@ const clap = @import("clap");
 const sys = @import("sys.zig");
 const update = @import("update.zig");
 
-pub const Command = enum { attach, list, ls, select, cat, detach, kill, update, uninstall, help };
-pub const Invocation = struct { command: Command, name: []const u8 = "", update_mode: update.Mode = .normal };
+pub const Command = enum { attach, list, ls, select, cat, detach, kill, rename, update, uninstall, help };
+pub const Invocation = struct { command: Command, name: []const u8 = "", new_name: ?[]const u8 = null, rename_current: bool = false, update_mode: update.Mode = .normal };
 pub const Result = union(enum) { help: ?Command, version, run: Invocation };
 pub const root_options = [_][]const u8{ "-h", "--help", "-v", "--version" };
 pub const help_options = [_][]const u8{ "-h", "--help" };
@@ -25,7 +25,7 @@ fn parameters(comptime command: Command) []const clap.Param(clap.Help) {
             \\--force     Install the latest release even if this version is already installed or newer.
             \\
         ),
-        .attach, .cat, .kill, .help => &comptime clap.parseParamsComptime(
+        .attach, .cat, .kill, .rename, .help => &comptime clap.parseParamsComptime(
             \\-h, --help  Show help for this command.
             \\<str>...
             \\
@@ -83,6 +83,9 @@ pub fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Resul
             if (comptime candidate == .attach or candidate == .cat or candidate == .kill or candidate == .help) {
                 if (result.positionals[0].len > 1) return fail(allocator, "Unexpected argument '{s}'. Run 'imx {s} --help' for usage.", .{ result.positionals[0][1], @tagName(candidate) });
             }
+            if (comptime candidate == .rename) {
+                if (result.positionals[0].len > 2) return fail(allocator, "Unexpected argument '{s}'. Run 'imx rename --help' for usage.", .{result.positionals[0][2]});
+            }
             if (root.args.help != 0 or result.args.help != 0) return .{ .help = candidate };
             switch (candidate) {
                 .update => {
@@ -93,6 +96,11 @@ pub fn parse(allocator: std.mem.Allocator, arguments: []const []const u8) !Resul
                     if (result.positionals[0].len == 0) return .{ .help = null };
                     const target = result.positionals[0][0];
                     return .{ .help = std.meta.stringToEnum(Command, target) orelse return fail(allocator, "Unknown command '{s}'. Run 'imx --help' for usage.", .{target}) };
+                },
+                .rename => {
+                    const names = result.positionals[0];
+                    if (names.len == 0) return fail(allocator, "Missing new session name. Run 'imx rename --help' for usage.", .{});
+                    return .{ .run = .{ .command = .rename, .name = if (names.len == 2) names[0] else "", .new_name = names[names.len - 1], .rename_current = names.len == 1 } };
                 },
                 .attach, .cat, .kill => {
                     if (result.positionals[0].len == 0) return fail(allocator, "Missing session name. Run 'imx {s} --help' for usage.", .{@tagName(candidate)});
@@ -114,6 +122,7 @@ fn description(command: Command) []const u8 {
         .cat => "Print retained history and the active screen as plain text.\nHistory uses a 10,000-line target and a 2 MiB scrollback budget.\nScrollback limits are applied in complete terminal pages.\n",
         .detach => "Detach all connections from the current session. Run this command inside a session.\nThe shell and its programs keep running. The detach shortcut affects only its own connection.\n",
         .kill => "Terminate the named session, including its shell, foreground jobs and background jobs.\n",
+        .rename => "Rename a session while preserving its programs, history and connections.\nUse 'imx rename <new-name>' inside the current session, or\n'imx rename <old-name> <new-name>' to rename a specific session.\nThe new name must be available. Connected pane titles update immediately;\nshell prompts update when they next appear.\n",
         .update => "Check for a newer published release and install it in the current installation directory.\nMatching versions report 'Already up to date'. Newer installed versions are preserved.\nUse --check to query the version, or --force to install the latest release again.\nRunning sessions keep their programs and history.\n",
         .uninstall => "Terminate the current user's sessions and remove the installation, configuration and shell integration.\n",
         .help => "Show general help or help for a named command.\n",
@@ -128,13 +137,14 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
         try writer.writeAll(description(value));
         try writer.print("\nUsage: imx {s} [options]{s}\n\n", .{ @tagName(value), switch (value) {
             .attach, .cat, .kill => " [--] <name>",
+            .rename => " [--] [old-name] <new-name>",
             .help => " [command]",
             else => "",
         } });
         inline for (std.enums.values(Command)) |candidate| {
             if (value == candidate) try clap.help(writer, clap.Help, parameters(candidate)[0..if (candidate == .update) 3 else 1], .{ .description_on_new_line = false });
         }
-        if (value == .attach or value == .cat or value == .kill) try writer.writeAll("\nNames contain 1-64 ASCII letters, digits, dots, underscores or hyphens.\nUse '--' before names beginning with '-': imx attach -- -dash\n");
+        if (value == .attach or value == .cat or value == .kill or value == .rename) try writer.writeAll("\nNames contain 1-64 ASCII letters, digits, dots, underscores or hyphens.\nUse '--' before names beginning with '-': imx attach -- -dash\n");
     } else {
         try writer.writeAll(
             \\imx - persistent terminal sessions for Linux
@@ -148,6 +158,7 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
             \\  cat <name>     Print retained history and the active screen
             \\  detach         Detach all connections from the current session
             \\  kill <name>    Terminate and remove a session
+            \\  rename [old-name] <new-name>  Rename the current or named session
             \\  update         Install the latest published release
             \\  uninstall      Terminate sessions and remove the installation
             \\  help [command] Show help

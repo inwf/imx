@@ -2,6 +2,10 @@ __imx_shell_dir=${__imx_shell_dir:?}
 
 __imx_prompt() {
     local imx_exit=$?
+    if [[ -n ${IMX_SESSION_ID-} ]]; then
+        IFS= read -r IMX_SESSION < "$IMX_DIR/identity-$IMX_SESSION_ID.name" || return
+        export IMX_SESSION
+    fi
     if [[ ${PS1-} == "${__imx_last_prompt-}" ]]; then
         PS1=${__imx_base_prompt-}
     fi

@@ -7,6 +7,9 @@ function __imx_install_prompt --on-event fish_prompt
     functions --copy fish_prompt __imx_original_fish_prompt; or return
     function fish_prompt
         set -l imx_prompt (__imx_original_fish_prompt | string collect --no-trim-newlines)
+        if set -q IMX_SESSION_ID
+            read -gx IMX_SESSION < "$IMX_DIR/identity-$IMX_SESSION_ID.name"; or return
+        end
         if set -q IMX_SESSION; and test -f "$__imx_shell_dir/show-session"
             printf '[%s] ' "$IMX_SESSION"
         end

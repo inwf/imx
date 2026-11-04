@@ -16,7 +16,7 @@ pub fn command(allocator: std.mem.Allocator, fd: c_int, tag: protocol.Tag, paylo
     defer if (formatted) |bytes| allocator.free(bytes);
     const request = formatted orelse if (tag == .list and options.table and try sameBackendExecutable(fd)) "table" else payload;
     try protocol.send(fd, tag, request);
-    return receive(allocator, fd, if (customized) .created_format else .normal);
+    return receive(allocator, fd, if (tag == .rename) .rename else if (customized) .created_format else .normal);
 }
 
 pub fn completeNames(allocator: std.mem.Allocator, fd: c_int, prefix: []const u8) !void {
@@ -27,7 +27,7 @@ pub fn completeNames(allocator: std.mem.Allocator, fd: c_int, prefix: []const u8
     return receive(allocator, fd, .completion);
 }
 
-const Response = enum { normal, created_format, completion };
+const Response = enum { normal, created_format, completion, rename };
 
 fn receive(allocator: std.mem.Allocator, fd: c_int, context: Response) !void {
     var acknowledged = false;
@@ -55,6 +55,7 @@ fn receive(allocator: std.mem.Allocator, fd: c_int, context: Response) !void {
                     switch (context) {
                         .created_format => return error.CreatedFormatUnsupportedByBackend,
                         .completion => return error.CompletionUnsupportedByBackend,
+                        .rename => return error.RenameUnsupportedByBackend,
                         .normal => {},
                     }
                 }
@@ -96,10 +97,12 @@ fn attachPayload(allocator: std.mem.Allocator, io: std.Io, name: []const u8) ![]
     while (environ[0] != null) : (environ += 1) {
         const entry = std.mem.span(environ[0]);
         if (std.mem.startsWith(u8, entry, protocol.client_marker_prefix)) continue;
+        if (std.mem.startsWith(u8, entry, protocol.rename_marker_prefix)) continue;
         try payload.appendSlice(allocator, entry);
         try payload.append(allocator, 0);
     }
     try payload.appendSlice(allocator, protocol.client_marker ++ "\x00");
+    try payload.appendSlice(allocator, protocol.rename_marker ++ "\x00");
     if (payload.items.len > protocol.max_payload) return error.EnvironmentTooLarge;
     return payload.toOwnedSlice(allocator);
 }
@@ -287,6 +290,10 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, initial_fd: c_int, name:
             while (try reader.next()) |msg| {
                 switch (msg.tag) {
                     .output => try output.append(allocator, msg.payload),
+                    .renamed => {
+                        try config.validateName(msg.payload);
+                        if (pane) |context| try pane_context.send(allocator, context, msg.payload, root.path, bindings.detach);
+                    },
                     .switch_session => {
                         if (prepared != null) return error.InvalidMessage;
                         const pending = keys.takePending();

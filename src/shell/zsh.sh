@@ -1,5 +1,9 @@
 __imx_precmd() {
     local imx_exit=$?
+    if [[ -n ${IMX_SESSION_ID-} ]]; then
+        IFS= read -r IMX_SESSION < "$IMX_DIR/identity-$IMX_SESSION_ID.name" || return
+        export IMX_SESSION
+    fi
     if [[ ${PROMPT-} == "${__imx_last_prompt-}" ]]; then
         PROMPT=${__imx_base_prompt-}
     fi

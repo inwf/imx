@@ -241,6 +241,8 @@ The interactive client manages a PTY and a terminal model for each pane. libvaxi
 | `imx cat dev`               | Print retained history and the active screen as text         |
 | `imx detach`                | Run inside a session to detach all of its connections        |
 | `imx kill dev`              | Terminate the session, including its shell, foreground jobs, and background jobs |
+| `imx rename work`           | Rename the current session to `work`                         |
+| `imx rename dev work`       | Rename session `dev` to `work`                               |
 | `imx update`                | Check for and install a newer published release in the current installation directory |
 | `imx uninstall`             | Terminate the current user's sessions and remove the installation |
 | `imx -v`, `imx --version`    | Print the version                                            |
@@ -259,6 +261,8 @@ Session lists include `NAME`, `PID`, `CLIENTS`, `CREATED`, `STATUS`, and `DIRECT
 `CREATED` shows the creation time in the backend's local timezone, by default as `MM-DD HH:mm:ss` such as `10-30 14:05:09`. Each list command reads `list.created_format`, so format changes apply to existing sessions on the next query. Reattaching keeps the creation time.
 
 List queries run concurrently with a shared one-second deadline. `STATUS` shows `running`, `unresponsive`, or `error:<error name>`; unavailable fields show `-`. Connecting to a backend and waiting for command responses use two-second timeouts.
+
+`imx rename work` renames the current session; `imx rename dev work` renames the specified session. Programs, history, directories, creation times, and connections are preserved. Connected pane titles update immediately. With prompt integration enabled, Bash, Zsh, and Fish refresh the name and `IMX_SESSION` at the next prompt. An occupied name is rejected. See [renaming sessions](docs/usage.md#重命名会话) for details and backend version requirements.
 
 ### Limits
 
@@ -290,7 +294,8 @@ The runtime directory is chosen in this order: `$IMX_DIR`, then `$XDG_RUNTIME_DI
 | ----------------- | ------------------------------------------------------------ |
 | `HOME`            | Must be an absolute path; stores runtime directory records and provides the default runtime and configuration directories |
 | `SHELL`           | Shell used for new sessions; `/bin/sh` when unset            |
-| `IMX_SESSION`     | Set inside sessions; identifies the session for switching, `imx detach`, and the session prompt |
+| `IMX_SESSION`     | Session name; prompt integration refreshes it after renaming |
+| `IMX_SESSION_ID`  | Stable internal session identifier used by commands across renames; set automatically |
 | `IMX_DIR`         | Absolute runtime directory; overrides `XDG_RUNTIME_DIR`      |
 | `XDG_RUNTIME_DIR` | When `IMX_DIR` is unset, `imx/` under this directory is used |
 | `XDG_CONFIG_HOME` | Holds `imx/config.toml` and the Fish configuration directory |

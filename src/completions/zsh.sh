@@ -7,7 +7,7 @@ _imx() {
         2) kind=commands ;;
         3)
             case $words[2] in
-                attach|cat|kill)
+                attach|cat|kill|rename)
                     case $PREFIX in
                         -*) kind=options-$words[2] ;;
                         *) kind=sessions ;;
@@ -21,7 +21,7 @@ _imx() {
         4)
             [[ $words[3] == -- ]] || return 1
             case $words[2] in
-                attach|cat|kill) kind=sessions ;;
+                attach|cat|kill|rename) kind=sessions ;;
                 *) return 1 ;;
             esac
             ;;

@@ -20,7 +20,12 @@ const Query = struct {
         if (!self.acknowledged) return error.ConnectionClosed;
         if (self.reader.bytes.items.len != self.reader.offset) return error.InvalidResponse;
         const info = try std.json.parseFromSliceLeaky(protocol.SessionInfo, allocator, self.snapshot.items, .{ .allocate = .alloc_always });
-        if (!std.mem.eql(u8, info.name, self.name) or info.pid <= 0) return error.InvalidResponse;
+        try config.validateName(info.name);
+        if (info.pid <= 0) return error.InvalidResponse;
+        if (!std.mem.eql(u8, info.name, self.name)) {
+            self.state = .missing;
+            return;
+        }
         self.info = info;
         self.state = .running;
     }

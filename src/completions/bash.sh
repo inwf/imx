@@ -6,7 +6,7 @@ __imx_complete() {
         1) kind=commands ;;
         2)
             case ${COMP_WORDS[1]} in
-                attach|cat|kill)
+                attach|cat|kill|rename)
                     case $current in
                         -*) kind=options-${COMP_WORDS[1]} ;;
                         *) kind=sessions ;;
@@ -20,7 +20,7 @@ __imx_complete() {
         3)
             [[ ${COMP_WORDS[2]} == -- ]] || return 0
             case ${COMP_WORDS[1]} in
-                attach|cat|kill) kind=sessions ;;
+                attach|cat|kill|rename) kind=sessions ;;
                 *) return 0 ;;
             esac
             ;;

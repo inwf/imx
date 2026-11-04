@@ -5,6 +5,7 @@ const config = @import("config.zig");
 const protocol = @import("protocol.zig");
 const terminal = @import("terminal.zig");
 const preview = @import("preview.zig");
+const identity = @import("session_identity.zig");
 const Stream = @TypeOf(@as(*terminal.vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Allocator = std.mem.Allocator;
@@ -18,6 +19,7 @@ const Client = struct {
     live_started: bool = false,
     session: ?*Session = null,
     preview: ?*Session = null,
+    preview_name: ?[]u8 = null,
     preview_pending: bool = false,
     preview_revision: ?u64 = null,
     preview_primary: bool = false,
@@ -28,6 +30,7 @@ const Client = struct {
     preview_frame: preview.Frame = .{},
     closing: bool = false,
     supports_switch: bool = false,
+    supports_rename: bool = false,
     switch_peer: ?*Client = null,
     switch_name: ?[]u8 = null,
     switch_sent: bool = false,
@@ -43,6 +46,7 @@ const Client = struct {
 
 const Session = struct {
     name: []u8,
+    identity: identity.Identity,
     created: c.time_t,
     pid: c.pid_t,
     fd: c_int,
@@ -65,7 +69,7 @@ const Resource = union(enum) { listener, signal, client: *Client, session: *Sess
 const Server = struct {
     allocator: Allocator,
     io: std.Io,
-    cfg: *const config.Config,
+    cfg: *config.Config,
     epoll: c_int,
     listener: c_int,
     signal: c_int,
@@ -134,6 +138,7 @@ const Server = struct {
             }
         }
         if (client.switch_name) |name| self.allocator.free(name);
+        if (client.preview_name) |name| self.allocator.free(name);
         if (client.session) |session| {
             if (session.input_client == client) session.input_client = null;
             for (session.clients.items, 0..) |candidate, i| {
@@ -206,6 +211,7 @@ const Server = struct {
         session.term.deinit(self.allocator);
         session.input.deinit(self.allocator);
         session.clients.deinit(self.allocator);
+        session.identity.remove(self.cfg.dir_fd);
         self.allocator.free(session.name);
         self.allocator.destroy(session);
     }
@@ -219,9 +225,12 @@ const Server = struct {
         errdefer self.allocator.free(saved_name);
         var term = try terminal.init(self.allocator, self.io, size);
         errdefer term.deinit(self.allocator);
-        const process = try spawnShell(self.allocator, self.cfg, name, cwd, shell, environment, size);
+        const session_identity = try identity.Identity.create(self.io, self.cfg.dir_fd, name);
+        errdefer session_identity.remove(self.cfg.dir_fd);
+        const process = try spawnShell(self.allocator, self.cfg, name, &session_identity.id, cwd, shell, environment, size);
         session.* = .{
             .name = saved_name,
+            .identity = session_identity,
             .created = created,
             .pid = process.pid,
             .fd = process.fd,
@@ -255,6 +264,61 @@ const Server = struct {
         try self.updateClient(client);
     }
 
+    fn renameSession(self: *Server, session: *Session, name: []const u8) !void {
+        if (std.mem.eql(u8, session.name, name)) return;
+        for (session.clients.items) |attached| if (attached.switch_peer != null) return error.SwitchInProgress;
+        const source_lock = try sys.check(c.openat(self.cfg.dir_fd, self.cfg.lock_name, c.O_RDWR | c.O_NOFOLLOW | c.O_CLOEXEC), "open(rename source lock)");
+        defer sys.close(source_lock);
+        try renameLock(source_lock);
+        defer _ = c.flock(source_lock, c.LOCK_UN);
+        var target = (try self.cfg.session(self.io, name, true)).?;
+        var adopted = false;
+        defer if (!adopted) target.deinit();
+        try renameLock(target.lock_fd);
+        defer target.unlock() catch @panic("failed to release rename target lock");
+        if (try target.connectNonblocking()) |fd| {
+            sys.close(fd);
+            return error.SessionAlreadyExists;
+        }
+        const saved_name = try self.allocator.dupe(u8, name);
+        defer if (!adopted) self.allocator.free(saved_name);
+        try self.sessions.ensureUnusedCapacity(1);
+        try session.identity.prepare(self.cfg.dir_fd, name);
+        defer session.identity.cancel(self.cfg.dir_fd);
+        if (c.unlinkat(target.dir_fd, target.socket_name, 0) < 0 and c.__errno_location().* != c.ENOENT) return sys.failure("unlink(stale rename target)");
+        const result = std.os.linux.renameat2(self.cfg.dir_fd, self.cfg.socket_name, target.dir_fd, target.socket_name, .{ .NOREPLACE = true });
+        const rename_error = std.os.linux.errno(result);
+        if (rename_error != .SUCCESS) {
+            c.__errno_location().* = @backingInt(rename_error);
+            return sys.failure("rename(session socket)");
+        }
+        _ = try sys.check(c.renameat(self.cfg.dir_fd, self.cfg.log_name, target.dir_fd, target.log_name), "rename(session log)");
+        try session.identity.commit(self.cfg.dir_fd);
+        std.debug.assert(self.sessions.remove(session.name));
+        self.allocator.free(session.name);
+        session.name = saved_name;
+        self.sessions.putAssumeCapacity(session.name, session);
+        var previous = self.cfg.*;
+        self.cfg.* = target;
+        adopted = true;
+        previous.deinit();
+        var index: usize = 0;
+        while (index < session.clients.items.len) {
+            const attached = session.clients.items[index];
+            if (attached.supports_rename) {
+                self.respond(attached, .renamed, name) catch |err| switch (err) {
+                    error.SlowClient => {
+                        try signalClient(attached);
+                        try self.dropClient(attached);
+                        continue;
+                    },
+                    else => return err,
+                };
+            }
+            index += 1;
+        }
+    }
+
     fn request(self: *Server, client: *Client, msg: protocol.Message) !void {
         if (client.closing) return error.InvalidMessage;
         if (client.preview != null and msg.tag != .preview) return error.InvalidMessage;
@@ -269,11 +333,12 @@ const Server = struct {
                 defer parsed.deinit();
                 try config.validateName(parsed.value.name);
                 try parsed.value.size.validate();
-                const session = self.sessions.get(parsed.value.name) orelse return error.SessionNotFound;
-                if (client.preview) |previous| {
-                    if (previous != session) return error.InvalidMessage;
+                const session = client.preview orelse self.sessions.get(parsed.value.name) orelse return error.SessionNotFound;
+                if (client.preview != null) {
+                    if (!std.mem.eql(u8, parsed.value.name, client.preview_name.?)) return error.InvalidMessage;
                     if (!std.meta.eql(client.size, parsed.value.size)) client.preview_revision = null;
                 } else {
+                    client.preview_name = try self.allocator.dupe(u8, parsed.value.name);
                     try session.previews.append(self.allocator, client);
                     client.preview = session;
                     client.preview_primary = c.getsid((try config.peer(client.fd)).pid) == session.pid;
@@ -291,6 +356,7 @@ const Server = struct {
                 var environment = std.mem.splitScalar(u8, fields.environment, 0);
                 while (environment.next()) |entry| {
                     if (std.mem.eql(u8, entry, protocol.client_marker)) client.supports_switch = true;
+                    if (std.mem.eql(u8, entry, protocol.rename_marker)) client.supports_rename = true;
                 }
                 const session = self.sessions.get(fields.name) orelse try self.create(fields.name, fields.cwd, fields.shell, fields.environment, client.size);
                 try self.resize(session, client.size);
@@ -448,6 +514,21 @@ const Server = struct {
                 client.closing = true;
                 try self.respond(client, .ok, "");
             },
+            .rename => {
+                if (client.session != null) return error.InvalidMessage;
+                const parsed = std.json.parseFromSlice(protocol.Rename, self.allocator, msg.payload, .{}) catch |err| {
+                    if (err == error.OutOfMemory) return err;
+                    return error.InvalidMessage;
+                };
+                defer parsed.deinit();
+                try config.validateName(parsed.value.name);
+                try config.validateName(parsed.value.new_name);
+                const session = self.sessions.get(parsed.value.name) orelse return error.SessionNotFound;
+                if (parsed.value.expected_id) |id| if (!std.mem.eql(u8, id, &session.identity.id)) return error.SessionNotFound;
+                try self.renameSession(session, parsed.value.new_name);
+                client.closing = true;
+                try self.respond(client, .ok, "");
+            },
             .cat => {
                 if (client.session != null) return error.InvalidMessage;
                 try config.validateName(msg.payload);
@@ -456,10 +537,17 @@ const Server = struct {
                 client.closing = true;
                 try self.respond(client, .ok, "");
             },
-            .detach => {
+            .detach, .detach_current => {
                 if (client.session != null) return error.InvalidMessage;
-                try config.validateName(msg.payload);
-                const session = self.sessions.get(msg.payload) orelse return error.SessionNotFound;
+                const parsed = if (msg.tag == .detach_current) std.json.parseFromSlice(protocol.SessionTarget, self.allocator, msg.payload, .{}) catch |err| {
+                    if (err == error.OutOfMemory) return err;
+                    return error.InvalidMessage;
+                } else null;
+                defer if (parsed) |value| value.deinit();
+                const name = if (parsed) |value| value.value.name else msg.payload;
+                try config.validateName(name);
+                const session = self.sessions.get(name) orelse return error.SessionNotFound;
+                if (parsed) |value| if (!std.mem.eql(u8, value.value.expected_id, &session.identity.id)) return error.SessionNotFound;
                 while (session.clients.items.len > 0) {
                     const attached = session.clients.items[session.clients.items.len - 1];
                     try signalClient(attached);
@@ -516,7 +604,7 @@ const Server = struct {
                         try signalClient(client);
                         return self.dropClient(client);
                     },
-                    error.SessionNotFound, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed, error.SwitchOutsideSession, error.NoAttachedClient, error.SwitchUnsupportedByClient, error.SwitchInProgress, error.SwitchClientDisconnected, error.SwitchClientBusy => {
+                    error.SessionNotFound, error.SessionAlreadyExists, error.SessionBusy, error.BackendTimeout, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed, error.SwitchOutsideSession, error.NoAttachedClient, error.SwitchUnsupportedByClient, error.SwitchInProgress, error.SwitchClientDisconnected, error.SwitchClientBusy => {
                         client.closing = true;
                         try self.respond(client, .failure, @errorName(err));
                     },
@@ -791,7 +879,15 @@ pub fn terminateSession(sid: c.pid_t) !void {
     }
 }
 
-fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8, cwd: []const u8, shell: []const u8, environment: []const u8, size: sys.Size) !struct { pid: c.pid_t, fd: c_int } {
+fn renameLock(fd: c_int) !void {
+    while (c.flock(fd, c.LOCK_EX | c.LOCK_NB) < 0) {
+        if (c.__errno_location().* == c.EINTR) continue;
+        if (c.__errno_location().* == c.EAGAIN) return error.SessionBusy;
+        return sys.failure("flock(rename)");
+    }
+}
+
+fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8, session_id: []const u8, cwd: []const u8, shell: []const u8, environment: []const u8, size: sys.Size) !struct { pid: c.pid_t, fd: c_int } {
     const env_bytes = try allocator.dupe(u8, environment);
     defer allocator.free(env_bytes);
     var envp: std.ArrayList(?[*:0]const u8) = .empty;
@@ -802,6 +898,7 @@ fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8,
         if (std.mem.indexOfScalar(u8, entry, '=') == null) return error.InvalidMessage;
         if (std.mem.startsWith(u8, entry, "IMX_SESSION=") or std.mem.startsWith(u8, entry, "IMX_DIR=")) continue;
         if (std.mem.startsWith(u8, entry, protocol.client_marker_prefix)) continue;
+        if (std.mem.startsWith(u8, entry, protocol.rename_marker_prefix) or std.mem.startsWith(u8, entry, identity.variable ++ "=")) continue;
         if (std.mem.startsWith(u8, entry, @import("pane_context.zig").variable ++ "=")) continue;
         try envp.append(allocator, @ptrCast(entry.ptr));
     }
@@ -809,7 +906,9 @@ fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8,
     defer allocator.free(session_env);
     const directory_env = try std.fmt.allocPrintSentinel(allocator, "IMX_DIR={s}", .{cfg.path}, 0);
     defer allocator.free(directory_env);
-    try envp.appendSlice(allocator, &.{ session_env.ptr, directory_env.ptr, null });
+    const identity_env = try std.fmt.allocPrintSentinel(allocator, identity.variable ++ "={s}", .{session_id}, 0);
+    defer allocator.free(identity_env);
+    try envp.appendSlice(allocator, &.{ session_env.ptr, directory_env.ptr, identity_env.ptr, null });
     const cwd_z = try allocator.dupeSentinel(u8, cwd, 0);
     defer allocator.free(cwd_z);
     const shell_z = try allocator.dupeSentinel(u8, shell, 0);
@@ -845,6 +944,8 @@ fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8,
 }
 
 pub fn run(allocator: Allocator, io: std.Io, cfg: *const config.Config, ready_fd: c_int) !void {
+    var active_config = (try cfg.session(io, cfg.session_name.?, false)).?;
+    defer active_config.deinit();
     _ = try sys.check(c.prctl(c.PR_SET_CHILD_SUBREAPER, @as(c_ulong, 1), @as(c_ulong, 0), @as(c_ulong, 0), @as(c_ulong, 0)), "prctl(subreaper)");
     const signal = try sys.signalFd(&.{ c.SIGCHLD, c.SIGTERM, c.SIGINT, c.SIGHUP });
     defer sys.close(signal);
@@ -859,7 +960,7 @@ pub fn run(allocator: Allocator, io: std.Io, cfg: *const config.Config, ready_fd
     var self: Server = .{
         .allocator = allocator,
         .io = io,
-        .cfg = cfg,
+        .cfg = &active_config,
         .listener = listener,
         .signal = signal,
         .epoll = epoll,
@@ -868,6 +969,10 @@ pub fn run(allocator: Allocator, io: std.Io, cfg: *const config.Config, ready_fd
     };
     defer self.resources.deinit();
     defer self.sessions.deinit();
+    defer {
+        var remaining = self.sessions.valueIterator();
+        while (remaining.next()) |session| session.*.identity.remove(self.cfg.dir_fd);
+    }
     try self.resources.put(1, .listener);
     try self.resources.put(2, .signal);
     try self.watch(c.EPOLL_CTL_ADD, listener, 1, false);

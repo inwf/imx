@@ -17,12 +17,12 @@ pub fn close(fd: c_int) void {
 
 pub fn stat(fd: c_int) !std.os.linux.Statx {
     var result: std.os.linux.Statx = undefined;
-    const errno_value = std.os.linux.errno(std.os.linux.statx(fd, "", std.os.linux.AT.EMPTY_PATH, .{ .TYPE = true, .MODE = true, .UID = true, .NLINK = true }, &result));
+    const errno_value = std.os.linux.errno(std.os.linux.statx(fd, "", std.os.linux.AT.EMPTY_PATH, .{ .TYPE = true, .MODE = true, .UID = true, .NLINK = true, .SIZE = true }, &result));
     if (errno_value != .SUCCESS) {
         c.__errno_location().* = @backingInt(errno_value);
         return failure("statx");
     }
-    if (!result.mask.TYPE or !result.mask.MODE or !result.mask.UID or !result.mask.NLINK) return error.IncompleteFileMetadata;
+    if (!result.mask.TYPE or !result.mask.MODE or !result.mask.UID or !result.mask.NLINK or !result.mask.SIZE) return error.IncompleteFileMetadata;
     return result;
 }
 
