@@ -24,8 +24,32 @@ env:
   RELEASE_TAG: ${{ github.event.inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
 
 jobs:
+  prepare:
+    name: Select build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.select.outputs.sha }}
+      run_id: ${{ steps.select.outputs.run_id }}
+    steps:
+      - name: Configure temporary directory
+        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Select verified main build or build the selected commit
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_github.py prepare
+
   build:
     name: Build and test (${{ matrix.arch }})
+    needs: prepare
+    if: needs.prepare.outputs.run_id == ''
     strategy:
       fail-fast: false
       matrix:
@@ -38,12 +62,13 @@ jobs:
     timeout-minutes: 30
     env:
       ARCH: ${{ matrix.arch }}
+      ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/work/zig-global-cache
     steps:
       - name: Configure temporary directory
         run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.prepare.outputs.sha }}
           clean: false
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
@@ -51,6 +76,21 @@ jobs:
           version: '0.13.6'
           python-version: '3.12'
           enable-cache: true
+      - name: Select weekly compilation cache
+        id: cache-key
+        env:
+          TOOLCHAIN_HASH: ${{ hashFiles('.zig-version', 'scripts/ci-tools.json') }}
+        run: printf 'key=imx-zig-v1-Linux-%s-%s-%s\n' "$ARCH" "$(date -u +%G-W%V)" "$TOOLCHAIN_HASH" >> "$GITHUB_OUTPUT"
+      - name: Restore compilation cache
+        id: cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          key: ${{ steps.cache-key.outputs.key }}
+          path: |
+            .zig-cache
+            zig-pkg
+            work/zig-global-cache
+            ~/.cache/imx-ci
       - name: Install test tools
         run: |
           sudo --preserve-env=TMPDIR apt-get update
@@ -61,6 +101,16 @@ jobs:
         run: uv run --frozen --project tests python scripts/setup_ci.py
       - name: Check, test and package
         run: bash scripts/ci-check.sh
+      - name: Save compilation cache
+        if: github.ref == 'refs/heads/main' && env.RELEASE_TAG == '' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          key: ${{ steps.cache-key.outputs.key }}
+          path: |
+            .zig-cache
+            zig-pkg
+            work/zig-global-cache
+            ~/.cache/imx-ci
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: imx-${{ matrix.arch }}
@@ -69,14 +119,40 @@ jobs:
           retention-days: 7
           compression-level: 0
 
+  prune-cache:
+    name: Retain two compilation caches per architecture
+    needs: build
+    if: >-
+      always() && !cancelled() && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.event.inputs.tag == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Configure temporary directory
+        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Remove older compilation caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_github.py prune
+
   publish:
     name: Publish release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '')
+    needs: [prepare, build]
+    if: >-
+      always() && !cancelled() && needs.prepare.result == 'success' &&
+      (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.prepare.outputs.run_id != '')) &&
+      (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != ''))
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -84,7 +160,7 @@ jobs:
         run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.prepare.outputs.sha }}
           clean: false
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
@@ -97,5 +173,7 @@ jobs:
           pattern: imx-*
           merge-multiple: true
           path: work/release
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.prepare.outputs.run_id || github.run_id }}
       - name: Publish verified assets
         run: bash scripts/publish.sh
