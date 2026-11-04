@@ -80,6 +80,7 @@ def prune(repository, dry_run):
     query = urlencode({"key": CACHE_PREFIX, "ref": "refs/heads/main", "per_page": 100})
     pages = api(repository, f"actions/caches?{query}", paginate=True)
     caches = [item for page in pages for item in page["actions_caches"]]
+    summary = ["## Compilation caches", "", "| Architecture | Stored caches | Size |", "| --- | --- | --- |"]
     for architecture in ARCHITECTURES:
         entries = sorted(
             (item for item in caches if item["ref"] == "refs/heads/main"
@@ -93,6 +94,10 @@ def prune(repository, dry_run):
         retained = entries if dry_run else entries[:2]
         size = sum(item["size_in_bytes"] for item in retained)
         print(f"{architecture}: {len(retained)} caches, {size / 1024**2:.1f} MiB", flush=True)
+        summary.append(f"| {architecture} | {len(retained)} | {size / 1024**2:.1f} MiB |")
+    if "GITHUB_STEP_SUMMARY" in os.environ:
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as output:
+            output.write("\n".join(summary) + "\n")
 
 
 def main():
