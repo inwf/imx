@@ -276,6 +276,8 @@ List queries run concurrently with a shared one-second deadline. `STATUS` shows 
 
 Pane rendering updates changed rows, reuses UTF-8 and frame buffers, and combines continuous output with a minimum refresh interval of 16 ms. Idle clients wait for events.
 
+OSC 8 hyperlinks remain clickable in split panes, zoomed panes, retained history, and session previews when the outer terminal supports hyperlinks.
+
 ### Shell integration
 
 | Shell | Prompt integration                                           | Completion file under the prefix                             |

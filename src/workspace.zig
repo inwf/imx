@@ -182,7 +182,7 @@ const Pane = struct {
     rect: Rect,
     term: vt.Terminal,
     stream: Stream,
-    state: vt.RenderState = .empty,
+    state: render.State = .{},
     render_cache: render.Cache = .{},
     render_pending: bool = true,
     selection: selection.State = .{},

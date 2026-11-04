@@ -24,7 +24,7 @@ const Selector = struct {
     vx: vaxis.Vaxis,
     term: vt.Terminal,
     stream: Stream = undefined,
-    state: vt.RenderState = .empty,
+    state: render.State = .{},
     cache: render.Cache = .{},
     output: protocol.Queue = .{ .limit = 16 * 1024 * 1024 },
     request: protocol.Queue = .{},

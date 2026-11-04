@@ -22,6 +22,68 @@ fn color(value: vt.Style.Color, palette: vt.color.Palette, default: ?vt.color.RG
     return .{ .rgb = .{ rgb.r, rgb.g, rgb.b } };
 }
 
+pub const State = struct {
+    const Link = struct { first: usize, end: usize, uri: [2]usize, params: [2]usize };
+    const Row = struct {
+        id: ?vt.RenderState.Row.Id = null,
+        bytes: std.ArrayList(u8) = .empty,
+        links: std.ArrayList(Link) = .empty,
+
+        fn deinit(self: *Row, allocator: std.mem.Allocator) void {
+            self.bytes.deinit(allocator);
+            self.links.deinit(allocator);
+        }
+    };
+
+    render: vt.RenderState = .empty,
+    rows: std.ArrayList(Row) = .empty,
+
+    pub fn deinit(self: *State, allocator: std.mem.Allocator) void {
+        self.render.deinit(allocator);
+        for (self.rows.items) |*row| row.deinit(allocator);
+        self.rows.deinit(allocator);
+    }
+
+    pub fn update(self: *State, allocator: std.mem.Allocator, term: *vt.Terminal) !void {
+        try self.render.update(allocator, term);
+        while (self.rows.items.len > self.render.row_data.len) {
+            var row = self.rows.pop().?;
+            row.deinit(allocator);
+        }
+        while (self.rows.items.len < self.render.row_data.len) try self.rows.append(allocator, .{});
+        for (self.rows.items, 0..) |*row, y| {
+            const source = self.render.row_data.get(y);
+            const id = source.id();
+            if (self.render.dirty != .full and !source.dirty and row.id != null and row.id.?.eql(id)) continue;
+            defer row.id = id;
+            row.bytes.clearRetainingCapacity();
+            row.links.clearRetainingCapacity();
+            if (!source.raw.hyperlink) continue;
+            // Ghostty 的绘制状态不保存链接内容，在终端页面变化之前复制链接。
+            const page = source.pin.node.page();
+            var previous: ?u16 = null;
+            for (source.pin.cells(.all), 0..) |*cell, x| {
+                const link_id = if (cell.hyperlink) page.lookupHyperlink(cell).? else null;
+                defer previous = link_id;
+                const current = link_id orelse continue;
+                if (previous == current) {
+                    row.links.items[row.links.items.len - 1].end = x + 1;
+                    continue;
+                }
+                const entry = page.hyperlink_set.get(page.memory, current);
+                const uri_start = row.bytes.items.len;
+                try row.bytes.appendSlice(allocator, entry.uri.slice(page.memory));
+                const uri_end = row.bytes.items.len;
+                if (entry.id == .explicit) {
+                    try row.bytes.appendSlice(allocator, "id=");
+                    try row.bytes.appendSlice(allocator, entry.id.explicit.slice(page.memory));
+                }
+                try row.links.append(allocator, .{ .first = x, .end = x + 1, .uri = .{ uri_start, uri_end }, .params = .{ uri_end, row.bytes.items.len } });
+            }
+        }
+    }
+};
+
 pub const Cache = struct {
     const Row = struct {
         text: std.ArrayList(u8) = .empty,
@@ -70,7 +132,8 @@ fn codepoint(text: *std.ArrayList(u8), cp: u21) !void {
     text.appendSliceAssumeCapacity(bytes[0..len]);
 }
 
-pub fn draw(allocator: std.mem.Allocator, cache: *Cache, screen: *vaxis.Screen, term: *vt.Terminal, state: *vt.RenderState, rect: Rect, offset: [2]u16, selected: bool, focused_border_color: vaxis.Color, title: []const u8, force: bool) !void {
+pub fn draw(allocator: std.mem.Allocator, cache: *Cache, screen: *vaxis.Screen, term: *vt.Terminal, snapshot: *State, rect: Rect, offset: [2]u16, selected: bool, focused_border_color: vaxis.Color, title: []const u8, force: bool) !void {
+    const state = &snapshot.render;
     const foreground = term.colors.foreground.get();
     const background = term.colors.background.get();
     const reverse = term.modes.get(.reverse_colors);
@@ -103,6 +166,8 @@ pub fn draw(allocator: std.mem.Allocator, cache: *Cache, screen: *vaxis.Screen, 
         }
         row.text.clearRetainingCapacity();
         try row.text.ensureTotalCapacity(allocator, capacity);
+        const links = snapshot.rows.items[y];
+        var link_index: usize = 0;
         for (0..cells.len) |x| {
             if (x >= rect.width - 2) break;
             const cell = cells.get(x);
@@ -120,8 +185,14 @@ pub fn draw(allocator: std.mem.Allocator, cache: *Cache, screen: *vaxis.Screen, 
             const highlighted = if (source.selection) |range| x >= range[0] and x <= range[1] else false;
             const sx = @as(i32, rect.x) + 1 + @as(i32, @intCast(x)) - offset[0];
             const sy = @as(i32, rect.y) + 1 + @as(i32, @intCast(y)) - offset[1];
+            while (link_index < links.links.items.len and links.links.items[link_index].end <= x) link_index += 1;
+            const link: vaxis.Cell.Hyperlink = if (link_index < links.links.items.len and links.links.items[link_index].first <= x) blk: {
+                const range = links.links.items[link_index];
+                break :blk .{ .uri = links.bytes.items[range.uri[0]..range.uri[1]], .params = links.bytes.items[range.params[0]..range.params[1]] };
+            } else .{};
             const value: vaxis.Cell = .{
                 .char = .{ .grapheme = row.text.items[start..], .width = width },
+                .link = link,
                 .style = .{
                     .fg = color(style.fg_color, state.colors.palette, foreground),
                     .bg = color(style.bg_color, state.colors.palette, background),
@@ -183,7 +254,7 @@ test "pane rendering preserves backgrounds on cleared cells" {
     var stream = term.vtStream();
     defer stream.deinit();
     stream.nextSlice("\x1b[?1049h\x1b[44m\x1b[2J\x1b[H\x1b[1;33mPANE_APPLICATION\x1b[0m");
-    var state: vt.RenderState = .empty;
+    var state: State = .{};
     defer state.deinit(allocator);
     var screen = try vaxis.Screen.init(allocator, .{ .cols = 100, .rows = 30, .x_pixel = 0, .y_pixel = 0 });
     defer screen.deinit(allocator);
@@ -211,7 +282,7 @@ test "pane rendering retains text through partial updates and clears wide cells"
     defer term.deinit(allocator);
     var stream = term.vtStream();
     defer stream.deinit();
-    var state: vt.RenderState = .empty;
+    var state: State = .{};
     defer state.deinit(allocator);
     var cache: Cache = .{};
     defer cache.deinit(allocator);
@@ -243,4 +314,43 @@ test "pane rendering retains text through partial updates and clears wide cells"
     try draw(allocator, &cache, &screen, &term, &state, .{ .x = 6, .width = 8, .height = 6 }, .{ 0, 0 }, true, .{ .index = 6 }, "test", true);
     try std.testing.expectEqualStrings("界", screen.readCell(7, 1).?.char.grapheme);
     try std.testing.expectEqualStrings(" ", screen.readCell(1, 1).?.char.grapheme);
+}
+
+test "pane hyperlinks follow captured text through updates scrolling and resize" {
+    const allocator = std.testing.allocator;
+    var term = try vt.Terminal.init(std.testing.io, allocator, .{ .cols = 12, .rows = 4 });
+    defer term.deinit(allocator);
+    var stream = term.vtStream();
+    defer stream.deinit();
+    var state: State = .{};
+    defer state.deinit(allocator);
+    var cache: Cache = .{};
+    defer cache.deinit(allocator);
+    var screen = try vaxis.Screen.init(allocator, .{ .cols = 14, .rows = 6, .x_pixel = 0, .y_pixel = 0 });
+    defer screen.deinit(allocator);
+    const rect: Rect = .{ .width = 14, .height = 6 };
+    stream.nextSlice("\x1b]8;id=first;https://example.com/first\x1b\\中文e\xcc\x81\x1b]8;;\x1b\\ plain");
+    try state.update(allocator, &term);
+    // 模拟同步绘制暂停期间，终端继续清除页面和输出新内容。
+    stream.nextSlice("\x1bcREPLACED");
+    try draw(allocator, &cache, &screen, &term, &state, rect, .{ 0, 0 }, true, .default, "test", true);
+    for ([_]u16{ 1, 3, 5 }) |column| {
+        const cell = screen.readCell(column, 1).?;
+        try std.testing.expectEqualStrings("https://example.com/first", cell.link.uri);
+        try std.testing.expectEqualStrings("id=first", cell.link.params);
+    }
+    try std.testing.expectEqualStrings("", screen.readCell(6, 1).?.link.uri);
+    try state.update(allocator, &term);
+    try draw(allocator, &cache, &screen, &term, &state, rect, .{ 0, 0 }, true, .default, "test", false);
+    try std.testing.expectEqualStrings("", screen.readCell(1, 1).?.link.uri);
+    stream.nextSlice("\x1b[H\x1b]8;;https://example.com/second\x07LINK\x1b]8;;\x07\r\n1\r\n2\r\n3\r\n4\r\n5");
+    term.scrollViewport(.top);
+    try state.update(allocator, &term);
+    try draw(allocator, &cache, &screen, &term, &state, rect, .{ 0, 0 }, true, .default, "test", false);
+    try std.testing.expectEqualStrings("https://example.com/second", screen.readCell(1, 1).?.link.uri);
+    try term.resize(allocator, .{ .cols = 6, .rows = 4 });
+    term.scrollViewport(.top);
+    try state.update(allocator, &term);
+    try draw(allocator, &cache, &screen, &term, &state, .{ .width = 8, .height = 6 }, .{ 0, 0 }, true, .default, "test", true);
+    try std.testing.expectEqualStrings("https://example.com/second", screen.readCell(1, 1).?.link.uri);
 }
