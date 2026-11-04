@@ -43,7 +43,7 @@
   <tr>
     <td valign="top">
       <h3>共享连接</h3>
-      多个终端可以同时进入同一个会话。使用 <code>attach -r</code> 只读查看输出和历史，保持程序输入和终端尺寸。
+      多个终端可以同时进入同一个会话。使用 <code>imx read</code> 只读查看输出和历史，保持程序输入和终端尺寸。
     </td>
     <td valign="top">
       <h3>会话提示符</h3>
@@ -152,7 +152,7 @@ imx kill dev     # 终止会话
 
 重新连接会恢复屏幕、颜色和保留的历史，Vim 等全屏程序保持离开时的状态。
 
-使用 `imx attach --read-only dev`（简写为 `imx attach -r dev`）可以只读连接已有会话。键盘输入、粘贴内容、鼠标事件和观察窗口的尺寸变化都不会影响会话中的程序。**PageUp/PageDown** 和 **方向键上下** 浏览保留的历史，**Home** 前往历史起点，**End** 跟随实时输出，**方向键左右** 水平移动视图。源终端大于观察窗口时，视图跟随程序光标。底部显示只读状态；**Alt+W** 和分离快捷键都会保留会话。在会话内部执行时，当前连接切换为只读模式，目标名称与当前名称相同时同样有效。
+使用 `imx read dev` 可以只读连接已有会话。键盘输入、粘贴内容、鼠标事件和观察窗口的尺寸变化都不会影响会话中的程序。**PageUp/PageDown** 和 **方向键上下** 浏览保留的历史，**Home** 前往历史起点，**End** 跟随实时输出，**方向键左右** 水平移动视图。源终端大于观察窗口时，视图跟随程序光标。底部显示只读状态；**Alt+W** 和分离快捷键都会保留会话。在会话内部执行时，当前连接切换为只读模式，目标名称与当前名称相同时同样有效。
 
 退出或分离时会恢复正常的终端显示和输入模式，将原来的画面移入历史记录，并从左上角显示外层 shell 提示符。分屏时只影响退出会话的窗格；关闭最后一个窗格后，外层终端也从左上角显示提示符。
 
@@ -191,7 +191,7 @@ imx kill dev     # 终止会话
 
 ### 5. 按需配置
 
-执行 `imx`、`imx ls`、`imx list` 或 `imx attach <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含会话名称提示、补全、`CREATED` 格式、鼠标模式和聚焦窗格颜色设置及中英文注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
+执行 `imx`、`imx ls`、`imx list`、`imx attach <name>` 或 `imx read <name>` 时，如果 `~/.config/imx/config.toml` 不存在，程序会自动创建包含会话名称提示、补全、`CREATED` 格式、鼠标模式和聚焦窗格颜色设置及中英文注释的文件。设置了非空的 `XDG_CONFIG_HOME` 时，文件创建在 `$XDG_CONFIG_HOME/imx/config.toml`。已有文件保留原有内容和权限。
 
 自动生成的配置文件包含以下默认设置：
 
@@ -237,7 +237,7 @@ focused_border_color = "#969CD5"
 | 命令                        | 功能                                     |
 | --------------------------- | ---------------------------------------- |
 | `imx attach dev`            | 创建或进入 `dev`；在会话内部执行时，将当前终端切换到 `dev` |
-| `imx attach -r dev`         | 只读连接已有 `dev`，在本地浏览历史，保持程序输入和终端尺寸 |
+| `imx read dev`              | 只读连接已有 `dev`，在本地浏览历史，保持程序输入和终端尺寸 |
 | `imx list`、`imx ls`、`imx` | 查看全部会话                             |
 | `imx select`               | 交互选择会话并实时预览                   |
 | `imx cat dev`               | 输出保留的历史和当前屏幕文字             |
@@ -288,7 +288,7 @@ focused_border_color = "#969CD5"
 | Zsh   | `$ZDOTDIR` 中的 `.zshrc` 和 `.zlogin`；未设置时使用 `$HOME`  | `share/zsh/site-functions/_imx` 和 `share/zsh/vendor-completions/_imx` |
 | Fish  | `$XDG_CONFIG_HOME/fish/config.fish`，或 `~/.config/fish/config.fish` | `share/fish/vendor_completions.d/imx.fish`                   |
 
-集成脚本和修改记录保存在 `~/.local/state/imx/shell/`。`imx attach` 只添加或移除每个初始化文件中带标记的片段，其他内容保持原样；手动修改过的片段会被报告，程序会停止处理。`attach`、`cat` 和 `kill` 的补全在每次按下 Tab 时并发查询当前会话后台，共享 250 毫秒查询期限。新增和删除的会话即时反映在候选中，无响应后台的会话名称仍然保留。
+集成脚本和修改记录保存在 `~/.local/state/imx/shell/`。`imx attach` 只添加或移除每个初始化文件中带标记的片段，其他内容保持原样；手动修改过的片段会被报告，程序会停止处理。`attach`、`read`、`cat` 和 `kill` 的补全在每次按下 Tab 时并发查询当前会话后台，共享 250 毫秒查询期限。新增和删除的会话即时反映在候选中，无响应后台的会话名称仍然保留。
 
 ### 运行目录
 

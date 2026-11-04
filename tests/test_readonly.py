@@ -13,9 +13,9 @@ from conftest import ROOT
 from test_panes import PaneTerminal
 
 
-def observe(sessions, name="dev", rows=20, cols=70, option="--read-only"):
+def observe(sessions, name="dev", rows=20, cols=70):
     child = pexpect.spawn(
-        str(sessions.binary), ["attach", option, "--", name],
+        str(sessions.binary), ["read", "--", name],
         cwd=str(sessions.path), env=sessions.environment,
         dimensions=(rows, cols), encoding="utf-8", timeout=10,
     )
@@ -27,15 +27,15 @@ def observe(sessions, name="dev", rows=20, cols=70, option="--read-only"):
     return terminal
 
 
-@pytest.mark.parametrize("option", ["-r", "--read-only"])
-def test_readonly_connection_and_local_resize_preserve_session_size(sessions, option):
-    writer = sessions.spawn(rows=30, cols=100)
-    observer = observe(sessions, option=option)
+@pytest.mark.parametrize("name", ["dev", "-dash"])
+def test_readonly_connection_and_local_resize_preserve_session_size(sessions, name):
+    writer = sessions.spawn(name, rows=30, cols=100)
+    observer = observe(sessions, name=name)
     assert sessions.sessions()[0]["CLIENTS"] == "2"
     assert "30 100" in sessions.command(writer, "stty size")
     observer.screen.resize(40, 140)
     observer.child.setwinsize(40, 140)
-    observer.visible("Read-only: dev")
+    observer.visible(f"Read-only: {name}")
     assert "30 100" in sessions.command(writer, "stty size")
     observer.child.send("\x1b\\")
     observer.child.expect(pexpect.EOF)
@@ -111,7 +111,7 @@ def test_switch_to_readonly_preserves_sessions_and_target_size(sessions, same):
     source = sessions.spawn("source", rows=30, cols=100)
     target = source if same else sessions.spawn("target", rows=40, cols=120)
     name = "source" if same else "target"
-    source.sendline(f"imx attach --read-only {name}")
+    source.sendline(f"imx read {name}")
     observer = PaneTerminal(sessions, child=source)
     observer.visible(f"Read-only: {name}")
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == (
@@ -129,7 +129,7 @@ def test_readonly_in_split_pane_keeps_other_panes_interactive(sessions):
     target = sessions.spawn("target", rows=40, cols=120)
     terminal.split()
     terminal.visible("1: shell")
-    terminal.child.sendline("imx attach -r target")
+    terminal.child.sendline("imx read target")
     terminal.visible("Read-only: target")
     terminal.focus(0)
     terminal.command("printf ready", "writer-alive", "ready")
@@ -140,7 +140,7 @@ def test_readonly_in_split_pane_keeps_other_panes_interactive(sessions):
 
 
 def test_readonly_missing_session_fails_without_creating_it(sessions):
-    child = pexpect.spawn(str(sessions.binary), ["attach", "-r", "missing"],
+    child = pexpect.spawn(str(sessions.binary), ["read", "missing"],
                           cwd=str(sessions.path), env=sessions.environment, encoding="utf-8", timeout=10)
     sessions.clients.append(child)
     child.expect_exact("SessionNotFound")
@@ -257,7 +257,7 @@ def test_readonly_preserves_hyperlinks_through_local_redraw(sessions):
 
 def test_switch_to_missing_readonly_session_keeps_source_interactive(sessions):
     writer = sessions.spawn()
-    assert "SessionNotFound" in sessions.command(writer, "imx attach -r missing")
+    assert "SessionNotFound" in sessions.command(writer, "imx read missing")
     assert "SOURCE_ALIVE" in sessions.command(writer, "printf 'SOURCE_ALIVE\\n'")
     assert [row["NAME"] for row in sessions.sessions()] == ["dev"]
 

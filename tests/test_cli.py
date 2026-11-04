@@ -13,7 +13,7 @@ def test_information_flags_leave_runtime_and_configuration_untouched(sessions, a
     assert not (sessions.home / ".local/state/imx").exists()
 
 
-@pytest.mark.parametrize("command", ["attach", "list", "ls", "select", "cat", "detach", "kill", "rename", "update", "uninstall", "help"])
+@pytest.mark.parametrize("command", ["attach", "read", "list", "ls", "select", "cat", "detach", "kill", "rename", "update", "uninstall", "help"])
 def test_command_help_precedes_configuration_and_execution(sessions, command):
     path = configuration(sessions)
     path.parent.mkdir(parents=True)
@@ -38,6 +38,10 @@ def test_command_help_precedes_configuration_and_execution(sessions, command):
     (("attach", "--unknown"), "--unknown"),
     (("attach", "--help=true"), "does not take a value"),
     (("attach", "../bad"), "Invalid session name '../bad'"),
+    (("read",), "Missing session name"),
+    (("read", "dev", "extra"), "extra"),
+    (("read", "--unknown"), "--unknown"),
+    (("read", "../bad"), "Invalid session name '../bad'"),
     (("unknown",), "Unknown command 'unknown'"),
     (("help", "unknown"), "Unknown command 'unknown'"),
     (("--version", "extra"), "without other arguments"),
@@ -52,6 +56,14 @@ def test_argument_errors_are_specific_and_leave_runtime_untouched(sessions, argu
     assert result.returncode == 1
     assert result.stdout == ""
     assert message in result.stderr
+    assert not configuration(sessions).exists()
+    assert not sessions.runtime.exists()
+
+
+def test_read_requires_an_interactive_terminal(sessions):
+    result = sessions.run("read", "dev", check=False)
+    assert result.returncode == 1
+    assert "TerminalRequired" in result.stderr
     assert not configuration(sessions).exists()
     assert not sessions.runtime.exists()
 

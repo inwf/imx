@@ -56,7 +56,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     const tag: protocol.Tag = switch (invocation.command) {
         .uninstall => return uninstall.run(allocator, io, args[0]),
         .update => return update.run(allocator, io, init.environ, invocation.update_mode),
-        .attach => .attach,
+        .attach, .read => .attach,
         .list, .ls => .list,
         .cat => .cat,
         .detach => .detach,
@@ -64,6 +64,7 @@ fn execute(init: std.process.Init.Minimal) !void {
         .rename => .rename,
         .help, .select => unreachable,
     };
+    const read_only = invocation.command == .read;
     const source = if (tag == .attach or tag == .detach or invocation.rename_current) try identity.current(arena.allocator()) else null;
     const name = if (tag == .detach or invocation.rename_current) source orelse return cli.fail(allocator, "Run 'imx {s}' inside a session (NotInsideSession).", .{@tagName(invocation.command)}) else invocation.name;
     if (tag != .list) config.validateName(name) catch |err| return cli.fail(allocator, "Invalid session name '{s}': use 1-64 ASCII letters, digits, dots, underscores or hyphens; '.' and '..' are reserved ({s}).", .{ name, @errorName(err) });
@@ -79,9 +80,9 @@ fn execute(init: std.process.Init.Minimal) !void {
     if (preferences.file_missing) preferences = try settings.load(allocator, io, .{ .create_default = true });
     if (tag == .attach and source == null and config.env(@import("pane_context.zig").variable) == null) {
         try records.unlock();
-        return @import("workspace.zig").run(allocator, io, init.environ, name, preferences, invocation.read_only);
+        return @import("workspace.zig").run(allocator, io, init.environ, name, preferences, read_only);
     }
-    if (tag == .attach and !invocation.read_only) {
+    if (tag == .attach and !read_only) {
         try records.lockIntegration();
         try shell.synchronize(allocator, io, &records, preferences.show_session, config.env("SHELL") orelse "/bin/sh");
     }
@@ -99,12 +100,12 @@ fn execute(init: std.process.Init.Minimal) !void {
     if (tag == .attach) {
         if (source) |current| {
             try config.validateName(current);
-            if (std.mem.eql(u8, current, name) and !invocation.read_only) return;
-            return client.switchSession(allocator, io, &root, current, name, invocation.read_only);
+            if (std.mem.eql(u8, current, name) and !read_only) return;
+            return client.switchSession(allocator, io, &root, current, name, read_only);
         }
     }
-    const fd = try connection.open(allocator, io, &root, name, tag == .attach and !invocation.read_only);
-    if (tag == .attach) return client.attach(allocator, io, init.environ, fd, name, &root, &records, preferences, invocation.read_only);
+    const fd = try connection.open(allocator, io, &root, name, tag == .attach and !read_only);
+    if (tag == .attach) return client.attach(allocator, io, init.environ, fd, name, &root, &records, preferences, read_only);
     defer sys.close(fd);
     if (tag == .rename) {
         const payload = try std.json.Stringify.valueAlloc(arena.allocator(), protocol.Rename{ .name = name, .new_name = invocation.new_name.?, .expected_id = if (invocation.rename_current) config.env(identity.variable) else null }, .{});

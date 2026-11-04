@@ -43,7 +43,7 @@ Each session has an independent backend process with one event loop thread. The 
   <tr>
     <td valign="top">
       <h3>Shared connections</h3>
-      Several terminals can attach to one session at once. Use <code>attach -r</code> to observe its output and history while preserving program input and terminal size.
+      Several terminals can attach to one session at once. Use <code>imx read</code> to observe its output and history while preserving program input and terminal size.
     </td>
     <td valign="top">
       <h3>Session prompt</h3>
@@ -153,7 +153,7 @@ imx kill dev     # terminate the session
 
 Reattaching restores the screen, colors, and retained history. Full-screen programs such as Vim return with the document as you left it.
 
-Use `imx attach --read-only dev` (or `imx attach -r dev`) to observe an existing session. Keyboard input, pasted text, mouse events, and local window resizing do not affect its programs. **PageUp/PageDown** and **Up/Down** browse retained history, **Home** goes to its beginning, **End** follows live output, and **Left/Right** pan horizontally. The view follows the program cursor when the source is larger than the local window. The footer identifies read-only connections; **Alt+W** and the detach shortcut keep the session running. Inside a session, this command switches the current connection to read-only viewing, including when the name stays the same.
+Use `imx read dev` to observe an existing session. Keyboard input, pasted text, mouse events, and local window resizing do not affect its programs. **PageUp/PageDown** and **Up/Down** browse retained history, **Home** goes to its beginning, **End** follows live output, and **Left/Right** pan horizontally. The view follows the program cursor when the source is larger than the local window. The footer identifies read-only connections; **Alt+W** and the detach shortcut keep the session running. Inside a session, this command switches the current connection to read-only viewing, including when the name stays the same.
 
 Exiting or detaching restores normal terminal display and input modes, moves the previous screen into scrollback, and places the outer shell prompt at the top left. In split mode this applies within the affected pane. Closing the last pane also returns to the top left of the outer terminal.
 
@@ -192,7 +192,7 @@ Closing the terminal discards the layout and terminates the plain pane shells wh
 
 ### 5. Make it yours
 
-Running `imx`, `imx ls`, `imx list`, or `imx attach <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with settings for the session prompt, completion, the `CREATED` format, mouse mode, and focused pane color, and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
+Running `imx`, `imx ls`, `imx list`, `imx attach <name>`, or `imx read <name>` automatically creates `~/.config/imx/config.toml` when it is missing, with settings for the session prompt, completion, the `CREATED` format, mouse mode, and focused pane color, and comments in English and Simplified Chinese. If `XDG_CONFIG_HOME` is set to a nonempty value, the file is created at `$XDG_CONFIG_HOME/imx/config.toml`. Existing files keep their contents and permissions.
 
 The generated file contains the following defaults:
 
@@ -238,7 +238,7 @@ The interactive client manages a PTY and a terminal model for each pane. libvaxi
 | Command                     | Purpose                                                      |
 | --------------------------- | ------------------------------------------------------------ |
 | `imx attach dev`            | Create or attach to `dev`; inside a session, switch the current terminal to `dev` |
-| `imx attach -r dev`         | Observe existing `dev` with local history browsing; preserve program input and size |
+| `imx read dev`              | Observe existing `dev` with local history browsing; preserve program input and size |
 | `imx list`, `imx ls`, `imx` | List all sessions                                            |
 | `imx select`               | Interactively choose a session with a live preview           |
 | `imx cat dev`               | Print retained history and the active screen as text         |
@@ -289,7 +289,7 @@ OSC 8 hyperlinks remain clickable in split panes, zoomed panes, retained history
 | Zsh   | `.zshrc` and `.zlogin` in `$ZDOTDIR`, or in `$HOME` when it is unset | `share/zsh/site-functions/_imx` and `share/zsh/vendor-completions/_imx` |
 | Fish  | `$XDG_CONFIG_HOME/fish/config.fish`, or `~/.config/fish/config.fish` | `share/fish/vendor_completions.d/imx.fish`                   |
 
-The integration scripts and the record of edited files live in `~/.local/state/imx/shell/`. `imx attach` adds or removes only the marked block in each startup file and leaves your other content in place; a block that was edited by hand is reported instead of changed. Completion for `attach`, `cat`, and `kill` queries the current session backends concurrently on every Tab press, with a shared 250 ms deadline. New and removed sessions appear immediately, and names from unresponsive backends remain available.
+The integration scripts and the record of edited files live in `~/.local/state/imx/shell/`. `imx attach` adds or removes only the marked block in each startup file and leaves your other content in place; a block that was edited by hand is reported instead of changed. Completion for `attach`, `read`, `cat`, and `kill` queries the current session backends concurrently on every Tab press, with a shared 250 ms deadline. New and removed sessions appear immediately, and names from unresponsive backends remain available.
 
 ### Runtime directory
 

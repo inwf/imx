@@ -62,6 +62,7 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
     prefix = installation.binary.parent.parent
     with CompletionShell(installation.environment, shell, prefix) as terminal:
         assert terminal.complete("imx a\t") == "imx attach "
+        assert terminal.complete("imx rea\t") == "imx read "
         assert terminal.complete("imx sel\t") == "imx select "
         assert terminal.complete("imx select --he\t") == "imx select --help "
         assert terminal.complete("imx attach \t") == "imx attach "
@@ -70,7 +71,7 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
             assert name in display
         terminal.child.send("b\t")
         assert terminal.buffer() == "imx attach beta "
-        for command in ["attach", "cat", "kill"]:
+        for command in ["attach", "read", "cat", "kill"]:
             assert terminal.complete(f"imx {command} d\t") == f"imx {command} docs.v1 "
             assert terminal.complete(f"imx {command} alpha-\t") == f"imx {command} alpha-"
             assert terminal.complete(f"imx {command} missing\t") == f"imx {command} missing"
@@ -80,11 +81,11 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
         assert terminal.complete("imx --ver\t") == "imx --version "
         assert terminal.complete("imx --he\t") == "imx --help "
         assert terminal.complete("imx attach --he\t") == "imx attach --help "
-        assert terminal.complete("imx attach --rea\t") == "imx attach --read-only "
-        assert terminal.complete("imx attach -r b\t") == "imx attach -r beta "
-        assert terminal.complete("imx attach --read-only b\t") == "imx attach --read-only beta "
-        assert terminal.complete("imx attach -r -- -d\t") == "imx attach -r -- -dash "
-        assert terminal.complete("imx attach -r beta a\t") == "imx attach -r beta a"
+        assert terminal.complete("imx read --he\t") == "imx read --help "
+        assert terminal.complete("imx read b\t") == "imx read beta "
+        assert terminal.complete("imx read -- -d\t") == "imx read -- -dash "
+        assert terminal.complete("imx read beta a\t") == "imx read beta a"
+        assert terminal.complete("imx help rea\t") == "imx help read "
         assert terminal.complete("imx update --ch\t") == "imx update --check "
         assert terminal.complete("imx update --fo\t") == "imx update --force "
         assert terminal.complete("imx help at\t") == "imx help attach "
@@ -128,7 +129,7 @@ def test_curl_install_update_and_uninstall_completion(downloaded, shell):
 
 
 @pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
-@pytest.mark.parametrize("command", ["attach", "cat", "kill"])
+@pytest.mark.parametrize("command", ["attach", "read", "cat", "kill"])
 def test_session_candidates_display_without_empty_rows(installation, shell, command):
     names = ["dev", "test", "worker"]
     for name in names:

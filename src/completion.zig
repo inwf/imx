@@ -6,7 +6,7 @@ const settings = @import("settings.zig");
 const sessions = @import("sessions.zig");
 const cli = @import("cli.zig");
 
-const commands = [_][]const u8{ "attach", "list", "ls", "select", "cat", "detach", "kill", "rename", "update", "uninstall", "help" };
+const commands = [_][]const u8{ "attach", "read", "list", "ls", "select", "cat", "detach", "kill", "rename", "update", "uninstall", "help" };
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io, kind: []const u8, prefix: []const u8) !void {
     const options = std.mem.startsWith(u8, kind, "options-");
@@ -17,7 +17,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, kind: []const u8, prefix: [
     defer preferences.deinit(allocator);
     if (!preferences.completion_enabled) return;
     if (options) {
-        const values: []const []const u8 = if (std.mem.eql(u8, kind[8..], "update")) &cli.update_options else if (std.mem.eql(u8, kind[8..], "attach")) &cli.attach_options else &cli.help_options;
+        const values: []const []const u8 = if (std.mem.eql(u8, kind[8..], "update")) &cli.update_options else &cli.help_options;
         for (values) |option| try candidate(option, prefix);
         return;
     }

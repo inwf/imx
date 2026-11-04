@@ -240,8 +240,7 @@ const Pane = struct {
         defer allocator.free(cwd);
         const name = try allocator.dupeSentinel(u8, session orelse "", 0);
         defer allocator.free(name);
-        const attach_argv = [_:null]?[*:0]const u8{ executable, "attach", "--", name };
-        const readonly_argv = [_:null]?[*:0]const u8{ executable, "attach", "--read-only", "--", name };
+        const attach_argv = [_:null]?[*:0]const u8{ executable, if (app.initial_read_only) "read" else "attach", "--", name };
         const shell_argv = [_:null]?[*:0]const u8{ executable, "-l" };
         var ready: [2]c_int = undefined;
         _ = try sys.check(c.pipe2(&ready, c.O_CLOEXEC | c.O_NONBLOCK), "pipe2(pane readiness)");
@@ -254,7 +253,7 @@ const Pane = struct {
             if (c.dup3(ready[1], 3, c.O_CLOEXEC) < 0) c._exit(126);
             if (std.os.linux.errno(std.os.linux.close_range(4, std.math.maxInt(c_int), .{ .UNSHARE = false, .CLOEXEC = false })) != .SUCCESS) c._exit(126);
             sys.unblockSignals() catch c._exit(126);
-            const argv: [*:null]const ?[*:0]const u8 = if (session != null) (if (app.initial_read_only) &readonly_argv else &attach_argv) else &shell_argv;
+            const argv: [*:null]const ?[*:0]const u8 = if (session != null) &attach_argv else &shell_argv;
             if (c.chdir(cwd) == 0) _ = c.execve(executable, @ptrCast(argv), @ptrCast(envp.items.ptr));
             const failure = c.__errno_location().*;
             _ = c.write(3, &failure, @sizeOf(c_int));
