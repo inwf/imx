@@ -50,7 +50,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     if (invocation.command == .select) {
         var preferences = try settings.load(allocator, io, .{});
         defer preferences.deinit(allocator);
-        selected = try @import("select.zig").run(allocator, io, init.environ);
+        selected = try @import("select.zig").run(allocator, io, init.environ, preferences.mouse_enabled);
         invocation = .{ .command = .attach, .name = selected orelse return };
     }
     const tag: protocol.Tag = switch (invocation.command) {

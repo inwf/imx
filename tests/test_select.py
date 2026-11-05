@@ -31,6 +31,12 @@ def shown(terminal, text):
     return any(text in row for row in terminal.screen.display)
 
 
+def configure_mouse(sessions, enabled):
+    path = sessions.home / ".config/imx/config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"[panes]\nmouse = {str(enabled).lower()}\n")
+
+
 def test_preview_clients_keep_independent_updates(sessions):
     session = sessions.spawn("dev", rows=30, cols=100)
     sessions.command(session, "printf '\\033[2J\\033[H'; printf 'STABLE 中文 %060d\\n' {1..15}")
@@ -63,12 +69,15 @@ def cancel(terminal, key="q"):
 
 
 @pytest.mark.parametrize("key", ["q", "\x1b", "\x03"])
-def test_select_cancel_preserves_session_and_terminal_modes(sessions, key):
+@pytest.mark.parametrize("mouse", [False, True])
+def test_select_cancel_preserves_session_and_terminal_modes(sessions, key, mouse):
+    configure_mouse(sessions, mouse)
     session = sessions.spawn("alpha")
     sessions.command(session, "printf '\\033[2J\\033[HALPHA_CONTENT\\n'")
     before = sessions.sessions()
     terminal = selector(sessions)
     terminal.visible("ALPHA_CONTENT")
+    assert ("\x1b[?1000h\x1b[?1006h" in terminal.capture.getvalue()) == mouse
     assert sessions.sessions() == before
     terminal.child.send(key)
     terminal.child.expect(pexpect.EOF)
@@ -76,6 +85,7 @@ def test_select_cancel_preserves_session_and_terminal_modes(sessions, key):
     assert attributes[3] & termios.ICANON
     assert attributes[3] & termios.ECHO
     assert "\x1b[?1049l" in terminal.child.before
+    assert "\x1b[?1000;1002;1003;1006;2004r" in terminal.child.before
     terminal.child.close()
     assert terminal.child.exitstatus == 0
     assert sessions.sessions() == before
@@ -147,7 +157,9 @@ def test_select_previews_vim_updates_without_sending_input(sessions):
     assert document.read_text() == "UPDATED_VIM_PREVIEW\n中文文档\n"
 
 
-def test_select_inside_session_switches_current_connection(sessions):
+@pytest.mark.parametrize("mouse", [False, True])
+def test_select_inside_session_switches_current_connection(sessions, mouse):
+    configure_mouse(sessions, mouse)
     alpha = sessions.spawn("alpha")
     beta = sessions.spawn("beta")
     sessions.command(beta, "printf '\\033[2J\\033[HTARGET_BETA\\n'")
@@ -156,7 +168,11 @@ def test_select_inside_session_switches_current_connection(sessions):
     terminal.visible("Sessions")
     alpha.send("j")
     terminal.visible("TARGET_BETA")
-    alpha.send(" ")
+    if mouse:
+        terminal.click(4, 3)
+        terminal.click(4, 3)
+    else:
+        alpha.send(" ")
     alpha.expect_exact("IMX_PROMPT> ")
     assert "beta" in sessions.command(alpha, "printf '%s\\n' \"$IMX_SESSION\"")
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"alpha": "0", "beta": "2"})
@@ -185,13 +201,19 @@ def test_select_current_session_preserves_screen_and_stays_idle(sessions, confir
     assert sessions.sessions()[0]["CLIENTS"] == "1"
 
 
-def test_select_in_plain_pane_attaches_to_that_pane(sessions):
+@pytest.mark.parametrize("mouse", [False, True])
+def test_select_in_plain_pane_attaches_to_that_pane(sessions, mouse):
+    configure_mouse(sessions, mouse)
     terminal = PaneTerminal(sessions)
     terminal.split()
     terminal.visible("1: shell")
     terminal.child.sendline("imx select")
     terminal.visible("Enter/Space")
-    terminal.child.send("\r")
+    if mouse:
+        terminal.click(55, 3)
+        terminal.click(55, 3)
+    else:
+        terminal.child.send("\r")
     terminal.visible("1: dev")
     terminal.command("printf '%s' \"$IMX_SESSION\"", "selected-session", "dev")
     assert sessions.sessions()[0]["CLIENTS"] == "2"
@@ -211,7 +233,9 @@ def test_select_paste_does_not_execute_selection_keys(sessions):
 
 
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
-def test_select_signal_restores_terminal(sessions, signum):
+@pytest.mark.parametrize("mouse", [False, True])
+def test_select_signal_restores_terminal(sessions, signum, mouse):
+    configure_mouse(sessions, mouse)
     sessions.spawn("alpha")
     terminal = selector(sessions)
     terminal.visible("Enter/Space")
@@ -221,6 +245,7 @@ def test_select_signal_restores_terminal(sessions, signum):
     assert attributes[3] & termios.ICANON
     assert attributes[3] & termios.ECHO
     assert "\x1b[?1049l" in terminal.child.before
+    assert "\x1b[?1000;1002;1003;1006;2004r" in terminal.child.before
     terminal.child.close()
     assert terminal.child.exitstatus == 0
     assert sessions.sessions()[0]["CLIENTS"] == "1"
@@ -397,3 +422,142 @@ def test_select_scrolls_long_lists_and_handles_small_terminals(sessions):
     terminal.screen.resize(16, 60)
     terminal.visible("CONTENT_00")
     cancel(terminal)
+
+
+def test_select_mouse_previews_and_double_clicks_to_attach(sessions, mouse_mode):
+    alpha = sessions.spawn("alpha")
+    beta = sessions.spawn("beta")
+    sessions.command(alpha, "printf '\\033[2J\\033[HALPHA_MOUSE\\n'")
+    sessions.command(beta, "printf '\\033[2J\\033[HBETA_MOUSE\\n'")
+    before = sessions.sessions()
+    terminal = selector(sessions)
+    terminal.visible("ALPHA_MOUSE")
+    terminal.click(98, 3)
+    terminal.visible("> beta")
+    terminal.visible("BETA_MOUSE")
+    assert not shown(terminal, "ALPHA_MOUSE")
+    assert sessions.sessions() == before
+    assert "24 80" in sessions.command(beta, "stty size")
+    terminal.child.send("k")
+    terminal.visible("ALPHA_MOUSE")
+    terminal.click(4, 3)
+    terminal.click(4, 3)
+    terminal.child.expect_exact("IMX_PROMPT> ")
+    assert "beta" in sessions.command(terminal.child, "printf '%s\\n' \"$IMX_SESSION\"")
+    terminal.child.send("\x1b\\")
+    terminal.child.expect(pexpect.EOF)
+
+
+def test_select_ignores_mouse_when_disabled(sessions):
+    configure_mouse(sessions, False)
+    sessions.spawn("alpha")
+    sessions.spawn("beta")
+    terminal = selector(sessions)
+    terminal.visible("> alpha")
+    terminal.click(4, 3)
+    terminal.click(4, 3)
+    terminal.child.send("\x1b[<65;4;2M")
+    for _ in range(10):
+        terminal.pump()
+    assert shown(terminal, "> alpha")
+    assert all(row["CLIENTS"] == "1" for row in sessions.sessions())
+    terminal.child.send("j")
+    terminal.visible("> beta")
+    cancel(terminal)
+
+
+@pytest.mark.parametrize("interruption", [
+    None,
+    "j",
+    "\x1b[200~\x1b[201~",
+    "\x1b[<32;4;3M\x1b[<0;4;3m",
+    "\x1b[<0;4;1M\x1b[<0;4;1m",
+    "\x1b[<0;4;10M\x1b[<0;4;10m\x1b[<64;4;10M",
+    "\x1b[<0;4;30M\x1b[<0;4;30m",
+    "\x1b[<0;0;3M\x1b[<0;0;3m\x1b[<0;101;3M\x1b[<0;101;3m",
+    "\x1b[<2;4;3M\x1b[<2;4;3m",
+    "\x1b[<4;4;3M\x1b[<4;4;3m",
+])
+def test_select_mouse_double_click_requires_consecutive_clicks(sessions, mouse_mode, interruption):
+    sessions.spawn("alpha")
+    sessions.spawn("beta")
+    terminal = selector(sessions)
+    terminal.visible("> alpha")
+    terminal.click(4, 3)
+    terminal.visible("> beta")
+    if interruption is None:
+        time.sleep(0.5)
+    else:
+        terminal.child.send(interruption)
+    terminal.click(4, 3)
+    for _ in range(10):
+        terminal.pump()
+    assert shown(terminal, "> beta")
+    assert all(row["CLIENTS"] == "1" for row in sessions.sessions())
+    cancel(terminal)
+
+
+def test_select_mouse_scrolls_and_selects_visible_rows(sessions, mouse_mode):
+    for number in range(12):
+        sessions.spawn(f"session-{number:02}")
+    terminal = selector(sessions, rows=16, cols=60)
+    terminal.visible("> session-00")
+    terminal.child.send("\x1b[<65;4;2M" * 9)
+    terminal.visible("> session-09")
+    assert "session-05" in terminal.screen.display[1]
+    terminal.click(59, 2)
+    terminal.visible("> session-05")
+    terminal.child.send("\x1b[<64;4;2M" * 20)
+    terminal.visible("> session-00")
+    terminal.child.send("\x1b[<65;4;2M" * 30)
+    terminal.visible("> session-11")
+    assert "session-07" in terminal.screen.display[1]
+    terminal.click(4, 2)
+    terminal.visible("> session-07")
+    for rows in (2, 1, 4, 16):
+        terminal.child.setwinsize(rows, 60)
+        terminal.screen.resize(rows, 60)
+        terminal.wait(lambda: terminal.screen.display[-1].startswith("Click/Wheel"))
+        terminal.click(4, rows)
+        terminal.child.send("\x1b[<65;4;1M")
+    terminal.visible("> session-07")
+    assert all(row["CLIENTS"] == "1" for row in sessions.sessions())
+    cancel(terminal)
+
+
+def test_select_mouse_releases_are_cleared_when_sessions_change(sessions, mouse_mode):
+    sessions.spawn("alpha")
+    sessions.spawn("beta")
+    terminal = selector(sessions)
+    terminal.visible("> alpha")
+    terminal.child.send("\x1b[<0;4;3M")
+    terminal.visible("> beta")
+    sessions.run("kill", "beta")
+    terminal.visible("> alpha")
+    terminal.child.send("\x1b[<0;4;3m")
+    sessions.run("kill", "alpha")
+    terminal.visible("No sessions.")
+    terminal.click(4, 2)
+    terminal.click(4, 2)
+    terminal.child.send("\x1b[<65;4;2M")
+    sessions.spawn("gamma")
+    terminal.visible("> gamma")
+    terminal.click(4, 2)
+    for _ in range(10):
+        terminal.pump()
+    assert sessions.sessions()[0]["CLIENTS"] == "1"
+    cancel(terminal)
+
+
+def test_select_mouse_cancel_restores_pane_mouse_focus(sessions, mouse_mode):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("1: shell")
+    terminal.child.sendline("imx select")
+    terminal.visible("Double-click")
+    terminal.click(55, 3)
+    terminal.child.send("q")
+    terminal.command("printf done", "selector-cancelled", "done")
+    terminal.click(4, 3)
+    terminal.focused(0)
+    terminal.command("printf '%s' \"$IMX_SESSION\"", "selector-focus", "dev")

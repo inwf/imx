@@ -158,7 +158,7 @@ imx kill dev     # 终止会话
 
 在 `dev1` 内执行 `imx attach dev2`，当前终端会切换到 `dev2`，两个会话的程序和历史继续保留。目标不存在时，使用当前目录、环境变量和 `$SHELL` 创建。执行 `imx attach dev1` 可以返回，其他连接到 `dev1` 的终端继续保持连接。连接选择、错误处理和版本要求见[切换会话](docs/usage.md#切换会话)。
 
-`imx select` 打开会话列表和实时预览。使用 **↑/↓** 或 **j/k** 移动选项，使用 **Enter** 或**空格**进入会话，使用 **Esc** 或 **q** 取消选择。在会话内部确认选择会切换当前连接。仅预览选中的会话，每秒最多刷新 10 次，空闲画面停止刷新。预览保持会话尺寸和连接数量。详细行为见[交互选择会话](docs/usage.md#交互选择会话)。
+`imx select` 打开会话列表和实时预览。使用 **↑/↓** 或 **j/k** 移动选项，使用 **Enter** 或**空格**进入会话，使用 **Esc** 或 **q** 取消选择。设置 `panes.mouse = true` 后，可以单击会话进行选择和预览，双击进入会话，也可以在列表区域使用滚轮切换选项。在会话内部确认选择会切换当前连接。仅预览选中的会话，每秒最多刷新 10 次，空闲画面停止刷新。预览保持会话尺寸和连接数量。详细行为见[交互选择会话](docs/usage.md#交互选择会话)。
 
 > [!IMPORTANT]
 > 会话和历史保存在内存中。后台进程退出会释放所属会话，主机重启会释放全部会话。
@@ -215,7 +215,7 @@ focused_border_color = "#969CD5"
 - **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
-- **`panes.mouse`**：开启 imx 的鼠标聚焦、拖动分隔线、滚轮浏览历史和窗格内文字选择。默认值为 `false`，省略时也关闭；普通 shell 中的选择和复制交给终端处理。修改后重新启动整个界面生效。
+- **`panes.mouse`**：开启 imx 的鼠标聚焦、拖动分隔线、滚轮浏览历史、窗格内文字选择和 `imx select` 中的会话选择。默认值为 `false`，省略时也关闭；普通 shell 中的选择和复制交给终端处理。修改后重新启动整个界面生效。
 - **`panes.focused_border_color`**：使用 `"#RRGGBB"` 字符串设置聚焦窗格的边框和标题颜色，默认值为 `"#969CD5"`，省略时也使用此颜色。会话窗格和普通 shell 窗格均适用，修改后重新启动整个界面生效。
 - **`panes.horizontal_gap` / `panes.vertical_gap`**：分别设置相邻窗格边框之间的空白列数、空白行数。默认均为 `0`，接受 `0` 至 `255` 的整数，重新启动整个界面后生效。
 - **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。退出整个界面并重新进入后，快捷键的修改生效。重复的快捷键会报告配置错误。

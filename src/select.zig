@@ -12,8 +12,11 @@ const render = @import("pane_render.zig");
 const vt = terminal.vt;
 const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
 const frame_interval_ms = 100;
+const double_click_interval_ms = 400;
 
 const Selector = struct {
+    const Click = struct { index: usize, row: i16, col: i16, time: i64 };
+
     allocator: std.mem.Allocator,
     io: std.Io,
     root: *const config.Config,
@@ -38,6 +41,9 @@ const Selector = struct {
     dirty: bool = true,
     repaint: bool = true,
     preview_dirty: bool = false,
+    mouse_enabled: bool,
+    pressed: ?Click = null,
+    last_click: ?Click = null,
 
     fn freeNames(self: *Selector, names: [][]const u8) void {
         for (names) |name| self.allocator.free(name);
@@ -45,7 +51,7 @@ const Selector = struct {
     }
 
     fn listHeight(self: *const Selector) u16 {
-        return @intCast(@min(@max(1, self.size.rows / 3), self.names.len));
+        return @intCast(@min(@max(1, self.size.rows / 3), self.names.len, self.size.rows -| 2));
     }
 
     fn previewRect(self: *const Selector) ?render.Rect {
@@ -83,6 +89,7 @@ const Selector = struct {
             return;
         }
         const previous_rect = self.previewRect();
+        self.resetClicks();
         var selected = @min(self.selected, names.len -| 1);
         var retained = false;
         if (self.selectedName()) |previous| for (names, 0..) |name, index| {
@@ -170,16 +177,76 @@ const Selector = struct {
 
     const Choice = enum { waiting, cancel, attach };
 
+    fn resetClicks(self: *Selector) void {
+        self.pressed = null;
+        self.last_click = null;
+    }
+
+    fn choose(self: *Selector, index: usize) void {
+        if (self.selected == index) return;
+        self.selected = index;
+        self.preview_dirty = true;
+    }
+
+    fn mouseIndex(self: *const Selector, mouse: vaxis.Mouse) ?usize {
+        if (mouse.col < 0 or mouse.col >= self.size.cols or mouse.row < 1 or mouse.row > self.listHeight()) return null;
+        const index = self.first + @as(usize, @intCast(mouse.row - 1));
+        return if (index < self.names.len) index else null;
+    }
+
+    fn handleMouse(self: *Selector, event: vaxis.Mouse) !Choice {
+        if (!self.mouse_enabled) return .waiting;
+        if (event.mods.shift or event.mods.alt or event.mods.ctrl or event.type == .drag) {
+            self.resetClicks();
+            return .waiting;
+        }
+        const index = self.mouseIndex(event);
+        if (event.type == .release and (event.button == .left or event.button == .none)) {
+            const pressed = self.pressed orelse return .waiting;
+            self.pressed = null;
+            if (index != pressed.index or event.row != pressed.row or @abs(@as(i32, event.col) - pressed.col) > 1) {
+                self.last_click = null;
+                return .waiting;
+            }
+            if (self.last_click) |previous| {
+                if (previous.index == pressed.index and previous.row == pressed.row and
+                    @abs(@as(i32, previous.col) - pressed.col) <= 1 and pressed.time - previous.time <= double_click_interval_ms)
+                {
+                    self.last_click = null;
+                    return .attach;
+                }
+            }
+            self.last_click = pressed;
+            return .waiting;
+        }
+        if (event.type != .press) return .waiting;
+        self.pressed = null;
+        const target = index orelse {
+            self.last_click = null;
+            return .waiting;
+        };
+        if (event.button == .left) {
+            self.pressed = .{ .index = target, .row = event.row, .col = event.col, .time = try sys.monotonicMilliseconds() };
+            self.choose(target);
+        } else {
+            self.last_click = null;
+            if (event.button == .wheel_up) self.choose(self.selected -| 1);
+            if (event.button == .wheel_down) self.choose(@min(self.selected + 1, self.names.len -| 1));
+        }
+        return .waiting;
+    }
+
     fn input(self: *Selector, result: keyboard.Input.Result) !Choice {
         const event = result.event orelse return .waiting;
+        if (event == .mouse) return self.handleMouse(event.mouse);
+        if (event == .paste_start) self.resetClicks();
         if (event != .key_press) return .waiting;
+        self.resetClicks();
         const key = event.key_press;
         if (key.matchExact(vaxis.Key.escape, .{}) or key.matchExact('q', .{}) or key.matchExact('c', .{ .ctrl = true })) return .cancel;
         if (key.matchExact(vaxis.Key.enter, .{}) or key.matchExact(' ', .{})) return if (self.names.len > 0) .attach else .waiting;
-        const previous = self.selected;
-        if (key.matchExact(vaxis.Key.up, .{}) or key.matchExact('k', .{})) self.selected -|= 1;
-        if (key.matchExact(vaxis.Key.down, .{}) or key.matchExact('j', .{})) self.selected = @min(self.selected + 1, self.names.len -| 1);
-        if (self.selected != previous) self.preview_dirty = true;
+        if (key.matchExact(vaxis.Key.up, .{}) or key.matchExact('k', .{})) self.choose(self.selected -| 1);
+        if (key.matchExact(vaxis.Key.down, .{}) or key.matchExact('j', .{})) self.choose(@min(self.selected + 1, self.names.len -| 1));
         return .waiting;
     }
 
@@ -200,7 +267,8 @@ const Selector = struct {
             if (self.message) |message| _ = window.printSegment(.{ .text = message }, .{ .row_offset = rect.y + 1, .col_offset = 1, .wrap = .none });
         }
         if (self.names.len == 0 and self.size.rows > 1) _ = window.printSegment(.{ .text = "No sessions." }, .{ .row_offset = 1, .wrap = .none });
-        _ = window.printSegment(.{ .text = "Up/Down j/k: select | Enter/Space: attach | Esc/q: cancel", .style = .{ .dim = true } }, .{ .row_offset = self.size.rows - 1, .wrap = .none });
+        const help = if (self.mouse_enabled) "Click/Wheel: select | Double-click/Enter/Space: attach | Esc/q: cancel" else "Up/Down j/k: select | Enter/Space: attach | Esc/q: cancel";
+        _ = window.printSegment(.{ .text = help, .style = .{ .dim = true } }, .{ .row_offset = self.size.rows - 1, .wrap = .none });
         self.vx.screen.cursor_vis = false;
         self.frame.clearRetainingCapacity();
         try self.vx.render(&self.frame.writer);
@@ -210,6 +278,7 @@ const Selector = struct {
     }
 
     fn resize(self: *Selector) !void {
+        self.resetClicks();
         self.size = try sys.Size.get(0);
         self.frame.clearRetainingCapacity();
         try self.vx.resize(self.allocator, &self.frame.writer, .{ .cols = self.size.cols, .rows = self.size.rows, .x_pixel = 0, .y_pixel = 0 });
@@ -291,7 +360,7 @@ const Selector = struct {
     }
 };
 
-pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ) !?[]u8 {
+pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, mouse_enabled: bool) !?[]u8 {
     if (c.isatty(0) == 0 or c.isatty(1) == 0) return error.TerminalRequired;
     const size = try sys.Size.get(0);
     var root = (try config.Config.openExisting(allocator, io)) orelse {
@@ -318,6 +387,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         .vx = try vaxis.init(io, allocator, &environment, .{}),
         .term = try vt.Terminal.init(io, allocator, .{ .cols = 1, .rows = 1, .max_scrollback_lines = 0, .max_scrollback_bytes = 0 }),
         .frame = .init(allocator),
+        .mouse_enabled = mouse_enabled,
     };
     app.stream = app.term.vtStream();
     defer {
@@ -357,6 +427,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     defer {
         writeTerminal(finish) catch {};
     }
+    if (app.mouse_enabled) try writeTerminal("\x1b[?1000h\x1b[?1006h");
     app.vx.state.alt_screen = true;
     app.vx.caps.rgb = true;
     try app.resize();

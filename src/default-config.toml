@@ -17,8 +17,8 @@ enabled = true
 # 修改后退出整个界面并重新 attach 生效。
 # Exit the entire interface and attach again to apply changes.
 
-# 启用鼠标聚焦、历史滚动、分隔线拖动和文字选择。
-# Enable mouse focus, history scrolling, separator dragging, and text selection.
+# 启用鼠标聚焦、历史滚动、分隔线拖动、文字选择和会话列表选择。
+# Enable mouse focus, history scrolling, separator dragging, text selection, and session list selection.
 mouse = false
 
 # 设置聚焦窗格的边框和标题颜色（"#RRGGBB"）。
