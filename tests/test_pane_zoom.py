@@ -31,6 +31,12 @@ def quadrants(sessions):
 def zoomed(terminal, number):
     terminal.wait(lambda: "[zoom]" in terminal.screen.display[0] and origin(terminal, number) == (0, 0))
     terminal.focused(number)
+    terminal.wait(lambda:
+        terminal.screen.display[0].startswith("╔═")
+        and terminal.screen.display[0].endswith("╗")
+        and terminal.screen.display[-1] == "╚" + "═" * (terminal.screen.columns - 2) + "╝"
+        and all(row.startswith("║") and row.endswith("║") for row in terminal.screen.display[1:-1])
+    )
 
 
 @pytest.mark.parametrize("number", [0, 1, 2, 3])
@@ -59,6 +65,12 @@ def test_zoom_quadrants_restores_resized_layout_and_focus(sessions, number, gap)
         terminal.wait(lambda: {pane: origin(terminal, pane) for pane in initial} == initial)
         terminal.focused(number)
         terminal.command("stty size", f"restored-{iteration}", f"{heights[number] - 2} {width - 2}\n")
+        for pane, (x, y) in initial.items():
+            pane_width = left if pane in (0, 3) else 100 - gap - left
+            assert terminal.screen.display[y][x] == "┌"
+            assert terminal.screen.display[y][x + pane_width - 1] == "┐"
+            assert terminal.screen.display[y + heights[pane] - 1][x] == "└"
+            assert terminal.screen.display[y + heights[pane] - 1][x + pane_width - 1] == "┘"
 
 
 def test_zoom_tracks_terminal_size_and_restores_proportions(sessions):
@@ -254,6 +266,8 @@ def test_closing_zoomed_pane_restores_remaining_panes(sessions, close):
     terminal.child.send(ZOOM)
     terminal.command("stty size", "remaining-pane", "28 98\n")
     assert "[zoom]" not in terminal.screen.display[0]
+    assert terminal.screen.display[0][0] == "┌"
+    assert terminal.screen.display[-1][-1] == "┘"
     assert sessions.sessions()[0]["CLIENTS"] == "1"
 
 
@@ -278,6 +292,8 @@ def test_hidden_pane_exit_preserves_zoom_until_one_pane_remains(sessions):
     terminal.wait(lambda: "[zoom]" not in terminal.screen.display[0])
     terminal.command("stty size", "after-second-exit", "28 98\n")
     terminal.focused(0)
+    assert terminal.screen.display[0][0] == "┌"
+    assert terminal.screen.display[-1][-1] == "┘"
 
 
 def test_detach_keeps_zoom_on_the_same_pane(sessions):

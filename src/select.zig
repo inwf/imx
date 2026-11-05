@@ -196,7 +196,7 @@ const Selector = struct {
         }
         if (self.previewRect()) |rect| {
             try self.state.update(self.allocator, &self.term);
-            try render.draw(self.allocator, &self.cache, &self.vx.screen, &self.term, &self.state, rect, .{ 0, 0 }, false, .default, self.selectedName() orelse "Preview", self.repaint);
+            try render.draw(self.allocator, &self.cache, &self.vx.screen, &self.term, &self.state, rect, .{ 0, 0 }, false, false, .default, self.selectedName() orelse "Preview", self.repaint);
             if (self.message) |message| _ = window.printSegment(.{ .text = message }, .{ .row_offset = rect.y + 1, .col_offset = 1, .wrap = .none });
         }
         if (self.names.len == 0 and self.size.rows > 1) _ = window.printSegment(.{ .text = "No sessions." }, .{ .row_offset = 1, .wrap = .none });

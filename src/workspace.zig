@@ -640,7 +640,7 @@ const App = struct {
                 try pane.state.update(self.allocator, &pane.term);
                 pane.render_pending = false;
             }
-            try render.draw(self.allocator, &pane.render_cache, &self.vx.screen, &pane.term, &pane.state, pane.rect, self.offset, pane == self.focused, self.focused_border_color, title, self.repaint);
+            try render.draw(self.allocator, &pane.render_cache, &self.vx.screen, &pane.term, &pane.state, pane.rect, self.offset, pane == self.focused, self.zoomed, self.focused_border_color, title, self.repaint);
         }
         if (self.status) |text| for (text[0..@min(text.len, self.size.cols)], 0..) |_, col| self.vx.screen.writeCell(@intCast(col), self.size.rows - 1, .{ .char = .{ .grapheme = text[col..][0..1] }, .style = .{ .fg = .{ .index = 0 }, .bg = .{ .index = 3 } } });
         self.frame_writer.clearRetainingCapacity();

@@ -167,7 +167,7 @@ pub const View = struct {
         try render.draw(self.allocator, &self.cache, &self.vx.screen, &self.term, &self.state, .{
             .width = @max(4, self.vx.screen.width + self.left + 2),
             .height = self.height() + self.top + 2,
-        }, .{ self.left + 1, self.top + 1 }, false, .default, "", self.repaint);
+        }, .{ self.left + 1, self.top + 1 }, false, false, .default, "", self.repaint);
         var footer: [160]u8 = undefined;
         const label = try std.fmt.bufPrint(&footer, "Read-only: {s} | PgUp/PgDn: history | End: live", .{self.name});
         for (0..self.vx.screen.width) |column| self.vx.screen.writeCell(@intCast(column), self.vx.screen.height - 1, .{ .style = .{ .reverse = true } });
