@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.0 — 2026-11-05
+
+### Added
+
+- `imx select` supports mouse navigation when `panes.mouse = true`: single-click a session to select and preview it, double-click to enter it, or use the wheel in the list to move the selection. Mouse selection also works inside sessions and split panes.
+
+### Changed
+
+- Temporarily zoomed panes use double-line borders while retaining the `[zoom]` title marker and configured focus color. Restoring the split layout returns the borders to single lines.
+
+### Build and release
+
+- GitHub Actions caches Zig, dependencies, and compilation results separately for x86_64 and ARM64. Main-branch builds refresh caches weekly and retain the latest two per architecture; Actions summaries show cache counts and storage usage.
+- Version releases reuse successful main-branch build artifacts for the exact same commit. The release workflow waits for an ongoing main-branch check and verifies package versions and SHA256 checksums before publishing.
+
 ## 0.13.0 — 2026-11-04
 
 ### Added
