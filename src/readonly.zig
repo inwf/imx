@@ -169,7 +169,7 @@ pub const View = struct {
             .height = self.height() + self.top + 2,
         }, .{ self.left + 1, self.top + 1 }, false, false, .default, "", self.repaint);
         var footer: [160]u8 = undefined;
-        const label = try std.fmt.bufPrint(&footer, "Read-only: {s} | PgUp/PgDn: history | End: live", .{self.name});
+        const label = try std.fmt.bufPrint(&footer, "Read-only: {s} | q/Esc: exit | PgUp/PgDn: history | End: live", .{self.name});
         for (0..self.vx.screen.width) |column| self.vx.screen.writeCell(@intCast(column), self.vx.screen.height - 1, .{ .style = .{ .reverse = true } });
         _ = self.vx.window().printSegment(.{ .text = label, .style = .{ .reverse = true } }, .{ .row_offset = self.vx.screen.height - 1, .wrap = .none });
         self.vx.screen.cursor_vis = false;

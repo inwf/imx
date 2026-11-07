@@ -42,7 +42,7 @@ def test_readonly_connection_and_local_resize_preserve_session_size(sessions, na
     assert "30 100" in sessions.command(writer, "stty size")
 
 
-@pytest.mark.parametrize("close", ["\x1b\\", "\x1bw"])
+@pytest.mark.parametrize("close", ["\x1b\\", "\x1bw", "q", "\x1b", "\x1b[113u", "\x1b[27u"])
 def test_readonly_discards_keys_paste_mouse_and_focus_and_closes_safely(sessions, close):
     writer = sessions.spawn()
     destination = sessions.path / "input.bin"
@@ -52,14 +52,34 @@ def test_readonly_discards_keys_paste_mouse_and_focus_and_closes_safely(sessions
     observer.child.send("DO_NOT_EXECUTE\r\x03\x1b[200~PASTE\r\x1b[201~\x1b[I\x1b[O\x1b[<0;5;5M\x1b[<0;5;5m")
     observer.child.send(close)
     observer.child.expect(pexpect.EOF)
+    observer.child.close()
+    assert observer.child.exitstatus == 0
     assert destination.read_bytes() == b""
     assert sessions.sessions()[0]["CLIENTS"] == "1"
     assert writer.isalive()
 
 
+def test_readonly_ignores_pasted_quit_keys_modified_keys_and_key_releases(sessions):
+    writer = sessions.spawn()
+    observer = observe(sessions)
+    observer.visible("q/Esc: exit")
+    observer.child.send("Q\x1bq\x11\x1b[113;1:3u\x1b[27;1:3u\x1b[27;2u")
+    observer.child.send("\x1b[200~q\x1b")
+    deadline = time.monotonic() + 0.3
+    while time.monotonic() < deadline:
+        observer.pump()
+    observer.child.send("q\x1b[201~")
+    sessions.command(writer, "printf 'OBSERVER_STILL_ACTIVE\\n'")
+    observer.visible("OBSERVER_STILL_ACTIVE")
+    assert sessions.sessions()[0]["CLIENTS"] == "2"
+    observer.child.send("q")
+    observer.child.expect(pexpect.EOF)
+    assert "WRITER_ALIVE" in sessions.command(writer, "printf 'WRITER_ALIVE\\n'")
+
+
 def test_readonly_browses_retained_history_and_follows_live_output(sessions):
     writer = sessions.spawn(rows=30, cols=100)
-    sessions.command(writer, "printf 'HISTORY-%03d\\n' {1..100}")
+    sessions.command(writer, "printf '\\033[3J\\033[2J\\033[H'; printf 'HISTORY-%03d\\n' {1..100}")
     observer = observe(sessions)
     observer.visible("HISTORY-100")
     observer.child.send("\x1b[5~")
@@ -107,7 +127,8 @@ def test_readonly_rename_preserves_mode_and_close_preserves_session(sessions):
 
 
 @pytest.mark.parametrize("same", [False, True])
-def test_switch_to_readonly_preserves_sessions_and_target_size(sessions, same):
+@pytest.mark.parametrize("close", ["\x1b\\", "q", "\x1b"])
+def test_switch_to_readonly_preserves_sessions_and_target_size(sessions, same, close):
     source = sessions.spawn("source", rows=30, cols=100)
     target = source if same else sessions.spawn("target", rows=40, cols=120)
     name = "source" if same else "target"
@@ -119,7 +140,7 @@ def test_switch_to_readonly_preserves_sessions_and_target_size(sessions, same):
     ))
     if not same:
         assert "40 120" in sessions.command(target, "stty size")
-    observer.child.send("\x1b\\")
+    observer.child.send(close)
     observer.child.expect(pexpect.EOF)
     assert {row["NAME"] for row in sessions.sessions()} == ({"source"} if same else {"source", "target"})
 
@@ -137,6 +158,24 @@ def test_readonly_in_split_pane_keeps_other_panes_interactive(sessions):
     terminal.child.send("\x1bw")
     terminal.wait(lambda: all("1: target" not in row for row in terminal.screen.display))
     assert "40 120" in sessions.command(target, "stty size")
+
+
+@pytest.mark.parametrize("close", ["q", "\x1b"])
+def test_readonly_quit_in_split_pane_returns_to_shell(sessions, close):
+    terminal = PaneTerminal(sessions)
+    target = sessions.spawn("target", rows=40, cols=120)
+    terminal.split()
+    terminal.visible("1: shell")
+    terminal.child.sendline("imx read target")
+    terminal.visible("Read-only: target")
+    terminal.child.send(close)
+    terminal.wait(lambda: all("Read-only: target" not in row for row in terminal.screen.display))
+    terminal.visible("1: shell")
+    terminal.command("printf returned", "readonly-exited", "returned")
+    terminal.focus(0)
+    terminal.command("printf ready", "other-pane-alive", "ready")
+    assert "40 120" in sessions.command(target, "stty size")
+    assert {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "target": "1"}
 
 
 def test_readonly_missing_session_fails_without_creating_it(sessions):
@@ -224,19 +263,19 @@ def test_readonly_recovers_after_tiny_and_maximum_window_sizes(sessions):
 
 def test_readonly_mouse_scroll_and_paste_keep_history_local(sessions, mouse_mode):
     writer = sessions.spawn(rows=30, cols=100)
-    sessions.command(writer, "printf 'LOCAL-%03d\\n' {1..100}")
+    sessions.command(writer, "printf '\\033[3J\\033[2J\\033[H'; printf 'LOCAL-%03d\\n' {1..100}")
     observer = observe(sessions)
     observer.visible("LOCAL-100")
     observer.child.send("\x1b[H")
     observer.visible("LOCAL-001")
-    original_row = next(index for index, row in enumerate(observer.screen.display) if "LOCAL-001" in row)
+    assert "LOCAL-001" in observer.screen.display[0]
     observer.child.send("\x1b[200~\x1b[F\x1bw\x1b[201~")
     observer.pump()
     observer.visible("LOCAL-001")
     observer.child.send("\x1b[<65;5;5M")
-    observer.wait(lambda: "LOCAL-001" in observer.screen.display[original_row - 3])
+    observer.wait(lambda: "LOCAL-004" in observer.screen.display[0])
     observer.child.send("\x1b[<65;5;5M")
-    observer.wait(lambda: all("LOCAL-001" not in row for row in observer.screen.display))
+    observer.wait(lambda: "LOCAL-007" in observer.screen.display[0])
     observer.child.send("\x1b[F")
     observer.visible("LOCAL-100")
     assert "30 100" in sessions.command(writer, "stty size")

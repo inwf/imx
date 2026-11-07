@@ -1,4 +1,5 @@
 const std = @import("std");
+const vaxis = @import("vaxis");
 const sys = @import("sys.zig");
 const c = sys.c;
 const protocol = @import("protocol.zig");
@@ -422,7 +423,10 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
 fn closeReadOnly(bindings: keyboard.Bindings, result: keyboard.Input.Result) bool {
     if (result.action == .detach) return true;
     const event = result.event orelse return false;
-    return event == .key_press and bindings.close_pane.matches(event.key_press, result.bytes);
+    if (event != .key_press) return false;
+    const key = event.key_press;
+    return key.matchExact('q', .{}) or key.matchExact(vaxis.Key.escape, .{}) or
+        bindings.close_pane.matches(key, result.bytes);
 }
 
 pub fn resetDisplay() !void {
