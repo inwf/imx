@@ -30,6 +30,7 @@ pub const Source = struct {
 };
 
 pub const Frame = struct {
+    const History = struct { screen: ScreenKey, generation: usize, pin: *vt.Pin };
     const Row = struct {
         generation: u64 = 0,
         bytes: std.ArrayList(u8) = .empty,
@@ -39,20 +40,74 @@ pub const Frame = struct {
     rows: std.ArrayList(Row) = .empty,
     size: ?sys.Size = null,
     screen: ?ScreenKey = null,
-    top: u16 = 0,
+    top: usize = 0,
+    history: ?History = null,
+    rendered_history: bool = false,
 
     pub fn deinit(self: *Frame, allocator: std.mem.Allocator) void {
+        std.debug.assert(self.history == null);
         if (self.buffer) |*buffer| buffer.deinit();
         for (self.rows.items) |*row| row.bytes.deinit(allocator);
         self.rows.deinit(allocator);
     }
 
-    pub fn render(self: *Frame, allocator: std.mem.Allocator, source: *Source, term: *vt.Terminal, size: sys.Size, revision: u64) ![]u8 {
-        try source.update(allocator, term, revision);
+    pub fn follow(self: *Frame, term: *vt.Terminal) void {
+        if (self.history) |history| {
+            if (history.generation == term.screens.generation(history.screen)) {
+                if (term.screens.get(history.screen)) |screen| screen.pages.untrackPin(history.pin);
+            }
+        }
+        self.history = null;
+    }
+
+    fn validateHistory(self: *Frame, term: *vt.Terminal) void {
+        if (self.history) |history| {
+            if (history.generation != term.screens.generation(history.screen)) self.history = null;
+        }
+    }
+
+    fn liveTop(term: *vt.Terminal, size: sys.Size) usize {
         const height = @min(size.rows, term.rows);
+        return term.screens.active.pages.total_rows - term.rows +
+            @min(term.rows - height, (term.screens.active.cursor.y + 1) -| height);
+    }
+
+    pub fn scroll(self: *Frame, term: *vt.Terminal, size: sys.Size, delta: i32) !void {
+        self.validateHistory(term);
+        if (delta == 0 or (delta > 0 and self.history == null)) return;
+        const active = term.screens.active_key;
+        if (self.history) |history| term.screens.switchTo(history.screen);
+        defer term.screens.switchTo(active);
+        const pages = &term.screens.active.pages;
+        const last = pages.total_rows - @min(size.rows, pages.total_rows);
+        const current = if (self.history) |history| pages.pointFromPin(.screen, history.pin.*).?.screen.y else liveTop(term, size);
+        const target: usize = @intCast(std.math.clamp(@as(i64, @intCast(@min(current, last))) + delta, 0, @as(i64, @intCast(last))));
+        if (delta > 0 and target == last) {
+            self.follow(term);
+        } else if (self.history) |history| {
+            history.pin.* = pages.pin(.{ .screen = .{ .x = 0, .y = @intCast(target) } }).?;
+        } else if (target != @min(current, last)) {
+            self.history = .{
+                .screen = term.screens.active_key,
+                .generation = term.screens.generation(term.screens.active_key),
+                .pin = try pages.trackPin(pages.pin(.{ .screen = .{ .x = 0, .y = @intCast(target) } }).?),
+            };
+        }
+    }
+
+    pub fn render(self: *Frame, allocator: std.mem.Allocator, source: *Source, term: *vt.Terminal, size: sys.Size, revision: u64) ![]u8 {
+        self.validateHistory(term);
+        const active = term.screens.active_key;
+        if (self.history) |history| term.screens.switchTo(history.screen);
+        defer term.screens.switchTo(active);
+        const pages = &term.screens.active.pages;
+        const browsing = self.history != null;
+        if (!browsing) try source.update(allocator, term, revision);
+        const height: u16 = @intCast(@min(size.rows, if (browsing) pages.total_rows else term.rows));
         const width = @min(size.cols, term.cols);
-        const top = @min(term.rows - height, (term.screens.active.cursor.y + 1) -| height);
-        const full = self.size == null or !std.meta.eql(self.size.?, size) or self.screen != term.screens.active_key or self.top != top or self.rows.items.len != height;
+        const top = if (self.history) |history| @min(pages.pointFromPin(.screen, history.pin.*).?.screen.y, pages.total_rows - height) else liveTop(term, size);
+        const cache_top = if (browsing) top else top - (pages.total_rows - term.rows);
+        const full = self.size == null or !std.meta.eql(self.size.?, size) or self.screen != term.screens.active_key or self.top != cache_top or self.rows.items.len != height or self.rendered_history != browsing;
         if (self.buffer == null) self.buffer = .init(allocator);
         const buffer = &self.buffer.?;
         buffer.clearRetainingCapacity();
@@ -62,18 +117,17 @@ pub const Frame = struct {
             row.bytes.deinit(allocator);
         }
         while (self.rows.items.len < height) try self.rows.append(allocator, .{});
-        const pages = &term.screens.active.pages;
+        var pin = pages.pin(.{ .screen = .{ .x = 0, .y = @intCast(top) } }).?;
         for (self.rows.items, 0..) |*cached, y| {
-            const row: u16 = top + @as(u16, @intCast(y));
-            if (!full and cached.generation == source.rows.items[row]) continue;
+            if (y != 0) pin = pin.down(1).?;
+            const generation = if (browsing) 0 else source.rows.items[top + y - (pages.total_rows - term.rows)];
+            if (!browsing and !full and cached.generation == generation) continue;
             const start = buffer.written().len;
             try buffer.writer.print("\x1b[0m\x1b[{d};1H\x1b[2K", .{y + 1});
             var formatter = vt.formatter.TerminalFormatter.init(term, .vt);
-            formatter.content = .{ .selection = vt.Selection.init(
-                pages.pin(.{ .active = .{ .x = 0, .y = row } }).?,
-                pages.pin(.{ .active = .{ .x = width - 1, .y = row } }).?,
-                true,
-            ) };
+            var end = pin;
+            end.x = @intCast(@min(width, pin.node.cols()) - 1);
+            formatter.content = .{ .selection = vt.Selection.init(pin, end, true) };
             formatter.extra = .none;
             try formatter.format(&buffer.writer);
             const bytes = buffer.written()[start..];
@@ -84,11 +138,12 @@ pub const Frame = struct {
                 cached.bytes.clearRetainingCapacity();
                 try cached.bytes.appendSlice(allocator, bytes);
             }
-            cached.generation = source.rows.items[row];
+            cached.generation = generation;
         }
         self.size = size;
         self.screen = term.screens.active_key;
-        self.top = top;
+        self.top = cache_top;
+        self.rendered_history = browsing;
         return buffer.written();
     }
 };
@@ -177,4 +232,41 @@ test "preview follows screen switches scrolling and size changes" {
     _ = try expectCurrent(&source, &term, &frame, &target, 4);
     try target.resize(allocator, .{ .cols = 18, .rows = 8 });
     _ = try expectCurrent(&source, &term, &frame, &target, 4);
+}
+
+test "preview history releases tracked positions after pruning and terminal reset" {
+    const allocator = std.testing.allocator;
+    var term = try vt.Terminal.init(std.testing.io, allocator, .{ .cols = 20, .rows = 6, .max_scrollback_lines = 40 });
+    defer term.deinit(allocator);
+    var stream = term.vtStream();
+    defer stream.deinit();
+    var source: Source = .{};
+    defer source.deinit(allocator);
+    var frame: Frame = .{};
+    defer frame.deinit(allocator);
+    defer frame.follow(&term);
+    const size: sys.Size = .{ .rows = 3, .cols = 15 };
+    for (0..60) |_| stream.nextSlice("HISTORY\r\n");
+    const tracked = term.screens.active.pages.countTrackedPins();
+    _ = try frame.render(allocator, &source, &term, size, 0);
+    try frame.scroll(&term, size, -20);
+    try std.testing.expectEqual(tracked + 1, term.screens.active.pages.countTrackedPins());
+    _ = try frame.render(allocator, &source, &term, size, 0);
+    for (0..4096) |_| {
+        stream.nextSlice("NEW_CONTENT\r\n");
+        if (frame.history.?.pin.garbage) break;
+    }
+    try std.testing.expect(frame.history.?.pin.garbage);
+    const output = try frame.render(allocator, &source, &term, size, 1);
+    try std.testing.expect(std.mem.indexOf(u8, output, "NEW_CONTENT") != null);
+    try frame.scroll(&term, size, std.math.maxInt(i32));
+    try std.testing.expect(frame.history == null);
+    try std.testing.expectEqual(tracked, term.screens.active.pages.countTrackedPins());
+    stream.nextSlice("\x1b[?1049h1\r\n2\r\n3\r\n4\r\n5\r\n6");
+    try frame.scroll(&term, size, -2);
+    try std.testing.expect(frame.history != null);
+    _ = try frame.render(allocator, &source, &term, size, 2);
+    stream.nextSlice("\x1bcRESET_CONTENT");
+    const reset = try frame.render(allocator, &source, &term, size, 3);
+    try std.testing.expect(std.mem.indexOf(u8, reset, "RESET_CONTENT") != null);
 }

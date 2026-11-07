@@ -41,6 +41,9 @@ const Selector = struct {
     dirty: bool = true,
     repaint: bool = true,
     preview_dirty: bool = false,
+    scroll_delta: i32 = 0,
+    scroll_changed: bool = false,
+    scrolling: bool = false,
     mouse_enabled: bool,
     pressed: ?Click = null,
     last_click: ?Click = null,
@@ -69,6 +72,9 @@ const Selector = struct {
         self.fd = -1;
         self.next_request = null;
         self.initial_deadline = null;
+        self.scroll_delta = 0;
+        self.scroll_changed = false;
+        self.scrolling = false;
         self.request.deinit(self.allocator);
         self.request = .{};
         self.reader.deinit(self.allocator);
@@ -104,7 +110,9 @@ const Selector = struct {
         self.selected = selected;
         self.dirty = true;
         self.repaint = true;
-        if (!retained or !std.meta.eql(previous_rect, self.previewRect())) try self.preview();
+        if (!retained) {
+            try self.preview();
+        } else if (!std.meta.eql(previous_rect, self.previewRect())) try self.fitPreview();
     }
 
     fn preview(self: *Selector) !void {
@@ -139,14 +147,26 @@ const Selector = struct {
         self.next_request = null;
     }
 
+    fn requestScroll(self: *Selector) !void {
+        const payload = try std.json.Stringify.valueAlloc(self.allocator, protocol.PreviewScroll{
+            .size = .{ .rows = self.term.rows, .cols = self.term.cols },
+            .delta = self.scroll_delta,
+        }, .{});
+        defer self.allocator.free(payload);
+        try self.request.message(self.allocator, .preview_scroll, payload);
+        self.scroll_delta = 0;
+        self.scroll_changed = false;
+        self.scrolling = true;
+    }
+
     fn receive(self: *Selector) !void {
         const alive = self.reader.receive(self.allocator, self.fd) catch |err| switch (err) {
             error.ConnectionClosed => false,
             else => return err,
         };
         if (!alive) {
+            self.message = if (self.scrolling) "Preview scrolling unavailable: session ended or backend does not support it." else "Preview unavailable: session ended or backend does not support previews.";
             self.disconnect();
-            self.message = "Preview unavailable: session ended or backend does not support previews.";
             self.dirty = true;
             self.repaint = true;
             return;
@@ -164,7 +184,7 @@ const Selector = struct {
                     self.dirty = true;
                 },
                 .failure => {
-                    self.message = if (std.mem.eql(u8, message.payload, "SessionNotFound")) "Session ended." else "Preview unsupported by this session's backend.";
+                    self.message = if (std.mem.eql(u8, message.payload, "SessionNotFound")) "Session ended." else if (self.scrolling) "Preview scrolling unsupported by this session's backend." else "Preview unsupported by this session's backend.";
                     self.disconnect();
                     self.dirty = true;
                     self.repaint = true;
@@ -220,6 +240,18 @@ const Selector = struct {
             return .waiting;
         }
         if (event.type != .press) return .waiting;
+        if (event.button == .wheel_up or event.button == .wheel_down) {
+            self.resetClicks();
+            if (!self.preview_dirty and self.fd >= 0) if (self.previewRect()) |rect| {
+                if (event.col > rect.x and event.col < rect.x + rect.width - 1 and event.row > rect.y and event.row < rect.y + rect.height - 1) {
+                    const delta: i32 = if (event.button == .wheel_up) -3 else 3;
+                    if (self.scroll_delta != 0 and (self.scroll_delta < 0) != (delta < 0)) try self.requestScroll();
+                    self.scroll_delta +|= delta;
+                    self.scroll_changed = true;
+                    return .waiting;
+                }
+            };
+        }
         self.pressed = null;
         const target = index orelse {
             self.last_click = null;
@@ -267,7 +299,7 @@ const Selector = struct {
             if (self.message) |message| _ = window.printSegment(.{ .text = message }, .{ .row_offset = rect.y + 1, .col_offset = 1, .wrap = .none });
         }
         if (self.names.len == 0 and self.size.rows > 1) _ = window.printSegment(.{ .text = "No sessions." }, .{ .row_offset = 1, .wrap = .none });
-        const help = if (self.mouse_enabled) "Click/Wheel: select | Double-click/Enter/Space: attach | Esc/q: cancel" else "Up/Down j/k: select | Enter/Space: attach | Esc/q: cancel";
+        const help = if (self.mouse_enabled) "Click/Wheel: select | Double-click/Enter/Space: attach | Preview wheel: history | Esc/q: cancel" else "Up/Down j/k: select | Enter/Space: attach | Esc/q: cancel";
         _ = window.printSegment(.{ .text = help, .style = .{ .dim = true } }, .{ .row_offset = self.size.rows - 1, .wrap = .none });
         self.vx.screen.cursor_vis = false;
         self.frame.clearRetainingCapacity();
@@ -283,13 +315,25 @@ const Selector = struct {
         self.frame.clearRetainingCapacity();
         try self.vx.resize(self.allocator, &self.frame.writer, .{ .cols = self.size.cols, .rows = self.size.rows, .x_pixel = 0, .y_pixel = 0 });
         try self.output.append(self.allocator, self.frame.written());
-        try self.preview();
+        try self.fitPreview();
+    }
+
+    fn fitPreview(self: *Selector) !void {
+        if (self.fd >= 0 and self.scrolling) {
+            if (self.previewRect()) |rect| {
+                try self.term.resize(self.allocator, .{ .cols = rect.width - 2, .rows = rect.height - 2 });
+                self.scroll_changed = true;
+            }
+            self.dirty = true;
+            self.repaint = true;
+        } else try self.preview();
     }
 
     fn loop(self: *Selector, signal: c_int, changes: c_int) !?[]u8 {
         while (true) {
             const now = try sys.monotonicMilliseconds();
             if (self.preview_dirty) try self.preview();
+            if (self.scroll_changed and self.fd >= 0) try self.requestScroll();
             if (self.keys.deadline) |deadline| if (now >= deadline) {
                 if (try self.input(self.keys.expire()) == .cancel) return null;
             };
@@ -301,11 +345,11 @@ const Selector = struct {
             };
             if (self.output.pending().len == 0) {
                 if (self.dirty) try self.draw();
-                if (self.next_request) |deadline| if (now >= deadline) try self.requestPreview();
+                if (self.previewRect() != null) if (self.next_request) |deadline| if (now >= deadline) try self.requestPreview();
             }
             var deadline = self.keys.deadline;
             if (self.initial_deadline) |value| deadline = @min(deadline orelse value, value);
-            if (self.output.pending().len == 0) if (self.next_request) |value| {
+            if (self.output.pending().len == 0 and self.previewRect() != null) if (self.next_request) |value| {
                 deadline = @min(deadline orelse value, value);
             };
             var fds = [_]c.struct_pollfd{

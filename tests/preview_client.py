@@ -19,9 +19,19 @@ class PreviewClient:
         self.input.close()
         self.connection.close()
 
+    def scroll(self, delta):
+        request = json.dumps({"size": self.size, "delta": delta}).encode()
+        self.connection.sendall(struct.pack("<IHH", len(request), 24, 1) + request)
+
     def frame(self):
+        self.request_frame()
+        return self.receive_frame()
+
+    def request_frame(self):
         request = json.dumps({"name": self.name, "size": self.size}).encode()
         self.connection.sendall(struct.pack("<IHH", len(request), 18, 1) + request)
+
+    def receive_frame(self):
         chunks = []
         while True:
             header = self.input.read(8)

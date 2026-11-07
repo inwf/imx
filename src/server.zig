@@ -119,6 +119,7 @@ const Server = struct {
 
     fn dropClient(self: *Server, client: *Client) !void {
         if (client.preview) |session| {
+            client.preview_frame.follow(&session.term);
             for (session.previews.items, 0..) |candidate, index| {
                 if (candidate == client) {
                     _ = session.previews.swapRemove(index);
@@ -196,6 +197,7 @@ const Server = struct {
     fn sendPreview(self: *Server, client: *Client) !void {
         const session = client.preview.?;
         if (!client.preview_pending or client.preview_revision == session.revision) return;
+        if (client.snapshot != null or client.output.pending().len != 0) return;
         // 会话内的选择界面使用备用屏幕，当前会话预览保留其原有主屏幕。
         if (client.preview_primary and session.term.screens.active_key == .alternate and client.preview_revision != null) return;
         const active = session.term.screens.active_key;
@@ -222,6 +224,7 @@ const Server = struct {
             try self.updateClient(client);
         }
         for (session.previews.items) |client| {
+            client.preview_frame.follow(&session.term);
             client.preview = null;
             client.closing = true;
             try self.respond(client, .failure, "SessionNotFound");
@@ -344,7 +347,7 @@ const Server = struct {
     fn request(self: *Server, client: *Client, msg: protocol.Message) !void {
         if (client.closing) return error.InvalidMessage;
         if (client.read_only) return error.ReadOnlyClient;
-        if (client.preview != null and msg.tag != .preview) return error.InvalidMessage;
+        if (client.preview != null and msg.tag != .preview and msg.tag != .preview_scroll) return error.InvalidMessage;
         if (client.switch_name != null and msg.tag != .switch_session and msg.tag != .switch_readonly) return error.InvalidMessage;
         switch (msg.tag) {
             .preview => {
@@ -368,6 +371,22 @@ const Server = struct {
                 }
                 client.size = parsed.value.size;
                 client.preview_pending = true;
+                try self.sendPreview(client);
+            },
+            .preview_scroll => {
+                const session = client.preview orelse return error.InvalidMessage;
+                const parsed = std.json.parseFromSlice(protocol.PreviewScroll, self.allocator, msg.payload, .{}) catch |err| {
+                    if (err == error.OutOfMemory) return err;
+                    return error.InvalidMessage;
+                };
+                defer parsed.deinit();
+                try parsed.value.size.validate();
+                const active = session.term.screens.active_key;
+                if (client.preview_primary) session.term.screens.switchTo(.primary);
+                defer session.term.screens.switchTo(active);
+                client.size = parsed.value.size;
+                try client.preview_frame.scroll(&session.term, client.size, parsed.value.delta);
+                client.preview_revision = null;
                 try self.sendPreview(client);
             },
             .attach, .attach_readonly => {
@@ -674,6 +693,7 @@ const Server = struct {
                     } else if (client.closing) return self.dropClient(client);
                 }
             }
+            if (client.preview != null) try self.sendPreview(client);
             try self.updateClient(client);
         }
         if (events & (c.EPOLLERR | c.EPOLLHUP | c.EPOLLRDHUP) != 0 and events & c.EPOLLIN == 0) return self.dropClient(client);
