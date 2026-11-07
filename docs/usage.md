@@ -65,6 +65,10 @@ PageUp/PageDown 按页浏览历史，方向键上下逐行浏览，Home 前往�
 
 开启鼠标模式后，在窗格文字区域按住鼠标左键拖动，可以高亮选中文字。选区限制在开始拖动的窗格内，支持中文、组合字符和多行内容。双击选择单词，三击选择整行；拖动到顶部或底部之外会滚动选择历史。程序启用鼠标报告时，按住 Shift 拖动可以选择文字。
 
+选中文字后按 Alt+C 复制当前聚焦窗格的选区，复制后保留高亮。鼠标释放、双击和三击只改变选区；没有选中文字时按下复制快捷键保持剪贴板内容。复制保留中文、组合字符、缩进和实际换行，合并自动折行，省略行尾空白、窗格边框和文字样式。通过 OSC 52 请求外层终端写入系统剪贴板，因此 SSH 连接也可以复制到本机；终端需要支持并允许 OSC 52，发送请求后无法保证终端已经接受。
+
+使用 `keybindings.copy_selection` 配置复制快捷键。macOS 的 Command+C 通常由终端处理；可以在终端中把它映射为发送 Alt+C，再使用 imx 的默认绑定。iTerm2 需要允许 `Applications in terminal may access clipboard`。
+
 分屏界面的键盘上报模式跟随当前聚焦的程序。普通 shell 保持输入法提交文本的正常路径，程序请求增强键盘事件时启用对应模式；切换回 shell 后恢复普通文本输入。
 
 开启鼠标模式后，按住鼠标左键拖动窗格之间的分隔边框，可以调整左右或上下窗格的大小，分隔边框的两侧均可操作。嵌套分屏按照选中的分隔边框调整对应区域，在交叉处优先调整贯穿整个区域的分隔边框。拖动保持当前输入焦点，并实时更新窗格内程序的终端尺寸。每个窗格至少保留 12 列、5 行（包括边框），嵌套区域会为其中全部窗格预留最小空间。调整后的比例随终端窗口缩放保留，临时缩小窗口后重新扩大也会恢复。拖动过程中关闭窗格、继续分屏、切换焦点或缩放终端会结束当前拖动，重新按住边框即可继续调整。
@@ -116,6 +120,9 @@ close_pane = { key = 'w', alt = true }
 # 临时放大当前窗格，再次使用恢复原有布局。
 # Temporarily zoom the focused pane; repeat to restore the layout.
 zoom_pane = { key = 'z', alt = true }
+# 复制当前窗格的选中文字。
+# Copy selected text in the focused pane.
+copy_selection = { key = 'c', alt = true }
 # 向箭头方向扩大当前窗格，将同侧边界移动一列或一行。
 # Grow the focused pane by moving the edge on the arrow's side one column or row.
 resize_left = { key = 'Left', alt = true, shift = true }
@@ -130,7 +137,7 @@ shrink_up = { key = 'Up', alt = true, ctrl = true }
 shrink_down = { key = 'Down', alt = true, ctrl = true }
 ```
 
-`super` 对应 macOS 的 Command，`alt` 对应 macOS 的 Option。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏、聚焦、临时放大、调整大小和关闭窗格的快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。
+`super` 对应 macOS 的 Command，`alt` 对应 macOS 的 Option。快捷键需要由本地终端发送给 imx，可以通过配置文件换用其他组合。分屏、聚焦、临时放大、复制选区、调整大小和关闭窗格的快捷键在启动整个界面时读取，修改后退出界面并重新 attach 生效。
 
 ## 切换会话
 

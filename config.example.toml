@@ -66,6 +66,10 @@ close_pane = { key = 'w', alt = true }
 # Temporarily zoom the focused pane; repeat to restore the layout.
 zoom_pane = { key = 'z', alt = true }
 
+# 复制当前窗格的选中文字，外层终端需要支持并允许 OSC 52。
+# Copy selected text in the focused pane; the outer terminal must allow OSC 52.
+copy_selection = { key = 'c', alt = true }
+
 # 按方向聚焦相邻窗格。
 # Focus a neighboring pane in the given direction.
 focus_left = { key = 'Left', alt = true }

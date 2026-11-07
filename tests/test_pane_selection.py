@@ -39,7 +39,9 @@ def select(terminal, start, end, modifiers=0, release=True):
 
 def text_terminal(sessions, text="alpha 中文 beta\nsecond line"):
     terminal = PaneTerminal(sessions)
-    sessions.command(terminal.child, "printf '\\033[2J\\033[H%s\\n' " + shlex.quote(text))
+    content = sessions.path / "selection-text"
+    content.write_text(text)
+    sessions.command(terminal.child, "printf '\\033[3J\\033[2J\\033[H'; cat -- " + shlex.quote(str(content)) + "; printf '\\n'")
     terminal.split()
     terminal.visible("1: shell")
     return terminal

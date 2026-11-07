@@ -651,6 +651,18 @@ const App = struct {
         self.next_frame = try sys.monotonicMilliseconds() + 16;
     }
 
+    fn copySelection(self: *App) !void {
+        const screen = self.focused.term.screens.active;
+        const selected = screen.selection orelse return;
+        const text = try screen.selectionString(self.allocator, .{ .sel = selected });
+        defer self.allocator.free(text);
+        if (text.len == 0) return;
+        var writer: std.Io.Writer.Allocating = .init(self.allocator);
+        defer writer.deinit();
+        try self.vx.copyToSystemClipboard(&writer.writer, text, self.allocator);
+        try self.output.append(self.allocator, writer.written());
+    }
+
     fn input(self: *App, result: keyboard.Input.Result) !void {
         const pane = self.focused;
         if (result.event) |event| if (event == .mouse and self.composed) return self.handleMouse(event.mouse);
@@ -681,6 +693,7 @@ const App = struct {
                     pane.close_requested = true;
                 },
                 .zoom_pane => try self.setZoom(!self.zoomed),
+                .copy_selection => try self.copySelection(),
                 else => unreachable,
             }
             return;

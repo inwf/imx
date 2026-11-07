@@ -185,6 +185,8 @@ imx kill dev     # 终止会话
 
 开启鼠标模式后，在文字上拖动鼠标可以高亮选择当前窗格内的文字。双击选择单词，三击选择整行，拖动到窗格顶部或底部之外可以滚动选择历史内容。程序接管鼠标时仍然接收鼠标事件，按住 Shift 拖动可以选择文字。键盘上报模式跟随当前聚焦的程序，普通 shell 保持正常的输入法文本输入。
 
+按下 **Alt+C** 复制当前聚焦窗格的选中文字，并保留高亮。复制保留中文、组合字符、缩进和实际换行，合并屏幕自动折行，省略窗格边框和文字样式。外层终端需要支持并允许 OSC 52 写入剪贴板，通过 SSH 连接时同样有效。单纯鼠标选择保持剪贴板内容，没有选中文字时复制快捷键也保持剪贴板内容。
+
 每个窗格都可以继续分屏。开启鼠标模式且程序没有接管鼠标时，滚轮用于查看该窗格的历史。按下 **Alt+W** 关闭当前聚焦的窗格。可写连接会终止其中连接的会话及程序，并断开其他客户端；需要保留会话时，先按分离快捷键（默认 `Alt+\`）。关闭只读窗格会保留会话。关闭普通 shell 窗格时，其中的程序也会终止。在普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`，同样可以关闭窗格。最后一个窗格关闭后退出分屏界面。
 
 关闭终端会丢弃布局并终止窗格中的普通 shell，已经连接的会话继续运行。布局只保留在当前客户端内存中，不会保存到文件。可以通过 `keybindings.split_right`、`keybindings.split_down` 和 `keybindings.close_pane` 修改快捷键。
@@ -221,6 +223,7 @@ focused_border_color = "#969CD5"
 - **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。退出整个界面并重新进入后，快捷键的修改生效。重复的快捷键会报告配置错误。
 - **`keybindings.close_pane`**：关闭当前聚焦的窗格，默认使用 Alt+W。可写连接会终止会话及程序，需要保留会话时先 detach；只读连接会保留会话。退出整个界面并重新进入后，关闭快捷键的修改生效。
 - **`keybindings.zoom_pane`**：临时放大当前窗格，再次使用恢复原有布局，默认 Alt+Z。修改后重新启动整个界面生效。
+- **`keybindings.copy_selection`**：复制窗格的选中文字，默认 Alt+C。例如 `copy_selection = { key = 'y', alt = true }` 使用 Alt+Y。修改后重新启动整个界面生效。Command+C 等由终端处理的快捷键，需要同时在终端配置中设置为向 imx 发送按键序列。
 - **`keybindings.focus_left`**、**`focus_right`**、**`focus_up`**、**`focus_down`**：默认使用 Alt+方向键聚焦相邻窗格。**`keybindings.focus_0`** 至 **`focus_9`**：默认使用 Alt+0 至 Alt+9 聚焦编号 0 至 9 的窗格。修改后重新启动整个界面生效。
 - **`keybindings.resize_left`**、**`resize_right`**、**`resize_up`**、**`resize_down`**：默认使用 Alt+Shift+方向键向箭头方向扩大当前窗格，将同侧边界移动一列或一行。修改后重新启动整个界面生效。
 - **`keybindings.shrink_left`**、**`shrink_right`**、**`shrink_up`**、**`shrink_down`**：默认使用 Alt+Ctrl+方向键缩小当前窗格，将相反方向的边界沿箭头方向移动一列或一行。修改后重新启动整个界面生效。
