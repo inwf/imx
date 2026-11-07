@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.15.0 — 2026-11-07
+
+### Added
+
+- `imx select` supports mouse-wheel history browsing over the preview contents when `panes.mouse = true`. Each wheel event moves three lines; scrolling up pauses live following and returning to the bottom resumes it. Preview connections retain independent positions through new output and window resizing, and selecting another session opens its live preview.
+- `imx read` accepts `q` and `Esc` to exit while keeping the session and its programs running. When started from a split pane's ordinary shell, exiting returns to that shell. The footer and command help show the exit keys.
+- Alt+C copies selected text from the focused pane to the system clipboard through OSC 52 and keeps the selection highlighted. Configure the shortcut with `keybindings.copy_selection`. Copying preserves Unicode, indentation and explicit line breaks, joins soft-wrapped lines, and omits pane borders and text styling. Mouse selection alone leaves the clipboard unchanged.
+
+### Upgrade notes
+
+- Preview history scrolling requires a session backend started with this version. Existing sessions continue using their original backend; older backends show an unsupported-scrolling message while session selection and attachment remain available.
+- Clipboard copying requires the outer terminal to support and allow OSC 52, including over SSH. Restart the interface to use the new copy shortcut or apply a custom binding. Terminal-owned shortcuts such as Command+C require a terminal mapping that sends a key sequence to imx.
+
 ## 0.14.0 — 2026-11-05
 
 ### Added
