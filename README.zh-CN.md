@@ -177,11 +177,11 @@ imx kill dev     # 终止会话
 
 嵌套布局选择能够控制指定边界的最近分隔位置，共享该区域的窗格一起调整。四周都有相邻窗格时，可以分别操作四条边界。屏幕外侧边界保持固定；指定边界没有分隔线或达到最小尺寸时保持布局。每个窗格至少保留包含边框的 12 列、5 行。间距保持固定，调整后的比例随终端缩放保留。
 
-鼠标模式默认关闭（`panes.mouse = false`）。普通 shell 中可以直接拖动建立终端本地选区，再使用终端的复制快捷键，例如 iTerm2 的 Command+C。本地选区可能跨越多个窗格。设置 `panes.mouse = true` 后启用鼠标点击聚焦、滚轮浏览窗格历史、拖动分隔线和窗格内文字选择；修改后退出整个界面并重新 attach 生效。窗格内程序主动请求的鼠标输入仍然有效；关闭鼠标模式时，只向当前聚焦窗格传递鼠标事件。在 iTerm2 中，程序使用鼠标时可以通过 Option+拖动建立本地选区。
+鼠标模式默认关闭（`panes.mouse = false`）。普通 shell 中可以直接拖动建立终端本地选区，再使用终端的复制快捷键，例如 iTerm2 的 Command+C。本地选区可能跨越多个窗格。设置 `panes.mouse = true` 后启用鼠标点击聚焦、滚轮浏览窗格历史、拖动分隔线和窗格内文字选择；修改后在当前界面执行 `imx reload` 生效。窗格内程序主动请求的鼠标输入仍然有效；关闭鼠标模式时，只向当前聚焦窗格传递鼠标事件。在 iTerm2 中，程序使用鼠标时可以通过 Option+拖动建立本地选区。
 
 开启鼠标模式后，按住鼠标左键拖动窗格之间的分隔边框，即可调整相邻窗格的大小。分隔边框的两侧都可以拖动，嵌套分屏同样支持。拖动过程中，窗格内的程序实时获得新的终端尺寸。每个窗格至少保留 12 列、5 行（包括边框），终端窗口缩放时保留调整后的比例。
 
-`panes.horizontal_gap` 设置左右相邻窗格边框之间的空白列数，`panes.vertical_gap` 设置上下相邻窗格边框之间的空白行数。默认均为 `0`，接受 `0` 至 `255` 的整数。终端缩放时保持固定间距，开启鼠标模式后可以拖动间距区域调整大小。修改后重新启动整个界面生效。
+`panes.horizontal_gap` 设置左右相邻窗格边框之间的空白列数，`panes.vertical_gap` 设置上下相邻窗格边框之间的空白行数。默认均为 `0`，接受 `0` 至 `255` 的整数。终端缩放时保持固定间距，开启鼠标模式后可以拖动间距区域调整大小。执行 `imx reload` 后应用到已有和新建分屏。
 
 开启鼠标模式后，在文字上拖动鼠标可以高亮选择当前窗格内的文字。双击选择单词，三击选择整行，拖动到窗格顶部或底部之外可以滚动选择历史内容。程序接管鼠标时仍然接收鼠标事件，按住 Shift 拖动可以选择文字。键盘上报模式跟随当前聚焦的程序，普通 shell 保持正常的输入法文本输入。
 
@@ -214,20 +214,28 @@ focused_border_color = "#969CD5"
 
 [完整配置模板](config.example.toml)列出全部选项并提供简短的中英文注释，已启用的配置项采用内置默认值。需要自定义快捷键时，把对应的 `[keybindings]` 配置加入自己的文件即可。详细行为和生效时机见下文及[使用说明](docs/usage.md#配置文件与会话提示符)。
 
+修改窗格设置或快捷键后，在当前界面的会话或普通 shell 窗格中执行：
+
+```bash
+imx reload
+```
+
+该命令重新加载当前界面全部窗格的快捷键、鼠标模式、聚焦边框颜色和窗格间距，包括只读窗格。配置路径沿用界面启动时的设置，保留会话、历史、焦点、临时全屏状态和布局比例。配置错误或文件缺失时保留当前设置并报告错误，其他界面保持各自的设置。界面及其中的客户端需要支持重新加载；在会话内部执行时，还需要后台支持。详细行为见[重新加载配置](docs/usage.md#重新加载配置)。
+
 - **`prompt.show_session`**：会话中新启动的 Bash、Zsh 和 Fish 在原有提示符前显示 `[dev] `，保留提示符原来的路径、颜色和主题。下一次执行 `imx attach` 时，程序把集成代码写入 shell 初始化文件，以 `# BEGIN imx shell integration` 和 `# END imx shell integration` 标记。改为 `false` 后再次进入会话即可移除。默认值为 `true`，省略该选项时也会启用。
 - **`list.created_format`**：用 `strftime` 字段设置 `CREATED` 列的格式。默认显示为 `10-30 14:05:09`，`%Y-%m-%d %H:%M:%S` 会带上年份。
 - **`completion.enabled`**：开启或关闭命令和会话名称的 Tab 补全。默认值为 `true`。
-- **`panes.mouse`**：开启 imx 的鼠标聚焦、拖动分隔线、滚轮浏览历史、窗格内文字选择，以及 `imx select` 中的会话选择和预览历史滚动。默认值为 `false`，省略时也关闭；普通 shell 中的选择和复制交给终端处理。修改后重新启动整个界面生效。
-- **`panes.focused_border_color`**：使用 `"#RRGGBB"` 字符串设置聚焦窗格的边框和标题颜色，默认值为 `"#969CD5"`，省略时也使用此颜色。会话窗格和普通 shell 窗格均适用，修改后重新启动整个界面生效。
-- **`panes.horizontal_gap` / `panes.vertical_gap`**：分别设置相邻窗格边框之间的空白列数、空白行数。默认均为 `0`，接受 `0` 至 `255` 的整数，重新启动整个界面后生效。
-- **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。退出整个界面并重新进入后，快捷键的修改生效。重复的快捷键会报告配置错误。
-- **`keybindings.close_pane`**：关闭当前聚焦的窗格，默认使用 Alt+W。可写连接会终止会话及程序，需要保留会话时先 detach；只读连接会保留会话。退出整个界面并重新进入后，关闭快捷键的修改生效。
-- **`keybindings.zoom_pane`**：临时放大当前窗格，再次使用恢复原有布局，默认 Alt+Z。修改后重新启动整个界面生效。
-- **`keybindings.copy_selection`**：复制窗格的选中文字，默认 Alt+C。例如 `copy_selection = { key = 'y', alt = true }` 使用 Alt+Y。修改后重新启动整个界面生效。Command+C 等由终端处理的快捷键，需要同时在终端配置中设置为向 imx 发送按键序列。
-- **`keybindings.focus_left`**、**`focus_right`**、**`focus_up`**、**`focus_down`**：默认使用 Alt+方向键聚焦相邻窗格。**`keybindings.focus_0`** 至 **`focus_9`**：默认使用 Alt+0 至 Alt+9 聚焦编号 0 至 9 的窗格。修改后重新启动整个界面生效。
-- **`keybindings.resize_left`**、**`resize_right`**、**`resize_up`**、**`resize_down`**：默认使用 Alt+Shift+方向键向箭头方向扩大当前窗格，将同侧边界移动一列或一行。修改后重新启动整个界面生效。
-- **`keybindings.shrink_left`**、**`shrink_right`**、**`shrink_up`**、**`shrink_down`**：默认使用 Alt+Ctrl+方向键缩小当前窗格，将相反方向的边界沿箭头方向移动一列或一行。修改后重新启动整个界面生效。
-- **`keybindings.detach`**：设置分离当前连接的快捷键。例如，`{ key = 'x', ctrl = true }` 表示 `Ctrl+x`，`{ key = 'F12' }` 表示 F12。`key` 接受单个字符或支持的按键名称；`ctrl`、`alt`、`shift`、`super` 使用布尔值，在显式配置的快捷键中默认为 `false`。ASCII 字母名称不区分大小写，需要 Shift 时设置 `shift = true`。修改后重新连接生效，同一连接切换会话时保留当前设置。支持的按键名称及终端编码行为见[快捷键配置](docs/usage.md#快捷键配置)。
+- **`panes.mouse`**：开启 imx 的鼠标聚焦、拖动分隔线、滚轮浏览历史、窗格内文字选择，以及 `imx select` 中的会话选择和预览历史滚动。默认值为 `false`，省略时也关闭；普通 shell 中的选择和复制交给终端处理。新打开的 `imx select` 会读取当前设置。
+- **`panes.focused_border_color`**：使用 `"#RRGGBB"` 字符串设置聚焦窗格的边框和标题颜色，默认值为 `"#969CD5"`，省略时也使用此颜色。会话窗格和普通 shell 窗格均适用。
+- **`panes.horizontal_gap` / `panes.vertical_gap`**：分别设置相邻窗格边框之间的空白列数、空白行数。默认均为 `0`，接受 `0` 至 `255` 的整数。
+- **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。重复的快捷键会报告配置错误。
+- **`keybindings.close_pane`**：关闭当前聚焦的窗格，默认使用 Alt+W。可写连接会终止会话及程序，需要保留会话时先 detach；只读连接会保留会话。
+- **`keybindings.zoom_pane`**：临时放大当前窗格，再次使用恢复原有布局，默认 Alt+Z。
+- **`keybindings.copy_selection`**：复制窗格的选中文字，默认 Alt+C。例如 `copy_selection = { key = 'y', alt = true }` 使用 Alt+Y。Command+C 等由终端处理的快捷键，需要同时在终端配置中设置为向 imx 发送按键序列。
+- **`keybindings.focus_left`**、**`focus_right`**、**`focus_up`**、**`focus_down`**：默认使用 Alt+方向键聚焦相邻窗格。**`keybindings.focus_0`** 至 **`focus_9`**：默认使用 Alt+0 至 Alt+9 聚焦编号 0 至 9 的窗格。
+- **`keybindings.resize_left`**、**`resize_right`**、**`resize_up`**、**`resize_down`**：默认使用 Alt+Shift+方向键向箭头方向扩大当前窗格，将同侧边界移动一列或一行。
+- **`keybindings.shrink_left`**、**`shrink_right`**、**`shrink_up`**、**`shrink_down`**：默认使用 Alt+Ctrl+方向键缩小当前窗格，将相反方向的边界沿箭头方向移动一列或一行。
+- **`keybindings.detach`**：设置分离当前连接的快捷键。例如，`{ key = 'x', ctrl = true }` 表示 `Ctrl+x`，`{ key = 'F12' }` 表示 F12。`key` 接受单个字符或支持的按键名称；`ctrl`、`alt`、`shift`、`super` 使用布尔值，在显式配置的快捷键中默认为 `false`。ASCII 字母名称不区分大小写，需要 Shift 时设置 `shift = true`。同一连接切换会话时保留当前设置；重新加载后，同一界面中的新连接也会使用重新加载的快捷键。支持的按键名称及终端编码行为见[快捷键配置](docs/usage.md#快捷键配置)。
 
 语法错误、未知选项和取值类型错误会在进入会话或查看列表时报告。错误信息包含配置文件路径；选项错误还会说明完整配置项名称及其要求。初始化文件的位置和修改方式见使用说明的[配置部分](docs/usage.md#配置文件与会话提示符)。
 
@@ -303,6 +311,7 @@ focused_border_color = "#969CD5"
 | `SHELL`           | 创建新会话时运行的 shell；未设置时使用 `/bin/sh`             |
 | `IMX_SESSION`     | 当前会话名称，提示符集成会在重命名后更新此变量               |
 | `IMX_SESSION_ID`  | imx 自动设置的内部会话标识，供命令在重命名后定位当前会话     |
+| `IMX_WORKSPACE`   | imx 为普通 shell 窗格和连接客户端设置的内部界面地址，用于重新加载配置 |
 | `IMX_DIR`         | 指定绝对路径的运行目录，优先于 `XDG_RUNTIME_DIR`             |
 | `XDG_RUNTIME_DIR` | 未设置 `IMX_DIR` 时，使用该目录下的 `imx/`                   |
 | `XDG_CONFIG_HOME` | 存放 `imx/config.toml`，并决定 Fish 的配置目录               |

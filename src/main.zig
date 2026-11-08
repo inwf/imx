@@ -56,6 +56,7 @@ fn execute(init: std.process.Init.Minimal) !void {
     const tag: protocol.Tag = switch (invocation.command) {
         .uninstall => return uninstall.run(allocator, io, args[0]),
         .update => return update.run(allocator, io, init.environ, invocation.update_mode),
+        .reload => return @import("reload.zig").run(allocator, io),
         .attach, .read => .attach,
         .list, .ls => .list,
         .cat => .cat,

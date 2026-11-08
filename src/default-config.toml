@@ -14,8 +14,8 @@ created_format = "%m-%d %H:%M:%S"
 enabled = true
 
 [panes]
-# 修改后退出整个界面并重新 attach 生效。
-# Exit the entire interface and attach again to apply changes.
+# 修改后在当前界面的会话或普通 shell 窗格中执行 imx reload 生效。
+# Run imx reload from a session or plain shell pane in the current interface to apply changes.
 
 # 启用鼠标聚焦、历史滚动、分隔线拖动、文字选择、会话列表选择和预览历史滚动。
 # Enable mouse focus, history scrolling, separator dragging, text selection, session list selection, and preview history scrolling.

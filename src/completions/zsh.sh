@@ -14,7 +14,7 @@ _imx() {
                     esac
                     ;;
                 help) kind=help ;;
-                list|ls|select|detach|update|uninstall) kind=options-$words[2] ;;
+                list|ls|select|detach|reload|update|uninstall) kind=options-$words[2] ;;
                 *) return 1 ;;
             esac
             ;;

@@ -3,7 +3,7 @@ const sys = @import("sys.zig");
 
 pub const max_payload = 128 * 1024;
 pub const max_queue = 256 * 1024;
-pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11, info = 12, switch_prepare = 13, switch_session = 14, switch_result = 15, switch_commit = 16, switch_cancel = 17, preview = 18, rename = 19, renamed = 20, detach_current = 21, attach_readonly = 22, switch_readonly = 23, preview_scroll = 24 };
+pub const Tag = enum(u16) { attach = 1, list = 2, cat = 3, detach = 4, kill = 5, input = 6, resize = 7, output = 8, ok = 9, failure = 10, done = 11, info = 12, switch_prepare = 13, switch_session = 14, switch_result = 15, switch_commit = 16, switch_cancel = 17, preview = 18, rename = 19, renamed = 20, detach_current = 21, attach_readonly = 22, switch_readonly = 23, preview_scroll = 24, workspace = 25 };
 pub const Rename = struct { name: []const u8, new_name: []const u8, expected_id: ?[]const u8 = null };
 pub const SessionTarget = struct { name: []const u8, expected_id: []const u8 };
 pub const PreviewOptions = struct { name: []const u8, size: sys.Size };

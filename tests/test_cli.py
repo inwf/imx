@@ -13,7 +13,7 @@ def test_information_flags_leave_runtime_and_configuration_untouched(sessions, a
     assert not (sessions.home / ".local/state/imx").exists()
 
 
-@pytest.mark.parametrize("command", ["attach", "read", "list", "ls", "select", "cat", "detach", "kill", "rename", "update", "uninstall", "help"])
+@pytest.mark.parametrize("command", ["attach", "read", "list", "ls", "select", "cat", "detach", "kill", "rename", "reload", "update", "uninstall", "help"])
 def test_command_help_precedes_configuration_and_execution(sessions, command):
     path = configuration(sessions)
     path.parent.mkdir(parents=True)
@@ -50,6 +50,9 @@ def test_command_help_precedes_configuration_and_execution(sessions, command):
     (("rename", "old", "new", "extra"), "extra"),
     (("rename", "old", "../bad"), "Invalid session name '../bad'"),
     (("rename", "new"), "NotInsideSession"),
+    (("reload", "extra"), "extra"),
+    (("reload", "--unknown"), "--unknown"),
+    (("reload",), "ReloadOutsideWorkspace"),
 ])
 def test_argument_errors_are_specific_and_leave_runtime_untouched(sessions, arguments, message):
     result = sessions.run(*arguments, check=False)

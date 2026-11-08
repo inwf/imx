@@ -6,7 +6,9 @@ const keyboard = @import("keyboard.zig");
 
 pub const variable = "IMX_PANE";
 pub const readonly_variable = "IMX_PANE_READ_ONLY";
-pub const State = struct { session: []const u8, directory: []const u8, detach: keyboard.Binding, read_only: bool = false };
+pub const workspace_variable = "IMX_WORKSPACE";
+pub const State = struct { session: []const u8, directory: []const u8, detach: keyboard.Binding, read_only: bool = false, reloadable: bool = false };
+pub const Options = struct { keybindings: keyboard.Bindings, mouse_enabled: bool };
 
 pub fn supportsReadOnly() bool {
     return config.env(variable) == null or std.mem.eql(u8, config.env(readonly_variable) orelse "", "1");
@@ -40,8 +42,10 @@ pub fn connect() !?c_int {
 
 pub fn send(allocator: std.mem.Allocator, fd: c_int, session: []const u8, directory: []const u8, detach: keyboard.Binding, read_only: bool) !void {
     if (read_only and !supportsReadOnly()) return error.ReadOnlyUnsupportedByWorkspace;
-    const bytes = if (supportsReadOnly())
-        try std.json.Stringify.valueAlloc(allocator, State{ .session = session, .directory = directory, .detach = detach, .read_only = read_only }, .{})
+    const bytes = if (config.env(workspace_variable) != null)
+        try std.json.Stringify.valueAlloc(allocator, State{ .session = session, .directory = directory, .detach = detach, .read_only = read_only, .reloadable = true }, .{})
+    else if (supportsReadOnly())
+        try std.json.Stringify.valueAlloc(allocator, .{ .session = session, .directory = directory, .detach = detach, .read_only = read_only }, .{})
     else
         try std.json.Stringify.valueAlloc(allocator, .{ .session = session, .directory = directory, .detach = detach }, .{});
     defer allocator.free(bytes);

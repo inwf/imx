@@ -6,6 +6,7 @@ const protocol = @import("protocol.zig");
 const terminal = @import("terminal.zig");
 const preview = @import("preview.zig");
 const identity = @import("session_identity.zig");
+const pane_context = @import("pane_context.zig");
 const Stream = @TypeOf(@as(*terminal.vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Allocator = std.mem.Allocator;
@@ -32,6 +33,7 @@ const Client = struct {
     supports_switch: bool = false,
     supports_rename: bool = false,
     supports_readonly: bool = false,
+    workspace: ?[]u8 = null,
     read_only: bool = false,
     switch_peer: ?*Client = null,
     switch_name: ?[]u8 = null,
@@ -142,6 +144,7 @@ const Server = struct {
         }
         if (client.switch_name) |name| self.allocator.free(name);
         if (client.preview_name) |name| self.allocator.free(name);
+        if (client.workspace) |address| self.allocator.free(address);
         if (client.session) |session| {
             if (session.input_client == client) session.input_client = null;
             for (session.clients.items, 0..) |candidate, i| {
@@ -400,6 +403,12 @@ const Server = struct {
                     if (std.mem.eql(u8, entry, protocol.client_marker)) client.supports_switch = true;
                     if (std.mem.eql(u8, entry, protocol.rename_marker)) client.supports_rename = true;
                     if (std.mem.eql(u8, entry, protocol.readonly_marker)) client.supports_readonly = true;
+                    if (std.mem.startsWith(u8, entry, pane_context.workspace_variable ++ "=")) {
+                        const address = entry[pane_context.workspace_variable.len + 1 ..];
+                        _ = pane_context.address(address) catch return error.InvalidMessage;
+                        if (client.workspace) |previous| self.allocator.free(previous);
+                        client.workspace = try self.allocator.dupe(u8, address);
+                    }
                 }
                 const read_only = msg.tag == .attach_readonly;
                 const session = self.sessions.get(fields.name) orelse if (read_only) return error.SessionNotFound else try self.create(fields.name, fields.cwd, fields.shell, fields.environment, client.size);
@@ -413,6 +422,16 @@ const Server = struct {
                 if (!read_only and first_writer) try self.focus(session, true);
                 try self.respond(client, .ok, "");
                 if (read_only) try self.respond(client, .resize, &(sys.Size{ .cols = session.term.cols, .rows = session.term.rows }).encode());
+            },
+            .workspace => {
+                if (client.session != null) return error.InvalidMessage;
+                try config.validateName(msg.payload);
+                const session = self.sessions.get(msg.payload) orelse return error.SessionNotFound;
+                if (c.getsid((try config.peer(client.fd)).pid) != session.pid) return error.ReloadOutsideWorkspace;
+                const active = session.input_client orelse session.leader orelse return error.NoAttachedClient;
+                const address = active.workspace orelse return error.ReloadUnsupportedByClient;
+                client.closing = true;
+                try self.respond(client, .output, address);
             },
             .switch_prepare => {
                 if (client.session != null or client.switch_peer != null or client.switch_name != null) return error.InvalidMessage;
@@ -652,7 +671,7 @@ const Server = struct {
                         try signalClient(client);
                         return self.dropClient(client);
                     },
-                    error.SessionNotFound, error.SessionAlreadyExists, error.SessionBusy, error.BackendTimeout, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed, error.SwitchOutsideSession, error.NoAttachedClient, error.SwitchUnsupportedByClient, error.SwitchInProgress, error.SwitchClientDisconnected, error.SwitchClientBusy, error.ReadOnlyClient, error.ReadOnlyUnsupportedByClient => {
+                    error.SessionNotFound, error.SessionAlreadyExists, error.SessionBusy, error.BackendTimeout, error.InvalidSessionName, error.InvalidMessage, error.InvalidTerminalSize, error.InvalidCreatedFormat, error.ShellExecFailed, error.SwitchOutsideSession, error.NoAttachedClient, error.SwitchUnsupportedByClient, error.SwitchInProgress, error.SwitchClientDisconnected, error.SwitchClientBusy, error.ReadOnlyClient, error.ReadOnlyUnsupportedByClient, error.ReloadOutsideWorkspace, error.ReloadUnsupportedByClient => {
                         client.closing = true;
                         try self.respond(client, .failure, @errorName(err));
                     },
@@ -951,6 +970,7 @@ fn spawnShell(allocator: Allocator, cfg: *const config.Config, name: []const u8,
         if (std.mem.startsWith(u8, entry, protocol.rename_marker_prefix) or std.mem.startsWith(u8, entry, identity.variable ++ "=")) continue;
         if (std.mem.startsWith(u8, entry, @import("pane_context.zig").variable ++ "=")) continue;
         if (std.mem.startsWith(u8, entry, @import("pane_context.zig").readonly_variable ++ "=")) continue;
+        if (std.mem.startsWith(u8, entry, pane_context.workspace_variable ++ "=")) continue;
         try envp.append(allocator, @ptrCast(entry.ptr));
     }
     const session_env = try std.fmt.allocPrintSentinel(allocator, "IMX_SESSION={s}", .{name}, 0);

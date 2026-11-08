@@ -64,6 +64,9 @@ def test_native_tab_completes_commands_and_live_sessions(installation, shell):
         assert terminal.complete("imx a\t") == "imx attach "
         assert terminal.complete("imx rea\t") == "imx read "
         assert terminal.complete("imx sel\t") == "imx select "
+        assert terminal.complete("imx rel\t") == "imx reload "
+        assert terminal.complete("imx reload --he\t") == "imx reload --help "
+        assert terminal.complete("imx help rel\t") == "imx help reload "
         assert terminal.complete("imx select --he\t") == "imx select --help "
         assert terminal.complete("imx attach \t") == "imx attach "
         display = terminal.display()

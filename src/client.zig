@@ -157,8 +157,13 @@ const SwitchAttempt = union(enum) { ready: c_int, failed: []u8 };
 
 fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, bytes: []const u8, read_only: bool) !SwitchAttempt {
     if (read_only and !pane_context.supportsReadOnly()) return error.ReadOnlyUnsupportedByWorkspace;
-    const payload = try allocator.dupe(u8, bytes);
+    const workspace = config.env(pane_context.workspace_variable);
+    const payload = if (workspace) |address|
+        try std.fmt.allocPrint(allocator, "{s}" ++ pane_context.workspace_variable ++ "={s}\x00", .{ bytes, address })
+    else
+        try allocator.dupe(u8, bytes);
     defer allocator.free(payload);
+    if (payload.len > protocol.max_payload) return error.EnvironmentTooLarge;
     const request = try protocol.Attach.decode(payload);
     try config.validateName(request.name);
     var endpoint = (try root.session(io, request.name, false)) orelse return error.SessionNotFound;
@@ -182,7 +187,8 @@ fn prepareSwitch(allocator: std.mem.Allocator, io: std.Io, root: *const config.C
 }
 
 pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, initial_fd: c_int, name: []const u8, root: *const config.Config, records: *const registry.Registry, preferences: settings.Settings, initially_read_only: bool) !void {
-    const bindings = preferences.keybindings;
+    var bindings = preferences.keybindings;
+    var mouse_enabled = preferences.mouse_enabled;
     var fd = initial_fd;
     defer sys.close(fd);
     if (initially_read_only and !pane_context.supportsReadOnly()) return error.ReadOnlyUnsupportedByWorkspace;
@@ -192,6 +198,8 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
     try requireAcknowledgement(allocator, fd, false, initially_read_only);
     const pane = try pane_context.connect();
     defer if (pane) |context| sys.close(context);
+    const reloadable = pane != null and config.env(pane_context.workspace_variable) != null;
+    if (reloadable) _ = try sys.nonblocking(pane.?, true);
     if (pane) |context| try pane_context.send(allocator, context, name, root.path, bindings.detach, initially_read_only);
     try sys.socketTimeout(fd, 0);
     const signal = try sys.signalFd(&.{ c.SIGWINCH, c.SIGTERM, c.SIGHUP, c.SIGINT });
@@ -226,7 +234,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
     defer if (viewer) |*view| view.deinit();
     if (initially_read_only) {
         viewer = try readonly.View.init(allocator, io, environ, name);
-        try viewer.?.start(&output, preferences.mouse_enabled);
+        try viewer.?.start(&output, mouse_enabled);
     }
     var reader: protocol.Reader = .{};
     defer reader.deinit(allocator);
@@ -263,6 +271,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
             .{ .fd = if (connected) fd else -1, .events = @as(c_short, if (output.pending().len < protocol.max_queue - protocol.max_payload - 8) c.POLLIN else 0) | @as(c_short, if (input.pending().len > 0) c.POLLOUT else 0), .revents = 0 },
             .{ .fd = signal, .events = c.POLLIN, .revents = 0 },
             .{ .fd = if (output.pending().len > 0) 1 else -1, .events = c.POLLOUT, .revents = 0 },
+            .{ .fd = if (reloadable) pane.? else -1, .events = c.POLLIN, .revents = 0 },
         };
         var timeout: c_int = if (prepared != null) blk: {
             const remaining = switch_deadline - try sys.monotonicMilliseconds();
@@ -302,6 +311,20 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
                         try input.message(allocator, .resize, &next_size.encode());
                     }
                 } else return;
+            }
+        }
+        if (reloadable and (pollfds[4].revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0 or pollfds[0].revents & c.POLLIN != 0)) {
+            var buffer: [8192]u8 = undefined;
+            while (try sys.read(pane.?, &buffer)) |n| {
+                if (n == 0) return;
+                const options = try std.json.parseFromSlice(pane_context.Options, allocator, buffer[0..n], .{});
+                defer options.deinit();
+                bindings = options.value.keybindings;
+                keys.bindings = bindings;
+                if (mouse_enabled != options.value.mouse_enabled) {
+                    mouse_enabled = options.value.mouse_enabled;
+                    if (viewer != null) try output.append(allocator, if (mouse_enabled) "\x1b[?1000h\x1b[?1006h" else "\x1b[?1000l\x1b[?1006l");
+                }
             }
         }
         if (pollfds[0].revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
@@ -381,7 +404,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
                         output = .{};
                         if (prepared_read_only) {
                             viewer = try readonly.View.init(allocator, io, environ, prepared_name.?);
-                            try viewer.?.start(&output, preferences.mouse_enabled);
+                            try viewer.?.start(&output, mouse_enabled);
                         } else try output.append(allocator, display.reset);
                         allocator.free(prepared_name.?);
                         prepared_name = null;

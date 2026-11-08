@@ -3,7 +3,7 @@ const clap = @import("clap");
 const sys = @import("sys.zig");
 const update = @import("update.zig");
 
-pub const Command = enum { attach, read, list, ls, select, cat, detach, kill, rename, update, uninstall, help };
+pub const Command = enum { attach, read, list, ls, select, cat, detach, kill, rename, reload, update, uninstall, help };
 pub const Invocation = struct { command: Command, name: []const u8 = "", new_name: ?[]const u8 = null, rename_current: bool = false, update_mode: update.Mode = .normal };
 pub const Result = union(enum) { help: ?Command, version, run: Invocation };
 pub const root_options = [_][]const u8{ "-h", "--help", "-v", "--version" };
@@ -124,6 +124,7 @@ fn description(command: Command) []const u8 {
         .detach => "Detach all connections from the current session. Run this command inside a session.\nThe shell and its programs keep running. The detach shortcut affects only its own connection.\n",
         .kill => "Terminate the named session, including its shell, foreground jobs and background jobs.\n",
         .rename => "Rename a session while preserving its programs, history and connections.\nUse 'imx rename <new-name>' inside the current session, or\n'imx rename <old-name> <new-name>' to rename a specific session.\nThe new name must be available. Connected pane titles update immediately;\nshell prompts update when they next appear.\n",
+        .reload => "Reload the current interface's configuration. Run inside an imx session or pane.\nUpdates all pane shortcuts, mouse mode, focused border color and pane gaps.\nReads the configuration path selected when this interface started.\nPreserves sessions, history, focus, zoom and layout proportions.\nInvalid or missing configuration reports an error and keeps the current settings.\nOther interfaces keep their settings. Prompt integration updates on the next attach;\nlist formatting, completion and new selectors read configuration when invoked.\nRequires an interface and, when run inside a session, a backend supporting reload.\n",
         .update => "Check for a newer published release and install it in the current installation directory.\nMatching versions report 'Already up to date'. Newer installed versions are preserved.\nUse --check to query the version, or --force to install the latest release again.\nRunning sessions keep their programs and history.\n",
         .uninstall => "Terminate the current user's sessions and remove the installation, configuration and shell integration.\n",
         .help => "Show general help or help for a named command.\n",
@@ -161,6 +162,7 @@ pub fn help(allocator: std.mem.Allocator, command: ?Command) !void {
             \\  detach         Detach all connections from the current session
             \\  kill <name>    Terminate and remove a session
             \\  rename [old-name] <new-name>  Rename the current or named session
+            \\  reload         Reload the current interface's configuration
             \\  update         Install the latest published release
             \\  uninstall      Terminate sessions and remove the installation
             \\  help [command] Show help

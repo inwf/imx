@@ -8,6 +8,7 @@ const vt = @import("ghostty-vt");
 const Context = struct {
     allocator: std.mem.Allocator,
     filename: ?[]const u8 = null,
+    diagnostics: ?*std.Io.Writer = null,
     keys: [3][]const u8 = .{ "", "", "" },
     depth: usize = 0,
 
@@ -29,7 +30,9 @@ const Context = struct {
         }
         if (self.depth != 0) output.writer.writeAll(": ") catch |failure| return failure;
         output.writer.print("{s} ({s})\n", .{ message, @errorName(err) }) catch |failure| return failure;
-        sys.writeAll(2, output.written(), false) catch |failure| return failure;
+        if (self.diagnostics) |writer| {
+            writer.writeAll(output.written()) catch |failure| return failure;
+        } else sys.writeAll(2, output.written(), false) catch |failure| return failure;
         return error.RequestFailed;
     }
 };
@@ -67,12 +70,12 @@ pub fn path(allocator: std.mem.Allocator) ![:0]u8 {
     return std.fmt.allocPrintSentinel(allocator, "{s}/.config/imx/config.toml", .{home}, 0);
 }
 
-pub fn load(allocator: std.mem.Allocator, io: std.Io, options: struct { create_default: bool = false }) !Settings {
+pub fn load(allocator: std.mem.Allocator, io: std.Io, options: struct { create_default: bool = false, required: bool = false, diagnostics: ?*std.Io.Writer = null }) !Settings {
     const filename = try path(allocator);
     defer allocator.free(filename);
-    const context: Context = .{ .allocator = allocator, .filename = filename };
+    const context: Context = .{ .allocator = allocator, .filename = filename, .diagnostics = options.diagnostics };
     const contents = std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024)) catch |err| blk: {
-        if (err != error.FileNotFound) return context.reject(err, "cannot read configuration");
+        if (err != error.FileNotFound or options.required) return context.reject(err, "cannot read configuration");
         if (!options.create_default) return .{ .file_missing = true };
         createDefault(io, filename) catch |failure| return context.reject(failure, "cannot create default configuration");
         break :blk std.Io.Dir.cwd().readFileAlloc(io, filename, allocator, .limited(1024 * 1024)) catch |failure| return context.reject(failure, "cannot read configuration");

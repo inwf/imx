@@ -15,7 +15,7 @@ function __imx_candidates
                     end
                 case help
                     set kind help
-                case list ls select detach update uninstall
+                case list ls select detach reload update uninstall
                     set kind options-$words[2]
                 case '*'
                     return

@@ -13,7 +13,7 @@ __imx_complete() {
                     esac
                     ;;
                 help) kind=help ;;
-                list|ls|select|detach|update|uninstall) kind=options-${COMP_WORDS[1]} ;;
+                list|ls|select|detach|reload|update|uninstall) kind=options-${COMP_WORDS[1]} ;;
                 *) return 0 ;;
             esac
             ;;

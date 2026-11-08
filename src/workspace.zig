@@ -11,6 +11,7 @@ const display = @import("display.zig");
 const context = @import("pane_context.zig");
 const render = @import("pane_render.zig");
 const selection = @import("pane_selection.zig");
+const reload = @import("reload.zig");
 const DirectoryRequest = @import("pane_directory.zig").Request;
 const Rect = render.Rect;
 const Stream = @TypeOf(@as(*vt.Terminal, undefined).vtStream());
@@ -96,6 +97,21 @@ const Node = struct {
         }
     }
 
+    fn reloadGaps(self: *Node, horizontal: u16, vertical: u16, apply: bool) !sys.Size {
+        if (self.content == .pane) return .{ .cols = 12, .rows = 5 };
+        const split = &self.content.split;
+        const a = try split.first.reloadGaps(horizontal, vertical, apply);
+        const b = try split.second.reloadGaps(horizontal, vertical, apply);
+        const gap = if (split.axis == .right) horizontal else vertical;
+        const size: sys.Size = if (split.axis == .right)
+            .{ .cols = a.cols + gap + b.cols, .rows = @max(a.rows, b.rows) }
+        else
+            .{ .cols = @max(a.cols, b.cols), .rows = a.rows + gap + b.rows };
+        size.validate() catch return error.ReloadLayoutTooLarge;
+        if (apply) split.gap = gap;
+        return size;
+    }
+
     fn separator(self: *Node, x: i32, y: i32) ?*Node {
         if (!self.rect.contains(x, y)) return null;
         return switch (self.content) {
@@ -175,6 +191,7 @@ const Pane = struct {
     fd: c_int = -1,
     listener: c_int,
     control: ?c_int = null,
+    options_pending: bool = false,
     attached: ?std.json.Parsed(context.State) = null,
     address: []u8,
     cwd: []u8,
@@ -225,6 +242,7 @@ const Pane = struct {
         _ = environment.swapRemove(@import("session_identity.zig").variable);
         try environment.put(context.variable, self.address);
         try environment.put(context.readonly_variable, "1");
+        try environment.put(context.workspace_variable, app.reload_listener.address);
         var envp: std.ArrayList(?[*:0]const u8) = .empty;
         defer {
             for (envp.items) |entry| if (entry) |value| allocator.free(std.mem.span(value));
@@ -337,6 +355,21 @@ const Pane = struct {
         try request.input.message(app.allocator, .kill, state.session);
         self.closing = request;
     }
+
+    fn flushOptions(self: *Pane) !void {
+        if (!self.options_pending) return;
+        const packet = self.app.configuration_packet.?;
+        const count = sys.write(self.control.?, packet, true) catch |err| switch (err) {
+            error.ConnectionClosed => {
+                self.options_pending = false;
+                return;
+            },
+            else => return err,
+        };
+        if (count == 0) return;
+        if (count != packet.len) return error.InvalidMessage;
+        self.options_pending = false;
+    }
 };
 
 const App = struct {
@@ -371,6 +404,49 @@ const App = struct {
     keyboard_flags: u5 = 5,
     status: ?[]u8 = null,
     initial_read_only: bool = false,
+    reload_listener: *reload.Listener,
+    configuration_packet: ?[]u8 = null,
+
+    fn reloadConfiguration(self: *App) !void {
+        var diagnostics: std.Io.Writer.Allocating = .init(self.allocator);
+        defer diagnostics.deinit();
+        var preferences = @import("settings.zig").load(self.allocator, self.io, .{ .required = true, .diagnostics = &diagnostics.writer }) catch |err| {
+            if (err == error.OutOfMemory) return err;
+            if (err != error.RequestFailed) try diagnostics.writer.print("imx: {s}\n", .{@errorName(err)});
+            return self.reload_listener.respond(self.allocator, diagnostics.written());
+        };
+        defer preferences.deinit(self.allocator);
+        for (self.panes.items) |pane| if (pane.attached) |state| {
+            if (!state.value.reloadable) return self.reload_listener.respond(self.allocator, "imx: ReloadUnsupportedByClient\n");
+        };
+        const gaps_changed = self.horizontal_gap != preferences.horizontal_gap or self.vertical_gap != preferences.vertical_gap;
+        if (gaps_changed) _ = self.root.reloadGaps(preferences.horizontal_gap, preferences.vertical_gap, false) catch {
+            return self.reload_listener.respond(self.allocator, "imx: Pane gaps exceed the supported layout size (ReloadLayoutTooLarge).\n");
+        };
+        const packet = try std.json.Stringify.valueAlloc(self.allocator, context.Options{ .keybindings = preferences.keybindings, .mouse_enabled = preferences.mouse_enabled }, .{});
+        if (self.configuration_packet) |previous| self.allocator.free(previous);
+        self.configuration_packet = packet;
+        self.cancelResize();
+        self.cancelSelection();
+        self.mouse_pane = null;
+        self.keys.bindings = preferences.keybindings;
+        self.mouse_enabled = preferences.mouse_enabled;
+        const rgb = preferences.focused_border_color;
+        self.focused_border_color = .{ .rgb = .{ rgb.r, rgb.g, rgb.b } };
+        self.horizontal_gap = preferences.horizontal_gap;
+        self.vertical_gap = preferences.vertical_gap;
+        for (self.panes.items) |pane| if (pane.attached) |*state| {
+            state.value.detach = preferences.keybindings.detach;
+            pane.options_pending = true;
+        };
+        if (gaps_changed and self.composed) {
+            _ = try self.root.reloadGaps(self.horizontal_gap, self.vertical_gap, true);
+            try self.arrange();
+        }
+        self.dirty = true;
+        self.repaint = true;
+        return self.reload_listener.respond(self.allocator, "ok");
+    }
 
     fn visible(self: *const App, pane: *const Pane) bool {
         return !self.zoomed or pane == self.focused;
@@ -994,7 +1070,9 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     var executable: [std.fs.max_path_bytes]u8 = undefined;
     const length = try std.Io.Dir.readLinkAbsolute(io, "/proc/self/exe", &executable);
     const rgb = preferences.focused_border_color;
-    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = .{ .rgb = .{ rgb.r, rgb.g, rgb.b } }, .horizontal_gap = preferences.horizontal_gap, .vertical_gap = preferences.vertical_gap, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator) };
+    var reload_listener = try reload.Listener.init(allocator);
+    defer reload_listener.deinit(allocator);
+    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = .{ .rgb = .{ rgb.r, rgb.g, rgb.b } }, .horizontal_gap = preferences.horizontal_gap, .vertical_gap = preferences.vertical_gap, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator), .reload_listener = &reload_listener };
     defer {
         var writer: std.Io.Writer.Allocating = .init(allocator);
         defer writer.deinit();
@@ -1002,6 +1080,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         app.output.deinit(allocator);
         app.frame_writer.deinit();
         if (app.status) |text| allocator.free(text);
+        if (app.configuration_packet) |packet| allocator.free(packet);
         for (app.panes.items) |pane| pane.deinit();
         app.panes.deinit(allocator);
     }
@@ -1036,6 +1115,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     defer fds.deinit(allocator);
     event_loop: while (app.panes.items.len > 0) {
         const before_poll = try sys.monotonicMilliseconds();
+        _ = try reload_listener.poll(allocator, 0, 0, before_poll);
         for (app.panes.items, 0..) |pane, index| {
             pane.pollStartup(0, 0, before_poll) catch |err| {
                 if (!app.composed or err == error.OutOfMemory) return err;
@@ -1050,15 +1130,21 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         fds.clearRetainingCapacity();
         try fds.appendSlice(allocator, &.{ .{ .fd = signals, .events = c.POLLIN, .revents = 0 }, .{ .fd = 0, .events = if (app.focused.input.pending().len < protocol.max_queue - 32768) c.POLLIN else 0, .revents = 0 }, .{ .fd = 1, .events = if (app.output.pending().len > 0) c.POLLOUT else 0, .revents = 0 } });
         for (app.panes.items) |pane| try fds.appendSlice(allocator, &.{
-            .{ .fd = pane.fd, .events = (if (app.output.pending().len < protocol.max_queue - 32768) @as(c_short, c.POLLIN) else 0) | (if (pane.starting == null and pane.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
+            .{ .fd = pane.fd, .events = (if (app.output.pending().len < protocol.max_queue - 32768) @as(c_short, c.POLLIN) else 0) | (if (pane.starting == null and !pane.options_pending and pane.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
             .{ .fd = pane.listener, .events = c.POLLIN, .revents = 0 },
-            .{ .fd = pane.control orelse -1, .events = c.POLLIN, .revents = 0 },
+            .{ .fd = pane.control orelse -1, .events = @as(c_short, c.POLLIN) | (if (pane.options_pending) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
             .{ .fd = if (pane.closing) |request| request.fd else -1, .events = @as(c_short, c.POLLIN) | (if (pane.closing != null and pane.closing.?.input.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
             .{ .fd = if (pane.directory_request) |request| request.fd else -1, .events = @as(c_short, c.POLLIN) | (if (pane.directory_request != null and pane.directory_request.?.output.pending().len > 0) @as(c_short, c.POLLOUT) else 0), .revents = 0 },
             .{ .fd = if (pane.starting) |startup| startup.fd else -1, .events = c.POLLIN, .revents = 0 },
         });
+        const reload_index = fds.items.len;
+        try fds.appendSlice(allocator, &.{
+            .{ .fd = reload_listener.fd, .events = if (reload_listener.request == null) c.POLLIN else 0, .revents = 0 },
+            .{ .fd = if (reload_listener.request) |request| request.fd else -1, .events = if (reload_listener.request != null and reload_listener.request.?.reply != null) c.POLLOUT else c.POLLIN, .revents = 0 },
+        });
         const now = try sys.monotonicMilliseconds();
         var deadline = app.keys.deadline;
+        if (reload_listener.request) |request| deadline = @min(deadline orelse request.deadline, request.deadline);
         if (app.composed and app.dirty and app.output.pending().len == 0) deadline = @min(deadline orelse app.next_frame, app.next_frame);
         for (app.panes.items) |pane| {
             if (pane.directory_request) |request| deadline = @min(deadline orelse request.deadline, request.deadline);
@@ -1135,6 +1221,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         }
         if (fds.items[2].revents & c.POLLOUT != 0) try app.output.flush(1, false);
         if (fds.items[2].revents & (c.POLLHUP | c.POLLERR) != 0) return;
+        if (try reload_listener.poll(allocator, fds.items[reload_index].revents, fds.items[reload_index + 1].revents, after_poll)) try app.reloadConfiguration();
         var removed = false;
         for (app.panes.items, 0..) |pane, index| {
             const events = fds.items[3 + index * 6 ..][0..6];
@@ -1154,6 +1241,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                 }
                 if (pane.control) |previous| sys.close(previous);
                 pane.control = fd;
+                pane.options_pending = false;
             }
             if (events[2].revents & (c.POLLIN | c.POLLHUP) != 0) {
                 var buffer: [8192]u8 = undefined;
@@ -1163,11 +1251,19 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                     if (n == 0) {
                         sys.close(pane.control.?);
                         pane.control = null;
+                        pane.options_pending = false;
                         pane.detaching = false;
-                    } else pane.attached = try std.json.parseFromSlice(context.State, allocator, buffer[0..n], .{ .allocate = .alloc_always });
+                    } else {
+                        pane.attached = try std.json.parseFromSlice(context.State, allocator, buffer[0..n], .{ .allocate = .alloc_always });
+                        if (app.configuration_packet != null and pane.attached.?.value.reloadable) {
+                            pane.attached.?.value.detach = app.keys.bindings.detach;
+                            pane.options_pending = true;
+                        }
+                    }
                     if (app.visible(pane)) app.dirty = true;
                 }
             }
+            if (pane.control != null and events[2].revents & c.POLLOUT != 0) try pane.flushOptions();
             if (pane.closing) |*request| {
                 if (events[3].revents & c.POLLOUT != 0) try request.input.flush(request.fd, true);
                 if (events[3].revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
@@ -1194,7 +1290,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                     if (!alive) return error.ConnectionClosed;
                 }
             }
-            if (events[0].revents & c.POLLOUT != 0) try pane.input.flush(pane.fd, false);
+            if (!pane.options_pending and events[0].revents & c.POLLOUT != 0) try pane.input.flush(pane.fd, false);
             if (events[0].revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) {
                 var buffer: [16384]u8 = undefined;
                 if (try sys.readPty(pane.fd, &buffer)) |n| {
