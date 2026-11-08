@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.16.0 — 2026-11-08
+
+### Added
+
+- `imx reload` reloads the current interface's shortcuts, mouse mode, focused border color, and pane gaps from a session or plain shell pane. It updates existing writable and read-only panes, preserves running programs, history, focus, zoom, and layout proportions, and validates the configuration before applying changes. New connections in that interface inherit the reloaded settings; other interfaces retain their settings.
+- Alt+A selects all retained history and screen content in the focused pane after splitting, with mouse mode on or off and while zoomed. Configure it with `keybindings.select_all`; Alt+C copies the selection on request. Read-only connections select source content and retained history, including text outside the visible area, and omit the read-only footer when copying. Fullscreen applications select their active screen.
+
+### Fixed
+
+- Restoring session screens and history preserves soft-wrapped lines, so copying after reconnecting or through a read-only connection joins automatic wraps while retaining explicit line breaks, Unicode text, and indentation.
+
+### Upgrade notes
+
+- Start a new interface with the updated executable to use the new shortcuts and reload command. `imx reload` inside a session also requires an updated backend; existing sessions keep their original backend. A new interface connected to an older backend can reload its settings from a plain shell pane. Older clients or backends report an unsupported-reload error when applicable.
+- The outer terminal must send Alt shortcuts to imx; in iTerm2, configure Option to send Esc+. Copying requires the terminal to support and allow OSC 52. Alt+A selects text, and Alt+C requests copying.
+
 ## 0.15.0 — 2026-11-07
 
 ### Added
