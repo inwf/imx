@@ -73,25 +73,10 @@ pub fn restore(allocator: std.mem.Allocator, term: *vt.Terminal) ![]u8 {
 }
 
 fn restoreScreen(writer: *std.Io.Writer, term: *vt.Terminal, modes: bool) !void {
-    const pages = &term.screens.active.pages;
-    const top = pages.getTopLeft(.screen);
-    const active = pages.getTopLeft(.active);
-    if (!top.eql(active)) {
-        var bottom = active.up(1).?;
-        bottom.x = @intCast(pages.cols - 1);
-        var scroll = vt.formatter.TerminalFormatter.init(term, .vt);
-        scroll.content = .{ .selection = vt.Selection.init(top, bottom, false) };
-        scroll.extra = .none;
-        try scroll.format(writer);
-        for (0..pages.rows) |_| try writer.writeAll("\r\n");
-        try writer.writeAll("\x1b[0m\x1b[2J\x1b[H");
-    }
     var visible = vt.formatter.TerminalFormatter.init(term, .vt);
-    visible.content = .{ .selection = vt.Selection.init(
-        pages.pin(.{ .active = .{ .x = 0, .y = 0 } }).?,
-        pages.pin(.{ .active = .{ .x = @intCast(pages.cols - 1), .y = @intCast(pages.rows - 1) } }).?,
-        false,
-    ) };
+    visible.content = .{ .selection = null };
+    visible.opts.unwrap = true;
+    visible.opts.trim = false;
     visible.extra = .none;
     visible.extra.tabstops = true;
     try visible.format(writer);
@@ -268,6 +253,31 @@ test "restore redraws wrapped rows before applying session modes" {
         try expectSameScreen(&source, &target);
         try std.testing.expectEqual(source.modes.values, target.modes.values);
         try std.testing.expectEqualDeep(source.scrolling_region, target.scrolling_region);
+    }
+}
+
+test "restore preserves soft wrapping across history and screen for selection" {
+    const allocator = std.testing.allocator;
+    for ([_]u16{ 5, 6, 10 }) |rows| {
+        var source = try init(allocator, std.testing.io, .{ .rows = rows, .cols = 20 });
+        defer source.deinit(allocator);
+        var input = source.vtStream();
+        defer input.deinit();
+        for (0..12) |_| input.nextSlice("    abcdefghijklmnop中文e\xcc\x81-abcdefghijklmnop\r\n");
+        input.nextSlice("last line");
+        const snapshot = try restore(allocator, &source);
+        defer allocator.free(snapshot);
+        var target = try init(allocator, std.testing.io, .{ .rows = rows, .cols = 20 });
+        defer target.deinit(allocator);
+        var output = target.vtStream();
+        defer output.deinit();
+        output.nextSlice(snapshot);
+        try expectSameScreen(&source, &target);
+        const expected = try source.screens.active.selectionString(allocator, .{ .sel = source.screens.active.selectAll().? });
+        defer allocator.free(expected);
+        const actual = try target.screens.active.selectionString(allocator, .{ .sel = target.screens.active.selectAll().? });
+        defer allocator.free(actual);
+        try std.testing.expectEqualStrings(expected, actual);
     }
 }
 

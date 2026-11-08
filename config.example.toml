@@ -66,6 +66,10 @@ close_pane = { key = 'w', alt = true }
 # Temporarily zoom the focused pane; repeat to restore the layout.
 zoom_pane = { key = 'z', alt = true }
 
+# 全选当前窗格的历史和屏幕内容，随后使用复制快捷键。
+# Select the focused pane's history and screen content, then use the copy shortcut.
+select_all = { key = 'a', alt = true }
+
 # 复制当前窗格的选中文字，外层终端需要支持并允许 OSC 52。
 # Copy selected text in the focused pane; the outer terminal must allow OSC 52.
 copy_selection = { key = 'c', alt = true }

@@ -257,7 +257,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
                     const result = keys.expire();
                     if (viewer) |*view| {
                         if (closeReadOnly(bindings, result)) return;
-                        view.input(result);
+                        try view.input(result, bindings, &output);
                     } else if (result.bytes.len != 0) try input.message(allocator, .input, result.bytes);
                     if (result.action != null) {
                         detaching = true;
@@ -336,7 +336,7 @@ pub fn attach(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Env
                     for (buffer[0..n]) |byte| {
                         const result = try keys.feed(&.{byte}, now);
                         if (closeReadOnly(bindings, result)) return;
-                        view.input(result);
+                        try view.input(result, bindings, &output);
                     }
                 } else {
                     const result = try keys.feed(buffer[0..n], now);
@@ -448,6 +448,7 @@ fn closeReadOnly(bindings: keyboard.Bindings, result: keyboard.Input.Result) boo
     const event = result.event orelse return false;
     if (event != .key_press) return false;
     const key = event.key_press;
+    if (bindings.select_all.matches(key, result.bytes) or bindings.copy_selection.matches(key, result.bytes)) return false;
     return key.matchExact('q', .{}) or key.matchExact(vaxis.Key.escape, .{}) or
         bindings.close_pane.matches(key, result.bytes);
 }

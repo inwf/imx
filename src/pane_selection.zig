@@ -4,6 +4,12 @@ const vt = @import("ghostty-vt");
 const boundaries = [_]u21{ 0, ' ', '\t', '\'', '"', '│', '`', '|', ':', ';', ',', '(', ')', '[', ']', '{', '}', '<', '>', '$' };
 const scroll_interval_ms = 30;
 
+pub fn selectAll(term: *vt.Terminal) !void {
+    const screen = term.screens.active;
+    const contents = screen.selectAll() orelse return screen.clearSelection();
+    try screen.select(vt.Selection.init(screen.pages.getTopLeft(.screen), contents.end(), false));
+}
+
 pub const State = struct {
     gesture: vt.SelectionGesture = .init,
     pointer: ?vt.SelectionGesture.AutoscrollTick = null,

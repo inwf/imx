@@ -8,6 +8,7 @@ pub const Action = enum {
     split_down,
     close_pane,
     zoom_pane,
+    select_all,
     copy_selection,
     focus_left,
     focus_right,
@@ -71,6 +72,7 @@ pub const Bindings = struct {
     split_down: Binding = .{ .codepoint = 'd', .mods = .{ .alt = true, .shift = true } },
     close_pane: Binding = .{ .codepoint = 'w', .mods = .{ .alt = true } },
     zoom_pane: Binding = .{ .codepoint = 'z', .mods = .{ .alt = true } },
+    select_all: Binding = .{ .codepoint = 'a', .mods = .{ .alt = true } },
     copy_selection: Binding = .{ .codepoint = 'c', .mods = .{ .alt = true } },
     focus_left: Binding = .{ .codepoint = vaxis.Key.left, .mods = .{ .alt = true } },
     focus_right: Binding = .{ .codepoint = vaxis.Key.right, .mods = .{ .alt = true } },
@@ -181,7 +183,7 @@ pub const Input = struct {
     deadline: ?i64 = null,
     pasting: bool = false,
 
-    pub const Result = struct { bytes: []const u8, action: ?Action, event: ?vaxis.Event = null };
+    pub const Result = struct { bytes: []const u8, action: ?Action, event: ?vaxis.Event = null, shortcut: []const u8 = "" };
 
     pub fn feed(self: *Input, bytes: []const u8, now: i64) !Result {
         std.debug.assert(bytes.len <= read_size);
@@ -190,7 +192,7 @@ pub const Input = struct {
             const lone_escape = self.pending_len == 1 and self.pending[0] == 0x1b;
             const control_string = !self.pasting and self.pending_len >= 2 and self.pending[0] == 0x1b and std.mem.indexOfScalar(u8, "PX]^_", self.pending[1]) != null;
             if (!control_string and self.pending_len != 0 and (byte == 0x1b or (byte < 0x20 and !lone_escape))) {
-                if (self.escapeAction()) |action| return .{ .bytes = self.output[0..self.output_len], .action = action };
+                if (self.escapeAction()) |action| return .{ .bytes = self.output[0..self.output_len], .action = action, .shortcut = "\x1b" };
                 self.flush();
             }
             if (byte == 0x1b and self.pending_len == 0) {
@@ -209,9 +211,10 @@ pub const Input = struct {
                         else => if (!self.pasting) {
                             if (self.bindings.action(event, self.pending[0..self.pending_len])) |action| {
                                 if (self.workspace == (action != .detach)) {
+                                    const shortcut = self.pending[0..self.pending_len];
                                     self.pending_len = 0;
                                     self.deadline = null;
-                                    return .{ .bytes = self.output[0..self.output_len], .action = action };
+                                    return .{ .bytes = self.output[0..self.output_len], .action = action, .shortcut = shortcut };
                                 }
                             }
                         },
@@ -232,7 +235,7 @@ pub const Input = struct {
         const action = self.escapeAction();
         const event: ?vaxis.Event = if (self.report_events and !self.pasting and self.pending_len == 1 and self.pending[0] == 0x1b) .{ .key_press = .{ .codepoint = vaxis.Key.escape } } else null;
         const bytes = self.takePending();
-        return .{ .bytes = if (action == null) bytes else "", .action = action, .event = event };
+        return .{ .bytes = if (action == null) bytes else "", .action = action, .event = event, .shortcut = if (action != null) bytes else "" };
     }
 
     fn escapeAction(self: *Input) ?Action {

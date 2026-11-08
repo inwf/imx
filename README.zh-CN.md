@@ -187,6 +187,8 @@ imx kill dev     # 终止会话
 
 按下 **Alt+C** 复制当前聚焦窗格的选中文字，并保留高亮。复制保留中文、组合字符、缩进和实际换行，合并屏幕自动折行，省略窗格边框和文字样式。外层终端需要支持并允许 OSC 52 写入剪贴板，通过 SSH 连接时同样有效。单纯鼠标选择保持剪贴板内容，没有选中文字时复制快捷键也保持剪贴板内容。
 
+在分屏界面中按下 **Alt+A**，全选当前聚焦窗格保留的历史和屏幕内容，随后按 **Alt+C** 复制。关闭鼠标模式、临时全屏时同样有效。全屏程序选择其当前屏幕；只读窗格选择源内容及保留的历史，保持源会话尺寸和输入不变。全选操作只建立选区，剪贴板保持原内容。
+
 每个窗格都可以继续分屏。开启鼠标模式且程序没有接管鼠标时，滚轮用于查看该窗格的历史。按下 **Alt+W** 关闭当前聚焦的窗格。可写连接会终止其中连接的会话及程序，并断开其他客户端；需要保留会话时，先按分离快捷键（默认 `Alt+\`）。关闭只读窗格会保留会话。关闭普通 shell 窗格时，其中的程序也会终止。在普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`，同样可以关闭窗格。最后一个窗格关闭后退出分屏界面。
 
 关闭终端会丢弃布局并终止窗格中的普通 shell，已经连接的会话继续运行。布局只保留在当前客户端内存中，不会保存到文件。可以通过 `keybindings.split_right`、`keybindings.split_down` 和 `keybindings.close_pane` 修改快捷键。
@@ -231,6 +233,7 @@ imx reload
 - **`keybindings.split_right`**、**`keybindings.split_down`**：分别将当前窗格左右分屏、上下分屏，默认使用 Alt+D、Alt+Shift+D；`alt` 对应 macOS 的 Option。新窗格在当前目录启动普通 shell。重复的快捷键会报告配置错误。
 - **`keybindings.close_pane`**：关闭当前聚焦的窗格，默认使用 Alt+W。可写连接会终止会话及程序，需要保留会话时先 detach；只读连接会保留会话。
 - **`keybindings.zoom_pane`**：临时放大当前窗格，再次使用恢复原有布局，默认 Alt+Z。
+- **`keybindings.select_all`**：全选当前聚焦窗格的内容，默认 Alt+A。修改后执行 `imx reload` 生效。iTerm2 需要把 Option 设置为发送 Esc+，才能向 imx 传递 Alt 快捷键。
 - **`keybindings.copy_selection`**：复制窗格的选中文字，默认 Alt+C。例如 `copy_selection = { key = 'y', alt = true }` 使用 Alt+Y。Command+C 等由终端处理的快捷键，需要同时在终端配置中设置为向 imx 发送按键序列。
 - **`keybindings.focus_left`**、**`focus_right`**、**`focus_up`**、**`focus_down`**：默认使用 Alt+方向键聚焦相邻窗格。**`keybindings.focus_0`** 至 **`focus_9`**：默认使用 Alt+0 至 Alt+9 聚焦编号 0 至 9 的窗格。
 - **`keybindings.resize_left`**、**`resize_right`**、**`resize_up`**、**`resize_down`**：默认使用 Alt+Shift+方向键向箭头方向扩大当前窗格，将同侧边界移动一列或一行。

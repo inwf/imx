@@ -769,7 +769,23 @@ const App = struct {
                     pane.close_requested = true;
                 },
                 .zoom_pane => try self.setZoom(!self.zoomed),
-                .copy_selection => try self.copySelection(),
+                .select_all => {
+                    self.cancelResize();
+                    self.cancelSelection();
+                    pane.selection.cancel(&pane.term);
+                    const screen = pane.term.screens.active;
+                    if (pane.attached != null and pane.attached.?.value.read_only) {
+                        screen.clearSelection();
+                        try pane.input.append(self.allocator, result.shortcut);
+                    } else if (self.composed) try selection.selectAll(&pane.term);
+                    pane.render_pending = true;
+                    self.dirty = true;
+                },
+                .copy_selection => {
+                    if (pane.attached != null and pane.attached.?.value.read_only and pane.term.screens.active.selection == null) {
+                        try pane.input.append(self.allocator, result.shortcut);
+                    } else try self.copySelection();
+                },
                 else => unreachable,
             }
             return;
@@ -796,6 +812,7 @@ const App = struct {
             },
             .key_press, .key_release => {
                 const key = if (event == .key_press) event.key_press else event.key_release;
+                if (event == .key_release and self.keys.bindings.select_all.matches(key, result.bytes)) return;
                 if (event == .key_press) {
                     self.cancelSelection();
                     pane.selection.cancel(&pane.term);

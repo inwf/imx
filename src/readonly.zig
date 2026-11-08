@@ -114,7 +114,7 @@ pub const View = struct {
         self.following = false;
     }
 
-    pub fn input(self: *View, result: keyboard.Input.Result) void {
+    pub fn input(self: *View, result: keyboard.Input.Result, bindings: keyboard.Bindings, output: *protocol.Queue) !void {
         const event = result.event orelse return;
         if (event == .mouse and event.mouse.type == .press) {
             switch (event.mouse.button) {
@@ -124,7 +124,20 @@ pub const View = struct {
             }
         } else if (event == .key_press) {
             const key = event.key_press;
-            if (key.matchExact(vaxis.Key.page_up, .{})) {
+            const screen = self.term.screens.active;
+            if (bindings.select_all.matches(key, result.bytes)) {
+                try @import("pane_selection.zig").selectAll(&self.term);
+            } else if (bindings.copy_selection.matches(key, result.bytes)) {
+                const selected = screen.selection orelse return;
+                const text = try screen.selectionString(self.allocator, .{ .sel = selected });
+                defer self.allocator.free(text);
+                if (text.len == 0) return;
+                var writer: std.Io.Writer.Allocating = .init(self.allocator);
+                defer writer.deinit();
+                try self.vx.copyToSystemClipboard(&writer.writer, text, self.allocator);
+                try output.append(self.allocator, writer.written());
+                return;
+            } else if (key.matchExact(vaxis.Key.page_up, .{})) {
                 self.scroll(-@as(isize, self.height()));
             } else if (key.matchExact(vaxis.Key.page_down, .{})) {
                 self.scroll(self.height());
