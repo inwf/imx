@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+bash scripts/fetch-dependencies.sh
 zig fmt --check build.zig src
 zig build -Dtarget="${ARCH:?}-linux-musl" -Dcpu=baseline
 zig build test -Dcpu=baseline

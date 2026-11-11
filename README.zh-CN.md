@@ -117,11 +117,12 @@ curl -fsSL https://github.com/inwf/imx/releases/download/v0.17.0/install.sh | ba
 <summary><strong>从源码编译</strong></summary>
 
 
-需要 **Zig 0.17.0**。Zig 会下载并校验 `build.zig.zon` 中固定版本的依赖。
+需要 **Zig 0.17.0**、Bash、curl 和 GNU tar。构建准备脚本通过 HTTPS 源码归档获取固定版本的编译依赖，并校验 Zig 包哈希。Zig 会下载并校验 `build.zig.zon` 中固定版本的其余依赖。
 
 ```bash
 git clone https://github.com/inwf/imx.git
 cd imx
+bash scripts/fetch-dependencies.sh
 zig build
 ./zig-out/bin/imx attach dev
 ```
@@ -385,6 +386,7 @@ imx uninstall
 ## 开发
 
 ```bash
+bash scripts/fetch-dependencies.sh   # 准备编译依赖
 zig fmt --check build.zig src   # 格式检查
 zig build                       # 生成 zig-out/bin/imx 和补全文件
 zig build test                  # 单元测试

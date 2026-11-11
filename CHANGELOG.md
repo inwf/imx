@@ -8,6 +8,10 @@
 - Session names and long paths are clipped within separate columns with an ellipsis, preserving complete Unicode characters. Control characters in paths are escaped, and terminals narrower than 20 columns hide the directory column.
 - Directory queries run asynchronously. An unavailable or unresponsive session displays `Unavailable`, while keyboard and mouse navigation and cancellation remain available.
 
+### Build and release
+
+- Codeberg-hosted compiler dependencies use fixed-commit HTTPS source archives and retain their pinned Zig package hashes. Build preparation fetches and verifies both `arocc` versions used by the direct and Ghostty compiler dependencies.
+
 ### Upgrade notes
 
 - Run `imx select` with the updated executable to use the directory column. Existing sessions keep their programs, history, terminal sizes, and connections.

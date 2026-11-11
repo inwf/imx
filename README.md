@@ -118,11 +118,12 @@ The installer places the license and completion files under the same prefix and 
 <summary><strong>Build from source</strong></summary>
 
 
-Requires **Zig 0.17.0**. Zig downloads and verifies the dependencies pinned in `build.zig.zon`.
+Requires **Zig 0.17.0**, Bash, curl, and GNU tar. Build preparation fetches the pinned compiler dependencies from HTTPS source archives and verifies their Zig package hashes. Zig downloads and verifies the remaining dependencies pinned in `build.zig.zon`.
 
 ```bash
 git clone https://github.com/inwf/imx.git
 cd imx
+bash scripts/fetch-dependencies.sh
 zig build
 ./zig-out/bin/imx attach dev
 ```
@@ -388,6 +389,7 @@ The detailed guides linked above are in Simplified Chinese.
 ## Development
 
 ```bash
+bash scripts/fetch-dependencies.sh   # Prepare compiler dependencies
 zig fmt --check build.zig src   # Formatting check
 zig build                       # Build zig-out/bin/imx and the completion files
 zig build test                  # Unit tests

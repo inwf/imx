@@ -2,14 +2,17 @@
 
 ## 编译
 
-需要 Zig 0.17.0 和 Linux 5.9 或更新版本。Zig 版本记录在 [`.zig-version`](../.zig-version)，依赖版本及校验值记录在 [`build.zig.zon`](../build.zig.zon)。
+需要 Zig 0.17.0、Bash、curl、GNU tar 和 Linux 5.9 或更新版本。Zig 版本记录在 [`.zig-version`](../.zig-version)，依赖版本及校验值记录在 [`build.zig.zon`](../build.zig.zon)。
 
 在仓库根目录执行：
 
 ```bash
+bash scripts/fetch-dependencies.sh
 zig build
 ./zig-out/bin/imx -v
 ```
+
+构建准备脚本通过固定提交的 HTTPS 源码归档获取 `translate-c` 和两个 `arocc` 版本，解包后调用 `zig fetch` 将源码目录写入 Zig 全局包缓存，并核对 Zig 包哈希。Zig 构建时将这些包展开到 `zig-pkg/`；已经展开的包会直接复用。两个 `arocc` 版本分别供直接编译依赖和 Ghostty 的间接编译依赖使用。更新相关依赖时，同步维护 `scripts/fetch-dependencies.sh` 中的提交和包哈希。
 
 安装到系统目录：
 
@@ -44,6 +47,7 @@ zig build -Dtarget=aarch64-linux-musl -Dcpu=baseline --prefix zig-out/aarch64
 测试需要 uv、Python 3.12 或更新版本、Bash、bash-completion、Zsh、Fish、Vim、curl、GNU tar、GNU coreutils、GNU findutils、sudo 和 util-linux。系统安装测试通过 `sudo` 创建独立的 Linux 挂载环境，使用真实普通用户和密码验证安装、升级和卸载；需要系统允许挂载文件系统。Python 依赖版本记录在 [`tests/uv.lock`](../tests/uv.lock)。提交改动前执行：
 
 ```bash
+bash scripts/fetch-dependencies.sh
 zig fmt --check build.zig src
 zig build
 zig build test
@@ -90,7 +94,7 @@ TMPDIR="$PWD/work/runtime" uv run --frozen --project tests python tests/legacy_u
 | 推送 `v*` 版本标签 | 复用同一提交已通过检查的主分支构建附件；需要构建时执行完整检查，然后发布 Release |
 | 手动运行，填写已有版本标签 | 按版本标签选择提交，复用或构建通过检查的附件，然后发布 Release |
 
-工作流程分别使用 x86_64 和 ARM64 Linux 环境，原生编译并运行单元测试、集成测试、ShellCheck 和 actionlint。构建附件保留 7 天，可以在 Actions 运行记录的 Artifacts 区域下载。
+工作流程分别使用 x86_64 和 ARM64 Linux 环境，准备固定版本的源码依赖，原生编译并运行单元测试、集成测试、ShellCheck 和 actionlint。构建附件保留 7 天，可以在 Actions 运行记录的 Artifacts 区域下载。
 
 编译缓存包含 `.zig-cache/`、`zig-pkg/`、`work/zig-global-cache/` 和 `~/.cache/imx-ci/`，按架构、工具版本和 UTC 自然周分别保存。每周由主分支第一次通过检查的构建保存一份缓存，本周后续构建复用该缓存。Zig 根据实际源码和依赖检查编译结果是否有效，全部检查和测试仍然执行。新的一周重新生成缓存，避免缓存内容随着提交持续累积。
 
