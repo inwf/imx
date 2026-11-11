@@ -7,6 +7,7 @@ import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--colors", action="store_true")
+parser.add_argument("--directories", nargs="+")
 args = parser.parse_args()
 size = os.get_terminal_size()
 if args.colors:
@@ -18,6 +19,8 @@ if args.colors:
     sys.exit(0)
 
 for number in itertools.count():
+    if args.directories:
+        os.chdir(args.directories[number % len(args.directories)])
     row = chr(ord("A") + number % 26) * (size.columns - 1)
     content = f"\x1b[HFRAME_{number:08d}\r\n" + (row + "\r\n") * (size.lines - 2) + "\x1b[H"
     os.write(1, content.encode())

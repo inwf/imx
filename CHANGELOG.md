@@ -4,7 +4,7 @@
 
 ### Added
 
-- `imx select` shows each session shell's working directory beside its name. Directories are queried when the list opens or changes, and the selected directory refreshes when selection or preview content changes. Idle selectors stop querying.
+- `imx select` shows each session shell's working directory beside its name. Directories are queried when the list opens or changes, and the selected directory refreshes when selection or preview content changes. Automatic directory and preview updates share a limit of 10 frames per second, and idle selectors stop querying.
 - Session names and long paths are clipped within separate columns with an ellipsis, preserving complete Unicode characters. Control characters in paths are escaped, and terminals narrower than 20 columns hide the directory column.
 - Directory queries run asynchronously. An unavailable or unresponsive session displays `Unavailable`, while keyboard and mouse navigation and cancellation remain available.
 

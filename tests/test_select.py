@@ -461,27 +461,41 @@ def test_select_idle_uses_no_repeated_frames_or_polling(sessions):
     cancel(terminal)
 
 
-def test_select_continuous_output_limits_frames_and_memory(sessions, record_property):
+@pytest.mark.parametrize("change_directory", [False, True])
+def test_select_continuous_output_limits_frames_and_memory(sessions, record_property, change_directory):
     session = sessions.spawn("alpha", rows=40, cols=120)
     beta = sessions.spawn("beta")
     sessions.command(beta, "printf '\\033[2J\\033[HQUIET_BETA\\n'")
-    session.sendline(f"{shlex.quote(sys.executable)} {shlex.quote(str(ROOT / 'tests/select_output.py'))}")
+    command = [sys.executable, str(ROOT / "tests/select_output.py")]
+    directories = [sessions.path / f"directory-{index}" for index in range(7)] if change_directory else []
+    if directories:
+        for directory in directories:
+            directory.mkdir()
+        command.extend(["--directories", *(str(directory) for directory in directories)])
+    session.sendline(("exec " if change_directory else "") + shlex.join(command))
     session.expect_exact("FRAME_")
     session.send("\x1b\\")
     session.expect(pexpect.EOF)
     terminal = selector(sessions)
     terminal.visible("FRAME_")
+    if directories:
+        terminal.wait(lambda: terminal.screen.display[1][9:].rstrip() in {str(directory) for directory in directories})
+    directories_seen = set()
     process = psutil.Process(terminal.child.pid)
     before_cpu = process.cpu_times()
     offset = len(terminal.capture.getvalue())
     started = time.monotonic()
     while time.monotonic() - started < 1.2:
         terminal.pump()
+        directories_seen.add(terminal.screen.display[1][9:].rstrip())
     elapsed = time.monotonic() - started
     frames = terminal.capture.getvalue()[offset:].count("\x1b[?2026h")
     after_cpu = process.cpu_times()
     cpu_seconds = after_cpu.user + after_cpu.system - before_cpu.user - before_cpu.system
     assert 2 <= frames <= int(elapsed * 10) + 1
+    if directories:
+        assert len(directories_seen) >= 2
+        assert directories_seen <= {str(directory) for directory in directories}
     assert cpu_seconds < elapsed * 0.2
     record_property("preview_frames_per_second", frames / elapsed)
     record_property("selector_cpu_seconds", cpu_seconds)

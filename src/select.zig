@@ -49,6 +49,7 @@ const Selector = struct {
     keys: keyboard.Input = .{ .report_events = true },
     fd: c_int = -1,
     next_request: ?i64 = null,
+    next_draw: ?i64 = null,
     initial_deadline: ?i64 = null,
     message: ?[]const u8 = null,
     dirty: bool = true,
@@ -180,6 +181,7 @@ const Selector = struct {
 
     fn preview(self: *Selector) !void {
         self.preview_dirty = false;
+        self.next_draw = null;
         self.disconnect();
         self.message = null;
         self.dirty = true;
@@ -385,10 +387,12 @@ const Selector = struct {
         try self.output.append(self.allocator, self.frame.written());
         self.dirty = false;
         self.repaint = false;
+        self.next_draw = try sys.monotonicMilliseconds() + frame_interval_ms;
     }
 
     fn resize(self: *Selector) !void {
         self.resetClicks();
+        self.next_draw = null;
         self.size = try sys.Size.get(0);
         self.frame.clearRetainingCapacity();
         try self.vx.resize(self.allocator, &self.frame.writer, .{ .cols = self.size.cols, .rows = self.size.rows, .x_pixel = 0, .y_pixel = 0 });
@@ -423,10 +427,13 @@ const Selector = struct {
                 self.repaint = true;
             };
             if (self.output.pending().len == 0) {
-                if (self.dirty) try self.draw();
+                if (self.dirty and now >= (self.next_draw orelse now)) try self.draw();
                 if (self.previewRect() != null) if (self.next_request) |deadline| if (now >= deadline) try self.requestPreview();
             }
             var deadline = self.keys.deadline;
+            if (self.output.pending().len == 0 and self.dirty) if (self.next_draw) |value| {
+                deadline = @min(deadline orelse value, value);
+            };
             for (self.directories) |directory| if (directory.deadline) |value| {
                 deadline = @min(deadline orelse value, value);
             };
