@@ -251,6 +251,136 @@ def test_select_signal_restores_terminal(sessions, signum, mouse):
     assert sessions.sessions()[0]["CLIENTS"] == "1"
 
 
+def test_select_displays_session_directories(sessions):
+    alpha = sessions.spawn("alpha")
+    beta = sessions.spawn("beta")
+    sessions.command(alpha, "cd /; printf '\\033[2J\\033[HROOT_PREVIEW\\n'")
+    directory = sessions.path / "项目 with spaces"
+    directory.mkdir()
+    sessions.command(beta, f"cd {shlex.quote(str(directory))}")
+    terminal = selector(sessions)
+    terminal.visible("Directory")
+    column = terminal.screen.display[0].index("Directory")
+    terminal.wait(lambda: terminal.screen.display[1][column:].rstrip() == "/")
+    terminal.wait(lambda: terminal.screen.display[2][column:].rstrip() == str(directory))
+    terminal.visible("ROOT_PREVIEW")
+    assert terminal.screen.display[1].startswith("> alpha")
+    assert terminal.screen.display[2].startswith("  beta")
+    assert terminal.screen.buffer[1][column].reverse
+    assert not terminal.screen.buffer[2][column].reverse
+    cancel(terminal)
+    assert all(row["CLIENTS"] == "1" for row in sessions.sessions())
+
+
+def test_select_refreshes_session_directory(sessions):
+    session = sessions.spawn("alpha")
+    terminal = selector(sessions)
+    terminal.visible("Directory")
+    column = terminal.screen.display[0].index("Directory")
+    terminal.wait(lambda: terminal.screen.display[1][column:].rstrip() == str(sessions.path))
+    directory = sessions.path / "changed"
+    directory.mkdir()
+    sessions.command(session, f"cd {shlex.quote(str(directory))}")
+    terminal.wait(lambda: terminal.screen.display[1][column:].rstrip() == str(directory))
+    sessions.command(session, "cd /")
+    terminal.wait(lambda: terminal.screen.display[1][column:].rstrip() == "/")
+    cancel(terminal)
+
+
+def test_select_refreshes_directory_when_selecting_session(sessions):
+    sessions.spawn("alpha")
+    beta = sessions.spawn("beta")
+    terminal = selector(sessions)
+    terminal.visible("Directory")
+    column = terminal.screen.display[0].index("Directory")
+    terminal.wait(lambda: terminal.screen.display[2][column:].rstrip() == str(sessions.path))
+    directory = sessions.path / "selected-directory"
+    directory.mkdir()
+    sessions.command(beta, f"cd {shlex.quote(str(directory))}")
+    terminal.child.send("j")
+    terminal.wait(lambda: terminal.screen.display[2][column:].rstrip() == str(directory))
+    assert terminal.screen.display[2].startswith("> beta")
+    assert terminal.screen.buffer[2][column].reverse
+    cancel(terminal)
+
+
+def test_select_directory_follows_consecutive_changes(sessions):
+    session = sessions.spawn("dev")
+    terminal = selector(sessions)
+    terminal.visible("Directory")
+    terminal.wait(lambda: terminal.screen.display[1][9:].rstrip() == str(sessions.path))
+    directories = [sessions.path / f"目录-{index}" for index in range(15)]
+    for directory in directories:
+        directory.mkdir()
+    commands = [
+        f"cd {shlex.quote(str(directory))}; printf 'DIRECTORY_{index}\\n'; sleep 0.02"
+        for index, directory in enumerate(directories)
+    ]
+    sessions.command(session, "; ".join(commands))
+    terminal.wait(lambda: terminal.screen.display[1][9:].rstrip() == str(directories[-1]))
+    cancel(terminal)
+
+
+@pytest.mark.parametrize("name, shell_name, displayed", [
+    (b"line\nbreak", "$'line\\nbreak'", r"line\nbreak"),
+    (b"tab\tname", "$'tab\\tname'", r"tab\tname"),
+    (b"escape\x1b[31m", "$'escape\\033[31m'", r"escape\x1b[31m"),
+    (b"invalid\xff", "$'invalid\\377'", r"invalid\xff"),
+    (b'quote"\\name', "$'quote\"\\\\name'", r'quote\"\\name'),
+    ("cafe\u0301".encode(), "'cafe\u0301'", "café"),
+])
+def test_select_displays_special_directory_names(sessions, name, shell_name, displayed):
+    session = sessions.spawn("dev")
+    os.mkdir(os.fsencode(sessions.path) + b"/" + name)
+    sessions.command(session, f"cd {shell_name}")
+    terminal = selector(sessions)
+    terminal.visible("Directory")
+    assert terminal.screen.display[0].startswith("Sessions ")
+    column = terminal.screen.display[0].index("Directory")
+    terminal.wait(lambda: terminal.screen.display[1][column:].rstrip() == f"{sessions.path}/{displayed}")
+    assert all(cell.fg == "default" for cell in terminal.screen.buffer[1].values())
+    cancel(terminal)
+
+
+@pytest.mark.parametrize("extra", [1, 2, 3, 4, 5])
+def test_select_clips_wide_directory_characters_and_restores_after_resize(sessions, extra):
+    session = sessions.spawn("dev")
+    suffix = "中文目录很长"
+    directory = sessions.path / suffix
+    directory.mkdir()
+    sessions.command(session, f"cd {shlex.quote(str(directory))}")
+    prefix = f"{sessions.path}/"
+    terminal = selector(sessions, cols=9 + len(prefix) + extra)
+    expected = prefix + suffix[:(extra - 1) // 2]
+    terminal.wait(lambda: terminal.screen.display[1].endswith("…"))
+    assert terminal.screen.display[1][9:-1].rstrip() == expected
+    assert terminal.screen.display[0].startswith("Sessions Directory")
+    terminal.screen.resize(30, 100)
+    terminal.child.setwinsize(30, 100)
+    terminal.wait(lambda: terminal.screen.display[1][9:].rstrip() == str(directory))
+    terminal.screen.resize(4, 12)
+    terminal.child.setwinsize(4, 12)
+    terminal.wait(lambda: terminal.screen.display[1].rstrip() == "> dev")
+    terminal.screen.resize(30, 100)
+    terminal.child.setwinsize(30, 100)
+    terminal.wait(lambda: terminal.screen.display[1][9:].rstrip() == str(directory))
+    cancel(terminal)
+
+
+def test_select_clips_long_names_and_directories_in_separate_columns(sessions):
+    name = "session-" + "a" * 56
+    sessions.spawn(name)
+    terminal = selector(sessions, cols=40)
+    terminal.wait(lambda: terminal.screen.display[1].endswith("…"))
+    assert terminal.screen.display[1][:18] == "> " + name[:15] + "…"
+    assert terminal.screen.display[1][18:20] == "  "
+    assert terminal.screen.display[1][20:39] == str(sessions.path)[:19]
+    terminal.screen.resize(30, 120)
+    terminal.child.setwinsize(30, 120)
+    terminal.wait(lambda: terminal.screen.display[1][60:].rstrip() == str(sessions.path))
+    cancel(terminal)
+
+
 def test_select_tracks_new_and_removed_sessions(sessions):
     alpha = sessions.spawn("alpha")
     sessions.command(alpha, "printf '\\033[2J\\033[HALPHA_VIEW\\n'")
@@ -284,11 +414,29 @@ def test_select_unresponsive_backend_does_not_block_navigation(sessions):
     try:
         terminal = selector(sessions)
         terminal.visible("Preview is not responding.")
+        terminal.wait(lambda: terminal.screen.display[1].rstrip().endswith("Unavailable"))
+        terminal.wait(lambda: terminal.screen.display[2].rstrip().endswith(str(sessions.path)))
         started = time.monotonic()
         terminal.child.send("j")
         terminal.visible("RESPONSIVE_BETA")
         assert time.monotonic() - started < 2
         cancel(terminal)
+    finally:
+        os.kill(backend, signal.SIGCONT)
+
+
+def test_select_cancel_during_directory_query(sessions):
+    sessions.spawn("alpha")
+    pid = int(sessions.sessions()[0]["PID"])
+    backend = psutil.Process(pid).ppid()
+    os.kill(backend, signal.SIGSTOP)
+    try:
+        terminal = selector(sessions)
+        terminal.visible("Directory")
+        terminal.visible("Loading...")
+        started = time.monotonic()
+        cancel(terminal)
+        assert time.monotonic() - started < 0.8
     finally:
         os.kill(backend, signal.SIGCONT)
 
@@ -304,7 +452,7 @@ def test_select_idle_uses_no_repeated_frames_or_polling(sessions):
     before = process.cpu_times()
     switches = process.num_ctx_switches().voluntary
     length = len(terminal.capture.getvalue())
-    time.sleep(0.5)
+    time.sleep(1.2)
     terminal.pump()
     after = process.cpu_times()
     assert after.user + after.system - before.user - before.system < 0.05

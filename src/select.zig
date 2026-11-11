@@ -16,11 +16,24 @@ const double_click_interval_ms = 400;
 
 const Selector = struct {
     const Click = struct { index: usize, row: i16, col: i16, time: i64 };
+    const Directory = struct {
+        path: ?[]const u8 = null,
+        query: ?sessions.Query = null,
+        deadline: ?i64 = null,
+        refresh_pending: bool = false,
+
+        fn deinit(self: *Directory, allocator: std.mem.Allocator) void {
+            if (self.path) |path| allocator.free(path);
+            if (self.query) |*query| query.deinit(allocator);
+        }
+    };
 
     allocator: std.mem.Allocator,
     io: std.Io,
     root: *const config.Config,
     names: [][]const u8 = &.{},
+    directories: []Directory = &.{},
+    pollfds: std.ArrayList(c.struct_pollfd) = .empty,
     selected: usize = 0,
     first: usize = 0,
     size: sys.Size,
@@ -53,6 +66,51 @@ const Selector = struct {
         self.allocator.free(names);
     }
 
+    fn freeDirectories(self: *Selector) void {
+        for (self.directories) |*directory| directory.deinit(self.allocator);
+        self.allocator.free(self.directories);
+        self.directories = &.{};
+    }
+
+    fn requestDirectory(self: *Selector, index: usize) !void {
+        const directory = &self.directories[index];
+        if (directory.query != null) {
+            directory.refresh_pending = true;
+            return;
+        }
+        directory.query = sessions.Query.init(self.allocator, self.io, self.root, self.names[index], "{}") catch |err| switch (err) {
+            error.SessionNotFound => {
+                try self.setDirectory(directory, "Unavailable");
+                return;
+            },
+            else => return err,
+        };
+        directory.deadline = try sys.monotonicMilliseconds() + 1000;
+    }
+
+    fn setDirectory(self: *Selector, directory: *Directory, path: []const u8) !void {
+        if (directory.path) |previous| if (std.mem.eql(u8, previous, path)) return;
+        const copy = try self.allocator.dupe(u8, path);
+        if (directory.path) |previous| self.allocator.free(previous);
+        directory.path = copy;
+        self.dirty = true;
+        self.repaint = true;
+    }
+
+    fn finishDirectories(self: *Selector, now: i64) !void {
+        for (self.directories, 0..) |*directory, index| if (directory.query) |*query| {
+            if (query.state == .pending and now < directory.deadline.?) continue;
+            try self.setDirectory(directory, if (query.info) |info| info.directory else "Unavailable");
+            query.deinit(self.allocator);
+            directory.query = null;
+            directory.deadline = null;
+            if (directory.refresh_pending) {
+                directory.refresh_pending = false;
+                try self.requestDirectory(index);
+            }
+        };
+    }
+
     fn listHeight(self: *const Selector) u16 {
         return @intCast(@min(@max(1, self.size.rows / 3), self.names.len, self.size.rows -| 2));
     }
@@ -83,6 +141,8 @@ const Selector = struct {
 
     fn refresh(self: *Selector) !void {
         const names = try sessions.names(self.allocator, self.io, self.root, ".sock");
+        var adopted = false;
+        defer if (!adopted) self.freeNames(names);
         var same = names.len == self.names.len;
         if (same) for (names, self.names) |a, b| {
             if (!std.mem.eql(u8, a, b)) {
@@ -90,10 +150,9 @@ const Selector = struct {
                 break;
             }
         };
-        if (same) {
-            self.freeNames(names);
-            return;
-        }
+        if (same) return;
+        const directories = try self.allocator.alloc(Directory, names.len);
+        @memset(directories, .{});
         const previous_rect = self.previewRect();
         self.resetClicks();
         var selected = @min(self.selected, names.len -| 1);
@@ -105,11 +164,15 @@ const Selector = struct {
                 break;
             }
         };
+        self.freeDirectories();
         self.freeNames(self.names);
         self.names = names;
+        self.directories = directories;
+        adopted = true;
         self.selected = selected;
         self.dirty = true;
         self.repaint = true;
+        for (self.names, 0..) |_, index| try self.requestDirectory(index);
         if (!retained) {
             try self.preview();
         } else if (!std.meta.eql(previous_rect, self.previewRect())) try self.fitPreview();
@@ -123,6 +186,7 @@ const Selector = struct {
         self.repaint = true;
         self.stream.nextSlice("\x1bc");
         const name = self.selectedName() orelse return;
+        try self.requestDirectory(self.selected);
         const rect = self.previewRect() orelse return;
         try self.term.resize(self.allocator, .{ .cols = rect.width - 2, .rows = rect.height - 2 });
         self.fd = connection.openExistingNonblocking(self.io, self.root, name) catch |err| switch (err) {
@@ -181,6 +245,7 @@ const Selector = struct {
                     self.message = null;
                     self.initial_deadline = null;
                     self.next_request = try sys.monotonicMilliseconds() + frame_interval_ms;
+                    try self.requestDirectory(self.selected);
                     self.dirty = true;
                 },
                 .failure => {
@@ -286,12 +351,25 @@ const Selector = struct {
         if (self.repaint) self.vx.screen.clear();
         const window = self.vx.window();
         _ = window.printSegment(.{ .text = "Sessions", .style = .{ .bold = true } }, .{ .wrap = .none });
+        var name_width: u16 = 0;
+        for (self.names) |name| name_width = @max(name_width, @as(u16, @intCast(name.len)));
+        // 名称只包含 ASCII；窄窗口为目录保留一半左右的宽度。
+        const directory_col = @min(@max(name_width + 4, 9), self.size.cols / 2);
+        const show_directory = self.size.cols >= 20;
+        if (show_directory) _ = window.printSegment(.{ .text = "Directory", .style = .{ .bold = true } }, .{ .col_offset = directory_col, .wrap = .none });
         const height = self.listHeight();
         self.first = @min(self.first, self.selected);
         if (height > 0 and self.selected >= self.first + height) self.first = self.selected + 1 - height;
         for (self.names[self.first..@min(self.names.len, self.first + height)], self.first..) |name, index| {
             const style: vaxis.Style = .{ .reverse = index == self.selected, .bold = index == self.selected };
-            _ = window.print(&.{ .{ .text = if (index == self.selected) "> " else "  ", .style = style }, .{ .text = name, .style = style } }, .{ .row_offset = @intCast(index - self.first + 1), .wrap = .none });
+            const row: u16 = @intCast(index - self.first + 1);
+            const label = window.child(.{ .y_off = row, .height = 1, .width = if (show_directory) directory_col - 2 else self.size.cols });
+            _ = label.printSegment(.{ .text = if (index == self.selected) "> " else "  ", .style = style }, .{ .wrap = .none });
+            printClipped(label.child(.{ .x_off = 2 }), name, style);
+            if (show_directory) {
+                const directory = window.child(.{ .x_off = directory_col, .y_off = row, .height = 1 });
+                printClipped(directory, self.directories[index].path orelse "Loading...", style);
+            }
         }
         if (self.previewRect()) |rect| {
             try self.state.update(self.allocator, &self.term);
@@ -332,6 +410,7 @@ const Selector = struct {
     fn loop(self: *Selector, signal: c_int, changes: c_int) !?[]u8 {
         while (true) {
             const now = try sys.monotonicMilliseconds();
+            try self.finishDirectories(now);
             if (self.preview_dirty) try self.preview();
             if (self.scroll_changed and self.fd >= 0) try self.requestScroll();
             if (self.keys.deadline) |deadline| if (now >= deadline) {
@@ -348,18 +427,26 @@ const Selector = struct {
                 if (self.previewRect() != null) if (self.next_request) |deadline| if (now >= deadline) try self.requestPreview();
             }
             var deadline = self.keys.deadline;
+            for (self.directories) |directory| if (directory.deadline) |value| {
+                deadline = @min(deadline orelse value, value);
+            };
             if (self.initial_deadline) |value| deadline = @min(deadline orelse value, value);
             if (self.output.pending().len == 0 and self.previewRect() != null) if (self.next_request) |value| {
                 deadline = @min(deadline orelse value, value);
             };
-            var fds = [_]c.struct_pollfd{
+            try self.pollfds.resize(self.allocator, 5 + self.directories.len);
+            const fds = self.pollfds.items;
+            fds[0..5].* = .{
                 .{ .fd = 0, .events = c.POLLIN, .revents = 0 },
                 .{ .fd = 1, .events = if (self.output.pending().len > 0) c.POLLOUT else 0, .revents = 0 },
                 .{ .fd = signal, .events = c.POLLIN, .revents = 0 },
                 .{ .fd = changes, .events = c.POLLIN, .revents = 0 },
                 .{ .fd = self.fd, .events = @as(c_short, c.POLLIN) | @as(c_short, if (self.request.pending().len > 0) c.POLLOUT else 0), .revents = 0 },
             };
-            const count = c.poll(&fds, fds.len, if (deadline) |value| @intCast(@max(0, value - now)) else -1);
+            for (self.directories, fds[5..]) |directory, *event| {
+                event.* = if (directory.query) |query| query.pollEvent() else .{ .fd = -1, .events = 0, .revents = 0 };
+            }
+            const count = c.poll(fds.ptr, @intCast(fds.len), if (deadline) |value| @intCast(@max(0, value - now)) else -1);
             if (count < 0 and c.__errno_location().* == c.EINTR) continue;
             _ = try sys.check(count, "poll(select)");
             if (fds[2].revents & c.POLLIN != 0) {
@@ -388,6 +475,9 @@ const Selector = struct {
                 }
                 continue;
             }
+            for (self.directories, fds[5..]) |*directory, event| {
+                if (directory.query) |*query| try query.update(self.allocator, event);
+            }
             if (fds[4].revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0) try self.receive();
             if (self.fd >= 0 and fds[4].revents & c.POLLOUT != 0) self.request.flush(self.fd, true) catch |err| switch (err) {
                 error.ConnectionClosed => {
@@ -403,6 +493,27 @@ const Selector = struct {
         }
     }
 };
+
+fn printClipped(window: vaxis.Window, text: []const u8, style: vaxis.Style) void {
+    if (window.width == 0) return;
+    const measured = window.printSegment(.{ .text = text }, .{ .wrap = .none, .commit = false });
+    if (!measured.overflow and measured.col <= window.width) {
+        _ = window.printSegment(.{ .text = text, .style = style }, .{ .wrap = .none });
+        return;
+    }
+    var graphemes = vaxis.unicode.graphemeIterator(text);
+    var end: usize = 0;
+    var columns: u16 = 0;
+    while (graphemes.next()) |grapheme| {
+        const bytes = grapheme.bytes(text);
+        const width = window.gwidth(bytes);
+        if (width > window.width - 1 - columns) break;
+        columns += width;
+        end += bytes.len;
+    }
+    _ = window.printSegment(.{ .text = text[0..end], .style = style }, .{ .wrap = .none });
+    _ = window.printSegment(.{ .text = "…", .style = style }, .{ .col_offset = window.width - 1, .wrap = .none });
+}
 
 pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Environ, mouse_enabled: bool) !?[]u8 {
     if (c.isatty(0) == 0 or c.isatty(1) == 0) return error.TerminalRequired;
@@ -440,7 +551,9 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
         app.term.deinit(allocator);
         app.state.deinit(allocator);
         app.cache.deinit(allocator);
+        app.freeDirectories();
         app.freeNames(app.names);
+        app.pollfds.deinit(allocator);
         app.output.deinit(allocator);
         app.frame.clearRetainingCapacity();
         app.vx.deinit(allocator, &app.frame.writer);

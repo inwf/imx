@@ -5,7 +5,7 @@ const config = @import("config.zig");
 const protocol = @import("protocol.zig");
 const terminal = @import("terminal.zig");
 
-const Query = struct {
+pub const Query = struct {
     name: []const u8,
     fd: c_int = -1,
     state: enum { pending, running, missing, unresponsive, failed } = .pending,
@@ -15,11 +15,68 @@ const Query = struct {
     snapshot: std.ArrayList(u8) = .empty,
     acknowledged: bool = false,
     info: ?protocol.SessionInfo = null,
+    parsed: ?std.json.Parsed(protocol.SessionInfo) = null,
+
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config, name: []const u8, request: []const u8) !Query {
+        var query: Query = .{ .name = name };
+        errdefer query.deinit(allocator);
+        var endpoint = (try root.session(io, name, false)) orelse return error.SessionNotFound;
+        defer endpoint.deinit();
+        query.fd = try sys.check(c.socket(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_NONBLOCK | c.SOCK_CLOEXEC, 0), "socket(session query)");
+        var address = endpoint.address();
+        if (c.connect(query.fd, @ptrCast(&address), @sizeOf(c.struct_sockaddr_un)) < 0) {
+            switch (c.__errno_location().*) {
+                c.ENOENT, c.ECONNREFUSED => return error.SessionNotFound,
+                c.EAGAIN => {
+                    query.state = .unresponsive;
+                    return query;
+                },
+                else => return sys.failure("connect(session query)"),
+            }
+        }
+        try config.checkPeer(query.fd);
+        try query.output.message(allocator, .info, request);
+        return query;
+    }
+
+    pub fn deinit(self: *Query, allocator: std.mem.Allocator) void {
+        if (self.fd >= 0) sys.close(self.fd);
+        if (self.parsed) |parsed| parsed.deinit();
+        self.reader.deinit(allocator);
+        self.output.deinit(allocator);
+        self.snapshot.deinit(allocator);
+    }
+
+    pub fn pollEvent(self: *const Query) c.struct_pollfd {
+        return .{
+            .fd = if (self.state == .pending) self.fd else -1,
+            .events = @intCast(c.POLLIN | @as(c_int, if (self.output.pending().len > 0) c.POLLOUT else 0)),
+            .revents = 0,
+        };
+    }
+
+    pub fn update(self: *Query, allocator: std.mem.Allocator, event: c.struct_pollfd) !void {
+        if (self.state != .pending) return;
+        if (event.revents & c.POLLOUT != 0) {
+            self.output.flush(self.fd, true) catch |err| {
+                self.state = .failed;
+                self.failure = @errorName(err);
+            };
+        }
+        if (event.revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0 and self.state == .pending) {
+            self.read(allocator) catch |err| {
+                if (err == error.OutOfMemory) return err;
+                self.state = .failed;
+                self.failure = @errorName(err);
+            };
+        }
+    }
 
     fn finish(self: *Query, allocator: std.mem.Allocator) !void {
         if (!self.acknowledged) return error.ConnectionClosed;
         if (self.reader.bytes.items.len != self.reader.offset) return error.InvalidResponse;
-        const info = try std.json.parseFromSliceLeaky(protocol.SessionInfo, allocator, self.snapshot.items, .{ .allocate = .alloc_always });
+        self.parsed = try std.json.parseFromSlice(protocol.SessionInfo, allocator, self.snapshot.items, .{ .allocate = .alloc_always });
+        const info = self.parsed.?.value;
         try config.validateName(info.name);
         if (info.pid <= 0) return error.InvalidResponse;
         if (!std.mem.eql(u8, info.name, self.name)) {
@@ -47,7 +104,7 @@ const Query = struct {
                         self.state = .missing;
                     } else {
                         self.state = .failed;
-                        self.failure = try allocator.dupe(u8, message.payload);
+                        self.failure = message.payload;
                     }
                     return;
                 },
@@ -86,39 +143,26 @@ pub fn list(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config
     const memory = arena.allocator();
     const available = try names(memory, io, root, ".sock");
     var queries: std.ArrayList(Query) = .empty;
-    defer for (queries.items) |query| if (query.fd >= 0) sys.close(query.fd);
+    defer for (queries.items) |*query| query.deinit(memory);
     const request = try std.json.Stringify.valueAlloc(memory, protocol.ListOptions{ .created_format = created_format, .names_only = prefix != null }, .{});
     const deadline = try sys.monotonicMilliseconds() + @as(i64, if (prefix != null) 250 else 1000);
     for (available) |name| {
         if (prefix) |value| if (!std.mem.startsWith(u8, name, value)) continue;
-        var endpoint = (try root.session(io, name, false)) orelse continue;
-        defer endpoint.deinit();
-        const fd = try sys.check(c.socket(c.AF_UNIX, c.SOCK_STREAM | c.SOCK_NONBLOCK | c.SOCK_CLOEXEC, 0), "socket(session query)");
-        var query: Query = .{ .name = name, .fd = fd };
-        errdefer sys.close(fd);
-        var address = endpoint.address();
-        if (c.connect(fd, @ptrCast(&address), @sizeOf(c.struct_sockaddr_un)) < 0) {
-            switch (c.__errno_location().*) {
-                c.ENOENT, c.ECONNREFUSED => {
-                    sys.close(fd);
-                    continue;
-                },
-                c.EAGAIN => query.state = .unresponsive,
-                else => return sys.failure("connect(session query)"),
-            }
-        } else {
-            try config.checkPeer(fd);
-            try query.output.message(memory, .info, request);
-        }
-        try queries.append(memory, query);
+        var query = Query.init(memory, io, root, name, request) catch |err| switch (err) {
+            error.SessionNotFound => continue,
+            else => return err,
+        };
+        queries.append(memory, query) catch |err| {
+            query.deinit(memory);
+            return err;
+        };
     }
     const pollfds = try memory.alloc(c.struct_pollfd, queries.items.len);
     while (true) {
         var pending: usize = 0;
         for (queries.items, pollfds) |query, *event| {
-            const active = query.state == .pending;
-            pending += @intFromBool(active);
-            event.* = .{ .fd = if (active) query.fd else -1, .events = @intCast(c.POLLIN | @as(c_int, if (query.output.pending().len > 0) c.POLLOUT else 0)), .revents = 0 };
+            pending += @intFromBool(query.state == .pending);
+            event.* = query.pollEvent();
         }
         if (pending == 0) break;
         const remaining = deadline - try sys.monotonicMilliseconds();
@@ -129,20 +173,7 @@ pub fn list(allocator: std.mem.Allocator, io: std.Io, root: *const config.Config
             return sys.failure("poll(session queries)");
         }
         for (queries.items, pollfds) |*query, event| {
-            if (query.state != .pending) continue;
-            if (event.revents & c.POLLOUT != 0) {
-                query.output.flush(query.fd, true) catch |err| {
-                    query.state = .failed;
-                    query.failure = @errorName(err);
-                };
-            }
-            if (event.revents & (c.POLLIN | c.POLLHUP | c.POLLERR) != 0 and query.state == .pending) {
-                query.read(memory) catch |err| {
-                    if (err == error.OutOfMemory) return err;
-                    query.state = .failed;
-                    query.failure = @errorName(err);
-                };
-            }
+            try query.update(memory, event);
         }
     }
     for (queries.items) |*query| if (query.state == .pending) {

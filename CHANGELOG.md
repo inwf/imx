@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.17.0 — 2026-11-11
+
+### Added
+
+- `imx select` shows each session shell's working directory beside its name. Directories are queried when the list opens or changes, and the selected directory refreshes when selection or preview content changes. Idle selectors stop querying.
+- Session names and long paths are clipped within separate columns with an ellipsis, preserving complete Unicode characters. Control characters in paths are escaped, and terminals narrower than 20 columns hide the directory column.
+- Directory queries run asynchronously. An unavailable or unresponsive session displays `Unavailable`, while keyboard and mouse navigation and cancellation remain available.
+
+### Upgrade notes
+
+- Run `imx select` with the updated executable to use the directory column. Existing sessions keep their programs, history, terminal sizes, and connections.
+
 ## 0.16.0 — 2026-11-08
 
 ### Added

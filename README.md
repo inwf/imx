@@ -104,10 +104,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-Install a specific published version, such as `v0.16.0`:
+Install a specific published version, such as `v0.17.0`:
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.16.0/install.sh | bash -s -- v0.16.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.17.0/install.sh | bash -s -- v0.17.0
 ```
 
 The installer places the license and completion files under the same prefix and removes its temporary download and extraction files when it finishes. System installations provide the Fish completion file under both `/usr/local` and `/usr`. With a custom prefix, Bash and Fish find the completion files through `XDG_DATA_DIRS` and Zsh through `fpath`.
@@ -159,7 +159,9 @@ Exiting or detaching restores normal terminal display and input modes, moves the
 
 To switch sessions, run `imx attach dev2` inside `dev1`. The current terminal moves to `dev2`, and both sessions keep their programs and history. If the target does not exist, it is created using the current directory, environment, and `$SHELL`. Run `imx attach dev1` to return. Other terminals attached to `dev1` stay connected. See [session switching](docs/usage.md#切换会话) for connection selection, error handling, and version requirements.
 
-`imx select` opens a session list with a live preview. Move with **Up/Down** or **j/k**, attach with **Enter** or **Space**, and cancel with **Esc** or **q**. With `panes.mouse = true`, click a session to select and preview it, double-click to attach, or use the wheel in the list to move the selection. Use the wheel over the preview's contents to browse retained history, three lines at a time. Scrolling up pauses live following; scrolling to the bottom resumes it. Each preview keeps its own history position through new output and window resizing; selecting another session starts its live preview. History scrolling requires a session backend started with a version that supports it. Inside a session, confirmation switches the current connection. Only the selected session is previewed, with updates capped at 10 frames per second and no repeated refreshes while idle. Previewing preserves session sizes and connection counts. See [interactive selection](docs/usage.md#交互选择会话) for details.
+`imx select` opens a session list with each session's current working directory and a live preview. Move with **Up/Down** or **j/k**, attach with **Enter** or **Space**, and cancel with **Esc** or **q**. With `panes.mouse = true`, click a session to select and preview it, double-click to attach, or use the wheel in the list to move the selection. Use the wheel over the preview's contents to browse retained history, three lines at a time. Scrolling up pauses live following; scrolling to the bottom resumes it. Each preview keeps its own history position through new output and window resizing; selecting another session starts its live preview. History scrolling requires a session backend started with a version that supports it. Inside a session, confirmation switches the current connection. Only the selected session is previewed, with updates capped at 10 frames per second and no repeated refreshes while idle. Previewing preserves session sizes and connection counts. Long directories are clipped to their list row. See [interactive selection](docs/usage.md#交互选择会话) for details.
+
+Directories are queried when the session list opens or changes. Selecting a session or receiving a preview update refreshes its directory; idle selectors stop querying. The directory column is hidden when the terminal is narrower than 20 columns.
 
 > [!IMPORTANT]
 > Sessions and history are held in memory. A backend exiting releases its session; restarting the host releases all sessions.
