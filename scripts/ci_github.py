@@ -9,11 +9,10 @@ from urllib.parse import quote, urlencode
 
 
 ARCHITECTURES = ("x86_64", "aarch64")
-CACHE_PREFIX = "imx-zig-v1-Linux-"
 
 
-def api(repository, path, *, paginate=False, method="GET"):
-    command = ["gh", "api", "--method", method, f"repos/{repository}/{path}"]
+def api(repository, path, *, paginate=False):
+    command = ["gh", "api", f"repos/{repository}/{path}"]
     if paginate:
         command.extend(["--paginate", "--slurp"])
     result = subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True)
@@ -76,30 +75,6 @@ def prepare(repository):
     print(f"Selected commit {sha}; artifact run: {run_id or 'current run'}", flush=True)
 
 
-def prune(repository, dry_run):
-    query = urlencode({"key": CACHE_PREFIX, "ref": "refs/heads/main", "per_page": 100})
-    pages = api(repository, f"actions/caches?{query}", paginate=True)
-    caches = [item for page in pages for item in page["actions_caches"]]
-    summary = ["## Compilation caches", "", "| Architecture | Stored caches | Size |", "| --- | --- | --- |"]
-    for architecture in ARCHITECTURES:
-        entries = sorted(
-            (item for item in caches if item["ref"] == "refs/heads/main"
-             and item["key"].startswith(f"{CACHE_PREFIX}{architecture}-")),
-            key=lambda item: (item["created_at"], item["id"]), reverse=True,
-        )
-        for item in entries[2:]:
-            print(f"{'Would remove' if dry_run else 'Removing'} cache {item['id']}: {item['key']}", flush=True)
-            if not dry_run:
-                api(repository, f"actions/caches/{item['id']}", method="DELETE")
-        retained = entries if dry_run else entries[:2]
-        size = sum(item["size_in_bytes"] for item in retained)
-        print(f"{architecture}: {len(retained)} caches, {size / 1024**2:.1f} MiB", flush=True)
-        summary.append(f"| {architecture} | {len(retained)} | {size / 1024**2:.1f} MiB |")
-    if "GITHUB_STEP_SUMMARY" in os.environ:
-        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as output:
-            output.write("\n".join(summary) + "\n")
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"), required="GITHUB_REPOSITORY" not in os.environ)
@@ -107,15 +82,11 @@ def main():
     commands.add_parser("prepare")
     reuse = commands.add_parser("reuse")
     reuse.add_argument("--sha", required=True)
-    cleanup = commands.add_parser("prune")
-    cleanup.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.command == "prepare":
         prepare(args.repository)
     elif args.command == "reuse":
         print(reusable_run(args.repository, args.sha))
-    else:
-        prune(args.repository, args.dry_run)
 
 
 if __name__ == "__main__":

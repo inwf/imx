@@ -119,28 +119,6 @@ jobs:
           retention-days: 7
           compression-level: 0
 
-  prune-cache:
-    name: Retain two compilation caches per architecture
-    needs: build
-    if: >-
-      always() && !cancelled() && github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.event.inputs.tag == ''
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: Configure temporary directory
-        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - name: Remove older compilation caches
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci_github.py prune
-
   publish:
     name: Publish release
     needs: [prepare, build]

@@ -57,7 +57,7 @@
 
 ### Build and release
 
-- GitHub Actions caches Zig, dependencies, and compilation results separately for x86_64 and ARM64. Main-branch builds refresh caches weekly and retain the latest two per architecture; Actions summaries show cache counts and storage usage.
+- GitHub Actions caches Zig, dependencies, and compilation results separately for x86_64 and ARM64. Main-branch builds refresh caches weekly.
 - Version releases reuse successful main-branch build artifacts for the exact same commit. The release workflow waits for an ongoing main-branch check and verifies package versions and SHA256 checksums before publishing.
 
 ## 0.13.0 — 2026-11-04
