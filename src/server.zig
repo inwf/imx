@@ -58,6 +58,7 @@ const Session = struct {
     term: terminal.vt.Terminal,
     stream: Stream,
     input: protocol.Queue = .{},
+    response_error: ?anyerror = null,
     clients: std.ArrayList(*Client) = .empty,
     previews: std.ArrayList(*Client) = .empty,
     revision: u64 = 0,
@@ -725,6 +726,11 @@ const Server = struct {
             if (n) |count| {
                 if (count == 0) return self.finishSession(session, true);
                 session.stream.nextSlice(buffer[0..count]);
+                if (session.response_error) |err| {
+                    if (err != error.TerminalResponseOverflow) return err;
+                    try sys.writeAll(2, "imx: TerminalResponseOverflow\n", false);
+                    return self.finishSession(session, true);
+                }
                 if (session.stream.handler.semantic_failure) return error.TerminalStateFailure;
                 try self.changed(session);
                 const output_limit = @max(protocol.max_queue, @as(usize, session.term.cols) * session.term.rows * 128);
@@ -857,7 +863,10 @@ fn listRow(writer: *std.Io.Writer, fields: [5][]const u8, widths: [5]usize, tabl
 
 fn writePty(handler: *Handler, data: []const u8) void {
     const session: *Session = @fieldParentPtr("term", handler.terminal);
-    session.input.append(session.allocator, data) catch @panic("terminal response buffer failed");
+    if (session.response_error != null) return;
+    session.input.append(session.allocator, data) catch |err| {
+        session.response_error = if (err == error.SlowClient) error.TerminalResponseOverflow else err;
+    };
 }
 
 fn deviceAttributes(_: *Handler) terminal.vt.device_attributes.Attributes {

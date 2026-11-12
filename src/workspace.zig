@@ -206,6 +206,7 @@ const Pane = struct {
     hold_until: ?i64 = null,
     input: protocol.Queue = .{},
     detaching: bool = false,
+    response_error: ?anyerror = null,
     close_requested: bool = false,
     closing: ?CloseRequest = null,
     directory_request: ?DirectoryRequest = null,
@@ -1027,7 +1028,10 @@ fn writeClipboard(handler: *Handler, request: vt.clipboard.Write) void {
 
 fn writePty(handler: *Handler, bytes: []const u8) void {
     const pane: *Pane = @alignCast(@fieldParentPtr("term", handler.terminal));
-    pane.input.append(pane.app.allocator, bytes) catch @panic("pane terminal response buffer failed");
+    if (pane.response_error != null) return;
+    pane.input.append(pane.app.allocator, bytes) catch |err| {
+        pane.response_error = if (err == error.SlowClient) error.TerminalResponseOverflow else err;
+    };
 }
 
 fn deviceAttributes(_: *Handler) vt.device_attributes.Attributes {
@@ -1357,6 +1361,14 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                         break;
                     }
                     pane.stream.nextSlice(buffer[0..n]);
+                    if (pane.response_error) |err| {
+                        if (err != error.TerminalResponseOverflow or !app.composed or app.panes.items.len == 1) return err;
+                        var message: [96]u8 = undefined;
+                        try app.message(try std.fmt.bufPrint(&message, "Pane {d} closed: TerminalResponseOverflow.", .{pane.number}));
+                        try app.remove(index);
+                        removed = true;
+                        break;
+                    }
                     pane.render_pending = true;
                     if (pane.stream.handler.semantic_failure) return error.TerminalStateFailure;
                     if (app.composed) {
