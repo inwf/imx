@@ -10,6 +10,8 @@ const pane_context = @import("pane_context.zig");
 const Stream = @TypeOf(@as(*terminal.vt.Terminal, undefined).vtStream());
 const Handler = @FieldType(Stream, "handler");
 const Allocator = std.mem.Allocator;
+// 快照随请求释放，将扩容和发送完成后的缓冲区页面直接归还系统。
+const snapshot_allocator = std.heap.page_allocator;
 
 const Client = struct {
     fd: c_int,
@@ -170,7 +172,7 @@ const Server = struct {
         client.reader.deinit(self.allocator);
         client.output.deinit(self.allocator);
         client.live.deinit(self.allocator);
-        if (client.snapshot_owned) if (client.snapshot) |snapshot| self.allocator.free(snapshot);
+        if (client.snapshot_owned) if (client.snapshot) |snapshot| snapshot_allocator.free(snapshot);
         client.preview_frame.deinit(self.allocator);
         self.allocator.destroy(client);
     }
@@ -414,7 +416,7 @@ const Server = struct {
                 const read_only = msg.tag == .attach_readonly;
                 const session = self.sessions.get(fields.name) orelse if (read_only) return error.SessionNotFound else try self.create(fields.name, fields.cwd, fields.shell, fields.environment, client.size);
                 if (!read_only) try self.resize(session, client.size);
-                client.snapshot = try terminal.restore(self.allocator, &session.term);
+                client.snapshot = try terminal.restore(snapshot_allocator, &session.term);
                 client.session = session;
                 client.read_only = read_only;
                 const first_writer = session.leader == null;
@@ -504,7 +506,7 @@ const Server = struct {
                     .directory = directory orelse "",
                     .created = try sys.formatDateTime(&created, session.created, options.value.created_format),
                 };
-                client.snapshot = try std.json.Stringify.valueAlloc(self.allocator, info, .{});
+                client.snapshot = try std.json.Stringify.valueAlloc(snapshot_allocator, info, .{});
                 client.closing = true;
                 try self.respond(client, .ok, "");
             },
@@ -527,7 +529,7 @@ const Server = struct {
                 const directory = if (options.names_only) null else if (self.sessions.get(self.cfg.session_name.?)) |session| try self.currentDirectory(session) else null;
                 defer if (directory) |value| self.allocator.free(value);
                 const table = options.table;
-                var builder = std.Io.Writer.Allocating.init(self.allocator);
+                var builder = std.Io.Writer.Allocating.init(snapshot_allocator);
                 defer builder.deinit();
                 var names: std.ArrayList([]const u8) = .empty;
                 defer names.deinit(self.allocator);
@@ -601,7 +603,7 @@ const Server = struct {
                 if (client.session != null) return error.InvalidMessage;
                 try config.validateName(msg.payload);
                 const session = self.sessions.get(msg.payload) orelse return error.SessionNotFound;
-                client.snapshot = try terminal.history(self.allocator, &session.term);
+                client.snapshot = try terminal.history(snapshot_allocator, &session.term);
                 client.closing = true;
                 try self.respond(client, .ok, "");
             },
@@ -700,7 +702,7 @@ const Server = struct {
                         try client.output.message(self.allocator, .output, snapshot[client.snapshot_offset..][0..count]);
                         client.snapshot_offset += count;
                         if (client.snapshot_offset == snapshot.len) {
-                            if (client.snapshot_owned) self.allocator.free(snapshot);
+                            if (client.snapshot_owned) snapshot_allocator.free(snapshot);
                             client.snapshot = null;
                             client.snapshot_offset = 0;
                             if (client.preview != null) try client.output.message(self.allocator, .done, "");
