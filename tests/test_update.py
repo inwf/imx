@@ -25,13 +25,12 @@ def test_forced_update_preserves_installation_and_running_session(downloaded, in
     if inside:
         output = downloaded.command(child, "imx update --force")
         assert "Downloading imx" in output
-        assert "100.0%" in output
     else:
         result = downloaded.run("update", "--force")
         output = result.stdout
         assert "Downloading imx" in result.stderr
         assert "100.0%" not in result.stderr
-    assert f"Installed imx {VERSION}: {downloaded.binary}" in output
+    assert f"Installed imx {VERSION}: {downloaded.binary}" in output.replace("\n", "")
     assert downloaded.binary.stat().st_ino != inode
     assert downloaded.run("-v").stdout == f"imx {VERSION}\n"
     assert not (downloaded.path / "another prefix").exists()
@@ -47,7 +46,7 @@ def test_forced_update_preserves_installation_and_running_session(downloaded, in
     child.send("\x1b\\")
     child.expect(pexpect.EOF)
     attached = downloaded.spawn(initialize=False)
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
     assert downloaded.sessions()[0]["PID"] == pid
     downloaded.spawn("fresh")
     current = {row["NAME"]: row for row in downloaded.sessions()}

@@ -10,13 +10,13 @@ import psutil
 import pyte
 import pytest
 
-from conftest import ROOT
+from conftest import ROOT, ScreenProcess
 from preview_client import PreviewClient
 from test_panes import PaneTerminal
 
 
 def selector(sessions, rows=30, cols=100):
-    child = pexpect.spawn(
+    child = ScreenProcess(
         str(sessions.binary), ["select"], cwd=str(sessions.path),
         env=sessions.environment, dimensions=(rows, cols), encoding="utf-8", timeout=10,
     )
@@ -112,7 +112,7 @@ def test_select_navigation_preview_and_attach(sessions, down, up, confirm):
     terminal.child.send(down)
     terminal.visible("中文 Beta")
     terminal.child.send(confirm)
-    terminal.child.expect_exact("IMX_PROMPT> ")
+    terminal.child.expect_prompt("IMX_PROMPT> ")
     assert "beta" in sessions.command(terminal.child, "printf '%s\\n' \"$IMX_SESSION\"")
     terminal.child.send("\x1b\\")
     terminal.child.expect(pexpect.EOF)
@@ -125,7 +125,7 @@ def test_select_live_preview_keeps_size_clients_and_history(sessions):
     terminal.visible("INITIAL_VIEW")
     assert not shown(terminal, "HISTORY_ONLY")
     assert sessions.sessions()[0]["CLIENTS"] == "1"
-    assert "40 120" in sessions.command(session, "stty size")
+    assert "38 118" in sessions.command(session, "stty size")
     sessions.command(session, "printf '\\033[2J\\033[HCHANGED_VIEW\\n'")
     terminal.visible("CHANGED_VIEW")
     assert not shown(terminal, "INITIAL_VIEW")
@@ -134,7 +134,7 @@ def test_select_live_preview_keeps_size_clients_and_history(sessions):
     terminal.visible("Enter/Space")
     sessions.command(session, "printf '\\033[2J\\033[HAFTER_RESIZE\\n'")
     terminal.visible("AFTER_RESIZE")
-    assert "40 120" in sessions.command(session, "stty size")
+    assert "38 118" in sessions.command(session, "stty size")
     assert "HISTORY_ONLY" in sessions.run("cat", "dev").stdout
     cancel(terminal)
 
@@ -153,7 +153,7 @@ def test_select_previews_vim_updates_without_sending_input(sessions):
     terminal.child.send("jkk")
     cancel(terminal)
     session.send(":wq\r")
-    session.expect_exact("IMX_PROMPT> ")
+    session.expect_prompt("IMX_PROMPT> ")
     assert document.read_text() == "UPDATED_VIM_PREVIEW\n中文文档\n"
 
 
@@ -169,11 +169,11 @@ def test_select_inside_session_switches_current_connection(sessions, mouse):
     alpha.send("j")
     terminal.visible("TARGET_BETA")
     if mouse:
-        terminal.click(4, 3)
-        terminal.click(4, 3)
+        terminal.click(5, 4)
+        terminal.click(5, 4)
     else:
         alpha.send(" ")
-    alpha.expect_exact("IMX_PROMPT> ")
+    alpha.expect_prompt("IMX_PROMPT> ")
     assert "beta" in sessions.command(alpha, "printf '%s\\n' \"$IMX_SESSION\"")
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"alpha": "0", "beta": "2"})
 
@@ -195,7 +195,7 @@ def test_select_current_session_preserves_screen_and_stays_idle(sessions, confir
     terminal.pump()
     assert len(terminal.capture.getvalue()) == length
     alpha.send(confirm)
-    alpha.expect_exact("IMX_PROMPT> ")
+    alpha.expect_prompt("IMX_PROMPT> ")
     assert "alpha" in sessions.command(alpha, "printf '%s\\n' \"$IMX_SESSION\"")
     assert "ORIGINAL_SCREEN" in sessions.run("cat", "alpha").stdout
     assert sessions.sessions()[0]["CLIENTS"] == "1"
@@ -528,7 +528,7 @@ def test_large_rgb_output_survives_a_paused_terminal(sessions, initial_size):
     session = sessions.spawn("colors", rows=initial_size[0], cols=initial_size[1])
     if initial_size != (160, 320):
         session.setwinsize(160, 320)
-        sessions.wait(lambda: "160 320" in sessions.command(session, "stty size"))
+        sessions.wait(lambda: "158 318" in sessions.command(session, "stty size"))
     ready = sessions.path / "ready"
     complete = sessions.path / "complete"
     gate = sessions.path / "gate"
@@ -548,11 +548,11 @@ def test_large_rgb_output_survives_a_paused_terminal(sessions, initial_size):
         session.setwinsize(24, 80)
     finally:
         os.kill(session.pid, signal.SIGCONT)
-    session.expect_exact("\r\nBURST_COMPLETE\r\n")
-    assert len(session.before) > 256 * 1024
-    assert "\x1b[38;2;20;10;30mX" in session.before
-    assert "\x1b[38;2;61;154;215mX" in session.before
-    session.expect_exact("IMX_PROMPT> ")
+    session.expect_screen("BURST_COMPLETE")
+    session.expect_prompt("IMX_PROMPT> ")
+    assert sessions.sessions()[0]["CLIENTS"] == "1"
+    assert "BURST_COMPLETE" in sessions.run("cat", "colors").stdout
+    assert "22 78" in sessions.command(session, "stty size")
 
 
 def test_select_empty_and_noninteractive(sessions):
@@ -599,12 +599,12 @@ def test_select_mouse_previews_and_double_clicks_to_attach(sessions, mouse_mode)
     terminal.visible("BETA_MOUSE")
     assert not shown(terminal, "ALPHA_MOUSE")
     assert sessions.sessions() == before
-    assert "24 80" in sessions.command(beta, "stty size")
+    assert "22 78" in sessions.command(beta, "stty size")
     terminal.child.send("k")
     terminal.visible("ALPHA_MOUSE")
     terminal.click(4, 3)
     terminal.click(4, 3)
-    terminal.child.expect_exact("IMX_PROMPT> ")
+    terminal.child.expect_prompt("IMX_PROMPT> ")
     assert "beta" in sessions.command(terminal.child, "printf '%s\\n' \"$IMX_SESSION\"")
     terminal.child.send("\x1b\\")
     terminal.child.expect(pexpect.EOF)

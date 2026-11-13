@@ -94,7 +94,7 @@ def test_split_and_close_restore_mouse_mode_from_initial_application(sessions, e
     terminal.child.sendline(shlex.join([
         sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), "legacy",
     ]))
-    terminal.wait(lambda: destination.exists() and reporting_modes(terminal) == {1000, 1006})
+    terminal.wait(lambda: destination.exists() and reporting_modes(terminal) == {1002 if enabled else 1000, 1006})
     terminal.split()
     terminal.visible("1: shell")
     shell_modes = {1002, 1006} if enabled else set()

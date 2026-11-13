@@ -103,10 +103,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-安装已经发布的指定版本，例如 `v0.17.0`：
+安装已经发布的指定版本，例如 `v0.18.0`：
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.17.0/install.sh | bash -s -- v0.17.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.18.0/install.sh | bash -s -- v0.18.0
 ```
 
 安装脚本把许可证和补全文件安装到相同前缀下，并在完成后删除下载和解压产生的临时文件。系统安装会同时在 `/usr/local` 和 `/usr` 下提供 Fish 补全文件。使用自定义前缀时，Bash 和 Fish 通过 `XDG_DATA_DIRS` 查找补全文件，Zsh 通过 `fpath` 查找。
@@ -168,7 +168,7 @@ imx kill dev     # 终止会话
 
 ### 4. 分屏
 
-进入会话后，按下 **Alt+D** 将当前窗格左右分屏，按下 **Alt+Shift+D** 将当前窗格上下分屏。Alt 对应 macOS 的 Option。新窗格在当前聚焦窗格的工作目录启动普通 shell，用户可以执行 `imx attach <name>` 连接其他会话。高亮边框表示当前聚焦窗格。分离快捷键只断开该窗格的会话连接，并返回其普通 shell。
+执行 `imx attach <name>` 后直接显示带有边框的窗格，标题显示窗格编号和会话名称。按下 **Alt+D** 将当前窗格左右分屏，按下 **Alt+Shift+D** 将当前窗格上下分屏。Alt 对应 macOS 的 Option。新窗格在当前聚焦窗格的工作目录启动普通 shell，用户可以执行 `imx attach <name>` 连接其他会话。高亮边框表示当前聚焦窗格。初始窗格单独显示时，分离会话会返回外层终端；存在多个窗格时，分离会话会返回该窗格的普通 shell。
 
 新窗格查询目录和启动 shell 时，标题显示 `starting`。其他窗格仍可操作，期间输入的内容会排队等待新 shell 启动。启动过程的总时限为两秒；失败时关闭这个新窗格并显示原因。按下 Alt+W 也可以取消正在启动的窗格。
 

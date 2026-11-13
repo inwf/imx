@@ -150,7 +150,7 @@ def test_prompt_and_created_format_share_configuration(sessions):
     after = int(datetime.now().timestamp())
     assert before <= int(sessions.sessions()[0]["CREATED"]) <= after
     child.sendline("true")
-    child.expect_exact("[dev] BASE:~> ")
+    child.expect_prompt("[dev] BASE:~> ")
 
 
 def test_created_format_uses_xdg_configuration_directory(sessions):

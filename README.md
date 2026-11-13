@@ -104,10 +104,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-Install a specific published version, such as `v0.17.0`:
+Install a specific published version, such as `v0.18.0`:
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.17.0/install.sh | bash -s -- v0.17.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.18.0/install.sh | bash -s -- v0.18.0
 ```
 
 The installer places the license and completion files under the same prefix and removes its temporary download and extraction files when it finishes. System installations provide the Fish completion file under both `/usr/local` and `/usr`. With a custom prefix, Bash and Fish find the completion files through `XDG_DATA_DIRS` and Zsh through `fpath`.
@@ -169,7 +169,7 @@ Directories are queried when the session list opens or changes. Selecting a sess
 
 ### 4. Split panes
 
-While attached, press **Alt+D** to split the focused pane left and right, or **Alt+Shift+D** to split it top and bottom. Alt corresponds to Option on macOS. Each new pane starts a plain shell in the focused pane's current directory. Run `imx attach <name>` there to connect to another session. A highlighted border marks the focused pane. The detach shortcut affects only that pane's connection and returns it to its plain shell.
+`imx attach <name>` opens a bordered pane with its number and session name in the title. Press **Alt+D** to split the focused pane left and right, or **Alt+Shift+D** to split it top and bottom. Alt corresponds to Option on macOS. Each new pane starts a plain shell in the focused pane's current directory. Run `imx attach <name>` there to connect to another session. A highlighted border marks the focused pane. Detaching the only initial pane returns to the outer terminal; with multiple panes, detaching returns that pane to its plain shell.
 
 A new pane shows `starting` while its directory is queried and its shell starts. Other panes remain usable, and typed input is queued for the new shell. Startup has a two-second deadline; a failure closes the new pane and displays the reason. Alt+W also cancels a pending pane.
 

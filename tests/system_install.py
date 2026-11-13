@@ -13,6 +13,7 @@ import pexpect
 import psutil
 
 from completion_shell import COMPLETION_FILES, CompletionShell
+from conftest import ScreenProcess
 
 
 USERNAME = "imx-install-tests"
@@ -38,7 +39,7 @@ def overlay(directory, target):
 
 def user_shell(environment):
     variables = [f"{name}={value}" for name, value in environment.items()]
-    child = pexpect.spawn(
+    child = ScreenProcess(
         "/usr/sbin/runuser", ["--user", USERNAME, "--", "env", *variables, "bash", "--noprofile", "--norc"],
         cwd=environment["HOME"], env=environment, encoding="utf-8", dimensions=(24, 80), timeout=20,
     )
@@ -46,39 +47,38 @@ def user_shell(environment):
     child.expect(r"[#$] ")
     child.sendline("stty -echo; PS1='SYSTEM_PROMPT> '; PROMPT_COMMAND=; printf '\\nREADY\\n'")
     child.expect_exact("\r\nREADY\r\n")
-    child.expect_exact("SYSTEM_PROMPT> ")
+    child.expect_prompt("SYSTEM_PROMPT> ")
     return child
 
 
 def command(child, text, prompt="SYSTEM_PROMPT> "):
-    marker = f"STATUS_{uuid.uuid4().hex}"
+    marker = f"STATUS_{uuid.uuid4().hex[:8]}"
     child.sendline(f"{text}; printf '\\n{marker}=%s\\n' \"$?\"")
-    child.expect_exact(f"\r\n{marker}=0\r\n")
-    output = child.before
-    child.expect_exact(prompt)
-    return output
+    child.expect_screen(f"{marker}=0")
+    child.expect_prompt(prompt)
+    return "\n".join(row.strip("│ ") for row in child.screen.display)
 
 
 def authorize(child, text):
     child.sendline(f"{text}; printf '\\nSTATUS=%s\\n' \"$?\"")
-    child.expect_exact(f"[sudo] password for {USERNAME}:")
+    child.expect_screen(f"[sudo] password for {USERNAME}:")
     child.sendline(PASSWORD)
 
 
 def installed(child, invocation, prompt="SYSTEM_PROMPT> "):
     authorize(child, invocation)
-    assert "Administrator permissions are required to install in " in child.before
-    child.expect_exact("\r\nSTATUS=0\r\n")
-    assert "Installed imx" in child.before
-    child.expect_exact(prompt)
+    assert any("Administrator permissions are required to install in " in row for row in child.screen.display)
+    child.expect_screen("STATUS=0")
+    assert any("Installed imx" in row for row in child.screen.display)
+    child.expect_prompt(prompt)
 
 
 def session(child):
     child.sendline("imx attach dev")
-    child.expect(r"[#$] ")
-    child.sendline("stty -echo; PS1='INNER_PROMPT> '; PROMPT_COMMAND=; printf '\\nINNER_READY\\n'")
-    child.expect_exact("\r\nINNER_READY\r\n")
-    child.expect_exact("INNER_PROMPT> ")
+    child.expect_prompt()
+    child.sendline("stty -echo; PS1='INNER_PROMPT> '; PROMPT_COMMAND=; printf '\\nINNER_%s\\n' READY")
+    child.expect_screen("INNER_READY")
+    child.expect_prompt("INNER_PROMPT> ")
     command(child, "export SYSTEM_MARKER=retained; printf 'SYSTEM_HISTORY\\n'", "INNER_PROMPT> ")
 
 
@@ -203,11 +203,11 @@ def main():
             other_home.mkdir(mode=0o700)
             other_environment = environment.copy()
             other_environment.update(HOME=str(other_home), IMX_DIR=str(other_home / "run"))
-            other = pexpect.spawn("imx", ["attach", "other"], env=other_environment, encoding="utf-8", timeout=10)
-            other.expect(r"[#$] ")
-            other.sendline("stty -echo; PS1='OTHER_PROMPT> '; PROMPT_COMMAND=; printf '\\nOTHER_READY\\n'")
-            other.expect_exact("\r\nOTHER_READY\r\n")
-            other.expect_exact("OTHER_PROMPT> ")
+            other = ScreenProcess("imx", ["attach", "other"], env=other_environment, encoding="utf-8", timeout=10)
+            other.expect_prompt()
+            other.sendline("stty -echo; PS1='OTHER_PROMPT> '; PROMPT_COMMAND=; printf '\\nOTHER_%s\\n' READY")
+            other.expect_screen("OTHER_READY")
+            other.expect_prompt("OTHER_PROMPT> ")
             listing = checked("imx", "ls", env=other_environment).stdout
             other_shell = int(next(csv.DictReader(io.StringIO(listing), delimiter="\t"))["PID"])
             other_backend = psutil.Process(psutil.Process(other_shell).ppid())
@@ -225,7 +225,7 @@ def main():
                 assert psutil.pid_exists(job_pid)
             if case not in ("inside", "update-inside"):
                 child.send("\x1b\\")
-                child.expect_exact("SYSTEM_PROMPT> ")
+                child.expect_prompt("SYSTEM_PROMPT> ")
         if case in ("completion", "completion-usr"):
             for shell in ("bash", "zsh", "fish"):
                 with CompletionShell(environment, shell, user=USERNAME, fixtures=Path("/mnt/tests/completion")) as terminal:
@@ -245,13 +245,14 @@ def main():
             installed(child, download if case == "reinstall" else "imx update --force", prompt)
             assert binary.stat().st_ino != inode
             assert psutil.pid_exists(shell_pid)
-            assert "SYSTEM_HISTORY" in command(child, "imx cat dev", prompt)
+            command(child, 'imx cat dev > "$HOME/history"', prompt)
+            assert "SYSTEM_HISTORY" in (home / "history").read_text()
             if case != "update-inside":
                 child.sendline("imx attach dev")
-                child.expect_exact("INNER_PROMPT> ")
+                child.expect_prompt("INNER_PROMPT> ")
             assert "retained" in command(child, "printf '%s\\n' \"$SYSTEM_MARKER\"", "INNER_PROMPT> ")
             child.send("\x1b\\")
-            child.expect_exact("SYSTEM_PROMPT> ")
+            child.expect_prompt("SYSTEM_PROMPT> ")
         if case in ("cancel-install", "cancel-uninstall", "cancel-update"):
             inode = binary.stat().st_ino
             command(child, "sudo -k")
@@ -268,9 +269,9 @@ def main():
         prompt = "INNER_PROMPT> " if case == "inside" else "SYSTEM_PROMPT> "
         command(child, "sudo -k", prompt)
         child.sendline("/usr/bin/imx uninstall" if case == "aliases" else "imx uninstall")
-        child.expect_exact(f"[sudo] password for {USERNAME}:")
+        child.expect_screen(f"[sudo] password for {USERNAME}:")
         child.sendline(PASSWORD)
-        child.expect_exact("SYSTEM_PROMPT> ")
+        child.expect_prompt("SYSTEM_PROMPT> ")
         deadline = time.monotonic() + 10
         while any(path.exists() for path in (binary, home / ".local/state/imx", home / "run")):
             assert time.monotonic() < deadline, "卸载未在限定时间内完成"

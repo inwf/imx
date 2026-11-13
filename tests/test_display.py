@@ -7,6 +7,7 @@ import psutil
 import pyte
 import pytest
 
+from conftest import ScreenProcess
 from test_prompt import setup_shell
 from test_panes import PaneTerminal
 from test_pane_resize import origin
@@ -24,7 +25,7 @@ from test_pane_resize import origin
 def test_return_to_outer_shell_restores_display(sessions, action, modes):
     rc, _ = setup_shell(sessions, "bash")
     capture = io.StringIO()
-    outer = pexpect.spawn(
+    outer = ScreenProcess(
         "/bin/bash", ["--noprofile", "--rcfile", str(rc), "-i"],
         env=sessions.environment, cwd=str(sessions.home), encoding="utf-8",
         dimensions=(24, 80), timeout=10,
@@ -32,17 +33,18 @@ def test_return_to_outer_shell_restores_display(sessions, action, modes):
     sessions.clients.append(outer)
     outer.delaybeforesend = 0
     outer.logfile_read = capture
-    outer.expect_exact("BASE:~> ")
+    outer.expect_prompt("BASE:~> ")
     outer.sendline("stty -echo; stty -g > ../before; imx attach dev")
-    outer.expect_exact("[dev] BASE:~> ")
+    outer.expect_prompt("[dev] BASE:~> ")
     outer.sendline("stty -echo; PS1='INNER> '; PROMPT_COMMAND=")
-    outer.expect_exact("INNER> ")
+    outer.expect_prompt("INNER> ")
     if action in ("exit", "detach"):
         command = "exit" if action == "exit" else "imx detach"
         outer.sendline(f"printf '{modes}'; {command}")
     else:
-        outer.sendline(f"printf '{modes}'; printf 'MODE_READY'; sleep 600")
-        outer.expect_exact("MODE_READY")
+        ready = sessions.path / "mode-ready"
+        outer.sendline(f"printf '{modes}'; touch {shlex.quote(str(ready))}; sleep 600")
+        sessions.wait(ready.exists)
         if action == "shortcut":
             outer.send("\x1b\\")
         elif action == "kill":
@@ -50,7 +52,7 @@ def test_return_to_outer_shell_restores_display(sessions, action, modes):
         else:
             frontend, = psutil.Process(outer.pid).children()
             frontend.send_signal(signal.SIGTERM)
-    outer.expect_exact("BASE:~> ")
+    outer.expect_prompt("BASE:~> ")
     screen = pyte.HistoryScreen(80, 24)
     stream = pyte.Stream(screen)
     stream.feed(capture.getvalue())
@@ -63,7 +65,7 @@ def test_return_to_outer_shell_restores_display(sessions, action, modes):
     start = len(capture.getvalue())
     outer.sendline("stty -g > ../after; seq 1 30; printf '%100s\\n' WRAP_END; printf 'q#AFTER_EXIT\\nSECOND_LINE\\n'")
     outer.expect_exact("q#AFTER_EXIT\r\nSECOND_LINE\r\n")
-    outer.expect_exact("BASE:~> ")
+    outer.expect_prompt("BASE:~> ")
     stream.feed(capture.getvalue()[start:])
     assert screen.cursor.y == 23
     assert screen.display[-1].startswith("BASE:~> ")
@@ -89,13 +91,13 @@ def test_switch_redraws_target_after_source_display_modes(sessions, modes):
     source.logfile_read = capture
     source.sendline(f"printf '{modes}'; imx attach target")
     source.expect_exact("TARGET_FIRST")
-    source.expect_exact("IMX_PROMPT> ")
+    source.expect_prompt("IMX_PROMPT> ")
     screen = pyte.Screen(80, 24)
     pyte.Stream(screen).feed(capture.getvalue())
-    assert screen.display[0].startswith("TARGET_FIRST")
-    assert screen.display[1].startswith("TARGET_SECOND")
-    assert screen.buffer[0][0].bold
-    assert screen.buffer[0][0].fg != "default"
+    assert screen.display[1][1:].startswith("TARGET_FIRST")
+    assert screen.display[2][1:].startswith("TARGET_SECOND")
+    assert screen.buffer[1][1].bold
+    assert screen.buffer[1][1].fg != "default"
     assert screen.margins is None or screen.margins == (0, 23)
     assert "SESSION=target" in sessions.command(source, "printf 'SESSION=%s\\n' \"$IMX_SESSION\"")
 
@@ -104,7 +106,7 @@ def test_switch_redraws_target_after_source_display_modes(sessions, modes):
 def test_detach_uses_resized_terminal_dimensions(sessions, rows, cols):
     child = sessions.spawn()
     child.setwinsize(rows, cols)
-    sessions.wait(lambda: f"{rows} {cols}" in sessions.command(child, "stty size"))
+    sessions.wait(lambda: f"{rows - 2} {cols - 2}" in sessions.command(child, "stty size"))
     capture = io.StringIO()
     child.logfile_read = capture
     sessions.command(child, "printf '\\033[3;8r\\033[?6h\\033[?7l'")
@@ -128,7 +130,7 @@ def test_session_exit_returns_to_top_of_its_pane(sessions, shell, action, number
         directory = sessions.home / directory_name
         directory.mkdir()
         terminal.child.sendline(f"cd {shlex.quote(str(directory))}; printf '\\nDISPLAY_DIRECTORY_READY\\n'")
-        terminal.child.expect_exact("\r\nDISPLAY_DIRECTORY_READY\r\n")
+        terminal.child.expect_screen("DISPLAY_DIRECTORY_READY")
     terminal.split(direction)
     terminal.visible("1: shell")
     width = 50 if direction == "right" else 100

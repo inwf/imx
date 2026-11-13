@@ -1,3 +1,4 @@
+import copy
 import io
 import json
 import shlex
@@ -5,11 +6,10 @@ import sys
 import time
 
 import pexpect
-import pyte
 import psutil
 import pytest
 
-from conftest import ROOT, SessionEnvironment
+from conftest import ROOT, ScreenProcess, SessionEnvironment, TerminalScreen, TerminalStream
 
 
 class PaneTerminal:
@@ -17,12 +17,13 @@ class PaneTerminal:
         self.sessions = sessions
         self.child = child if child is not None else sessions.spawn(name, initialize=initialize, rows=30, cols=100)
         if child is None and not initialize:
-            self.child.sendline("printf '\\nPANE_READY\\n'")
-            self.child.expect_exact("\r\nPANE_READY\r\n")
+            self.child.sendline("printf '\\nPANE_%s\\n' READY")
+            self.child.expect_exact("PANE_READY")
         self.capture = io.StringIO()
         self.child.logfile_read = self.capture
-        self.screen = pyte.Screen(100, 30)
-        self.stream = pyte.Stream(self.screen)
+        rows, cols = self.child.getwinsize()
+        self.screen = copy.deepcopy(self.child.screen) if isinstance(self.child, ScreenProcess) else TerminalScreen(cols, rows)
+        self.stream = TerminalStream(self.screen)
         self.offset = 0
 
     def pump(self):
@@ -357,10 +358,8 @@ def test_close_session_shared_with_another_pane(sessions):
     terminal.visible("1: dev")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "2")
     terminal.child.send("\x1bw")
-    terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
-    terminal.visible("0: shell")
+    terminal.child.expect(pexpect.EOF)
     assert sessions.sessions() == []
-    terminal.command("printf ready", "remaining-shell", "ready")
 
 
 @pytest.mark.parametrize("key, shortcut", [("F8", "\x1b[19~"), ("Escape", "\x1b")])
@@ -640,21 +639,20 @@ def test_idle_panes_wait_for_events(sessions):
 
 @pytest.mark.parametrize("close", ["exit\r", "\x1bw"])
 def test_closing_last_pane_restores_outer_terminal(sessions, close):
-    outer = pexpect.spawn("/bin/bash", ["--noprofile", "--norc"], env=sessions.environment,
+    outer = ScreenProcess("/bin/bash", ["--noprofile", "--norc"], env=sessions.environment,
                           cwd=str(sessions.path), dimensions=(30, 100), encoding="utf-8", timeout=10)
     sessions.clients.append(outer)
     outer.delaybeforesend = 0
-    outer.expect(r"[#$] ")
+    outer.expect_prompt()
     outer.sendline("stty -g > pane-before; imx attach dev; printf 'WORKSPACE_CLOSED\\n'")
-    outer.expect(r"[#$] ")
+    outer.expect_screen("0: dev")
+    outer.expect_prompt()
     terminal = PaneTerminal(sessions, child=outer)
     terminal.split()
     terminal.visible("1: shell")
     outer.send(close)
     terminal.wait(lambda: all("1: shell" not in row for row in terminal.screen.display))
     outer.send("\x1b\\")
-    terminal.visible("0: shell")
-    outer.send(close)
     outer.expect_exact("WORKSPACE_CLOSED\r\n")
     terminal.wait(lambda: terminal.screen.display[0].startswith("WORKSPACE_CLOSED"))
     outer.sendline("stty -g > pane-after; printf '\\nOUTER_RESTORED\\n'")

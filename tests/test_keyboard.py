@@ -19,8 +19,8 @@ def set_detach_binding(sessions, key, **modifiers):
 
 def input_reader(sessions):
     child = sessions.spawn()
-    child.sendline("stty raw -echo; printf '\\033[>5u\\033[>4;2mINPUT_READY'; cat > input.bin")
-    child.expect_exact("INPUT_READY")
+    child.sendline("stty raw -echo; printf '\\033[>5u\\033[>4;2m\\033[?2004hINPUT_READY'; cat > input.bin")
+    child.expect_screen("INPUT_READY")
     path = sessions.path / "input.bin"
     sessions.wait(path.exists)
     return child, path
@@ -47,7 +47,7 @@ def input_reader(sessions):
 def test_keyboard_detach_keeps_application_and_other_clients(sessions, sequence):
     child, path = input_reader(sessions)
     observer = sessions.spawn(initialize=False)
-    observer.expect_exact("INPUT_READY")
+    observer.expect_screen("INPUT_READY")
     original_pid = sessions.sessions()[0]["PID"]
     child.send("before" + sequence + "discarded")
     child.expect(pexpect.EOF)
@@ -56,7 +56,7 @@ def test_keyboard_detach_keeps_application_and_other_clients(sessions, sequence)
     assert observer.isalive()
     assert sessions.sessions()[0]["PID"] == original_pid
     attached = sessions.spawn(initialize=False)
-    attached.expect_exact("INPUT_READY")
+    attached.expect_screen("INPUT_READY")
     attached.send("after")
     sessions.wait(lambda: path.read_bytes() == b"beforeafter")
 
@@ -73,39 +73,39 @@ def test_keyboard_detach_across_every_read_boundary(sessions, sequence):
         sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
         assert path.read_bytes() == b"before" * split
         child = sessions.spawn(initialize=False)
-        child.expect_exact("INPUT_READY")
+        child.expect_screen("INPUT_READY")
 
 
-@pytest.mark.parametrize("sequence", [
-    "\x1c",
-    "\x1b[92;5u",
-    "\x1b[27;5;92~",
-    "\x1b[92;3:3u",
-    "\x1b[92;67:3u",
-    "\x1b[92;1u",
-    "\x1b[92;6u",
-    "\x1b[92;7u",
-    "\x1b[92;13u",
-    "\x1b[91;5u",
-    "\x1b[93;5u",
-    "\x1b[27;6;92~",
-    "\x1b[27;7;92~",
-    "\x1b[27;5;93~",
-    "\x1b[?92;3u",
-    "\x1b[92;0u",
-    "\x1b[27;0;92~",
-    "\x1b[27;65539;92~",
-    "\x1b[92;65539u",
-    "\x1b[A\x1b[B\x1b[I\x1b[O",
-    "\x1b[1;2R\x1b[?1;2c",
-    "\x1b[<0;10;20M",
-    "\x1b[27;3;92u",
-    "中文\x00\x7f",
+@pytest.mark.parametrize("sequence, forwarded", [
+    ("\x1c", "\x1b[92;5u"),
+    ("\x1b[92;5u", "\x1b[92;5u"),
+    ("\x1b[27;5;92~", "\x1b[92;5u"),
+    ("\x1b[92;3:3u", ""),
+    ("\x1b[92;67:3u", ""),
+    ("\x1b[92;1u", "\\"),
+    ("\x1b[92;6u", "\x1b[92;6u"),
+    ("\x1b[92;7u", "\x1b[92;7u"),
+    ("\x1b[92;13u", "\x1b[92;13u"),
+    ("\x1b[91;5u", "\x1b[91;5u"),
+    ("\x1b[93;5u", "\x1b[93;5u"),
+    ("\x1b[27;6;92~", "\x1b[92;6u"),
+    ("\x1b[27;7;92~", "\x1b[92;7u"),
+    ("\x1b[27;5;93~", "\x1b[93;5u"),
+    ("\x1b[?92;3u", ""),
+    ("\x1b[92;0u", "\\"),
+    ("\x1b[27;0;92~", "\x1b[27;0;92~"),
+    ("\x1b[27;65539;92~", "\x1b[27;65539;92~"),
+    ("\x1b[92;65539u", "\x1b[92;65539u"),
+    ("\x1b[A\x1b[B\x1b[I\x1b[O", "\x1b[A\x1b[B"),
+    ("\x1b[1;2R\x1b[?1;2c", "\x1b[13;2~"),
+    ("\x1b[<0;10;20M", ""),
+    ("\x1b[27;3;92u", "\x1b[27;3u"),
+    ("中文\x00\x7f", "中文\x1b[64;5u\x7f"),
 ])
-def test_unbound_keyboard_input_is_forwarded_unchanged(sessions, sequence):
+def test_unbound_keyboard_input_follows_application_protocol(sessions, sequence, forwarded):
     child, path = input_reader(sessions)
     child.send(sequence + "received")
-    expected = (sequence + "received").encode()
+    expected = (forwarded + "received").encode()
     sessions.wait(lambda: path.read_bytes() == expected)
     assert child.isalive()
     child.send("\x1b[92;3u")
@@ -125,11 +125,11 @@ def test_bracketed_paste_keeps_shortcut_bytes(sessions):
     child.expect(pexpect.EOF)
 
 
-@pytest.mark.parametrize("sequence", ["\x1b", "\x1b[", "\x1b[92;", "\x1b[27;3;"])
-def test_incomplete_keyboard_input_is_forwarded_after_timeout(sessions, sequence):
+@pytest.mark.parametrize("sequence, forwarded", [("\x1b", "\x1b[27u"), ("\x1b[", "\x1b["), ("\x1b[92;", "\x1b[92;"), ("\x1b[27;3;", "\x1b[27;3;")])
+def test_incomplete_keyboard_input_is_forwarded_after_timeout(sessions, sequence, forwarded):
     child, path = input_reader(sessions)
     child.send(sequence)
-    sessions.wait(lambda: path.read_bytes() == sequence.encode(), timeout=1)
+    sessions.wait(lambda: path.read_bytes() == forwarded.encode(), timeout=1)
     child.send("\x1b[92;3u")
     child.expect(pexpect.EOF)
 
@@ -149,7 +149,7 @@ def test_keyboard_detach_after_session_switch(sessions):
     target.expect(pexpect.EOF)
     source = sessions.spawn(name="source")
     source.sendline("imx attach dev")
-    source.expect_exact("INPUT_READY")
+    source.expect_screen("INPUT_READY")
     source.send("switched\x1b[92;3u")
     source.expect(pexpect.EOF)
     sessions.wait(lambda: all(row["CLIENTS"] == "0" for row in sessions.sessions()))
@@ -193,11 +193,11 @@ def test_configured_shortcut_detaches_across_terminal_encodings(sessions, key, m
     child.expect(pexpect.EOF)
     set_detach_binding(sessions, key, **modifiers)
     child = sessions.spawn(initialize=False)
-    child.expect_exact("INPUT_READY")
+    child.expect_screen("INPUT_READY")
     child.send("before\x1b\\\x1b[92;3u" + sequence)
     child.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
-    assert path.read_bytes() == b"before\x1b\\\x1b[92;3u"
+    assert path.read_bytes() == b"before\x1b[92;3u\x1b[92;3u"
 
 
 def test_detach_binding_can_reassign_a_focus_shortcut(sessions):
@@ -217,7 +217,8 @@ def test_configured_shortcut_preserves_unbound_keys_releases_and_paste(sessions)
     unbound = "xX\x18\x1b[120;5u\x1b[120;6:3u\x1b[120;8u\x1c"
     paste = "\x1b[200~X\x1b[120;6u\x1b]unfinished\x1b[201~"
     child.send(unbound + paste + "received")
-    sessions.wait(lambda: path.read_bytes() == (unbound + paste + "received").encode())
+    encoded = "xX\x1b[120;5u\x1b[120;5u\x1b[120;8u\x1b[92;5u"
+    sessions.wait(lambda: path.read_bytes() == (encoded + paste + "received").encode())
     assert child.isalive()
     child.send("\x1b[120;6u")
     child.expect(pexpect.EOF)
@@ -237,7 +238,7 @@ def test_configured_shortcut_preserves_fragmented_sequences(sessions, sequence):
     raw = sequence.encode()
     for split in range(1, len(raw)):
         child = sessions.spawn(initialize=False)
-        child.expect_exact("INPUT_READY")
+        child.expect_screen("INPUT_READY")
         os.write(child.child_fd, b"before" + raw[:split])
         sessions.wait(lambda: path.read_bytes() == b"before" * split)
         os.write(child.child_fd, raw[split:])
@@ -254,21 +255,22 @@ def test_keybinding_changes_apply_on_reattach_and_survive_session_switch(session
     source = sessions.spawn("source")
     set_detach_binding(sessions, "p", ctrl=True)
     source.sendline("imx attach dev")
-    source.expect_exact("INPUT_READY")
+    source.expect_screen("INPUT_READY")
     source.send("\x10\x1c\x18")
     source.expect(pexpect.EOF)
-    sessions.wait(lambda: path.read_bytes() == b"\x10\x1c")
+    sessions.wait(lambda: path.read_bytes() == b"\x1b[112;5u\x1b[92;5u")
     attached = sessions.spawn(initialize=False)
-    attached.expect_exact("INPUT_READY")
+    attached.expect_screen("INPUT_READY")
     attached.send("\x18\x1c\x10")
     attached.expect(pexpect.EOF)
-    sessions.wait(lambda: path.read_bytes() == b"\x10\x1c\x18\x1c")
+    sessions.wait(lambda: path.read_bytes() == b"\x1b[112;5u\x1b[92;5u\x1b[120;5u\x1b[92;5u")
 
 
 def test_control_string_responses_do_not_trigger_alt_shortcuts(sessions):
     child, path = input_reader(sessions)
     responses = "\x1b]2;title\x1b\\\x1bP1$r0m\x1b\\\x1b_Gi=1;OK\x1b\\"
     child.send(responses + "received")
-    sessions.wait(lambda: path.read_bytes() == (responses + "received").encode())
+    sessions.wait(lambda: path.read_bytes() == b"\x1b]2;title\x1b\\\x1bP1$r0m\x1b\\received")
+    assert child.isalive()
     child.send("\x1b\\")
     child.expect(pexpect.EOF)

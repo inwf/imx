@@ -33,7 +33,7 @@ def request_failure(sessions, name, tag, payload):
 def test_rename_preserves_process_history_directory_and_connections(sessions):
     first = sessions.spawn("old")
     second = sessions.spawn("old", initialize=False)
-    second.expect_exact("IMX_PROMPT> ")
+    second.expect_prompt("IMX_PROMPT> ")
     directory = sessions.path / "working directory"
     directory.mkdir()
     sessions.command(first, f"cd {shlex.quote(str(directory))}; export RETAINED=yes; printf 'RENAME_HISTORY\\n'")
@@ -71,7 +71,7 @@ def test_current_session_rename_survives_repeated_changes_and_name_reuse(session
     sessions.wait(lambda: next(row for row in sessions.sessions() if row["NAME"] == "final")["CLIENTS"] == "0")
     assert "REUSED" in sessions.command(replacement, "printf 'REUSED\\n'")
     attached = sessions.spawn("final", initialize=False)
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
     assert "RESTORED" in sessions.command(attached, "printf 'RESTORED\\n'")
 
 
@@ -81,9 +81,9 @@ def test_renamed_session_can_switch_and_return(sessions):
     sessions.run("rename", "source", "renamed")
     assert "imx:" not in sessions.command(child, "imx attach renamed")
     child.sendline("imx attach target")
-    child.expect(r"[#$] ")
+    child.expect_prompt()
     child.sendline("imx attach renamed")
-    child.expect_exact("IMX_PROMPT> ")
+    child.expect_prompt("IMX_PROMPT> ")
     assert "RETURNED" in sessions.command(child, "printf 'RETURNED\\n'")
     assert next(row for row in sessions.sessions() if row["NAME"] == "renamed")["PID"] == pid
 
@@ -99,7 +99,7 @@ def test_rename_detached_session_and_same_name(sessions, name):
     sessions.run("rename", "--", name, name)
     assert sessions.sessions() == [{**before, "NAME": name}]
     attached = sessions.spawn(name, initialize=False)
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
 
 
 @pytest.mark.parametrize("old,new,error", [
@@ -224,15 +224,15 @@ def test_rename_refreshes_prompt_and_environment(sessions, shell):
     setup_shell(sessions, shell)
     child = enter(sessions)
     child.sendline("imx rename inside")
-    child.expect_exact("[inside] BASE:~> ")
+    child.expect_prompt("[inside] BASE:~> ")
     child.sendline("printf '\\nSESSION=%s\\n' \"$IMX_SESSION\"")
-    child.expect_exact("\r\nSESSION=inside\r\n")
-    child.expect_exact("[inside] BASE:~> ")
+    child.expect_screen("SESSION=inside")
+    child.expect_prompt("[inside] BASE:~> ")
     sessions.run("rename", "inside", "outside")
     child.sendline("true")
-    child.expect_exact("[outside] BASE:~> ")
+    child.expect_prompt("[outside] BASE:~> ")
     child.sendline("printf '\\nSESSION=%s\\n' \"$IMX_SESSION\"")
-    child.expect_exact("\r\nSESSION=outside\r\n")
+    child.expect_screen("SESSION=outside")
 
 
 def test_rename_updates_all_pane_titles_and_close_target(sessions):
@@ -284,7 +284,7 @@ def test_rename_preserves_vim_and_unsaved_changes(sessions):
     sessions.run("rename", "dev", "editor")
     assert "UNSAVED_RENAME_TEXT" in sessions.run("cat", "editor").stdout
     child.send(":wq\r")
-    child.expect_exact("IMX_PROMPT> ")
+    child.expect_prompt("IMX_PROMPT> ")
     assert (sessions.path / "document.txt").read_text() == "UNSAVED_RENAME_TEXT\n"
 
 

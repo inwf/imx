@@ -255,7 +255,7 @@ def test_resize_shortcuts_restore_zoom_and_resize_original_separator(sessions, k
 def test_closing_zoomed_pane_restores_remaining_panes(sessions, close):
     terminal = PaneTerminal(sessions)
     terminal.child.send(ZOOM)
-    terminal.command("stty size", "single-pane", "30 100\n")
+    terminal.command("stty size", "single-pane", "28 98\n")
     terminal.split()
     terminal.visible("1: shell")
     terminal.child.send(ZOOM)

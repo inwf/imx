@@ -32,14 +32,14 @@ def test_readonly_connection_and_local_resize_preserve_session_size(sessions, na
     writer = sessions.spawn(name, rows=30, cols=100)
     observer = observe(sessions, name=name)
     assert sessions.sessions()[0]["CLIENTS"] == "2"
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
     observer.screen.resize(40, 140)
     observer.child.setwinsize(40, 140)
     observer.visible(f"Read-only: {name}")
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
     observer.child.send("\x1b\\")
     observer.child.expect(pexpect.EOF)
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
 
 
 @pytest.mark.parametrize("close", ["\x1b\\", "\x1bw", "q", "\x1b", "\x1b[113u", "\x1b[27u"])
@@ -96,10 +96,10 @@ def test_readonly_follows_source_size_and_crops_without_reflowing(sessions):
     writer = sessions.spawn(rows=30, cols=100)
     observer = observe(sessions)
     writer.setwinsize(40, 140)
-    sessions.wait(lambda: "40 140" in sessions.command(writer, "stty size"))
+    sessions.wait(lambda: "38 138" in sessions.command(writer, "stty size"))
     writer.sendline("printf '\\033[2J\\033[H\\033[35;105HFAR_RIGHT'; sleep 1")
     observer.visible("FAR_RIGHT")
-    assert "40 140" in sessions.command(writer, "stty size")
+    assert "38 138" in sessions.command(writer, "stty size")
 
 
 def test_readonly_only_session_answers_terminal_queries(sessions):
@@ -139,7 +139,7 @@ def test_switch_to_readonly_preserves_sessions_and_target_size(sessions, same, c
         {"source": "1"} if same else {"source": "0", "target": "2"}
     ))
     if not same:
-        assert "40 120" in sessions.command(target, "stty size")
+        assert "38 118" in sessions.command(target, "stty size")
     observer.child.send(close)
     observer.child.expect(pexpect.EOF)
     assert {row["NAME"] for row in sessions.sessions()} == ({"source"} if same else {"source", "target"})
@@ -157,7 +157,7 @@ def test_readonly_in_split_pane_keeps_other_panes_interactive(sessions):
     terminal.focus(1)
     terminal.child.send("\x1bw")
     terminal.wait(lambda: all("1: target" not in row for row in terminal.screen.display))
-    assert "40 120" in sessions.command(target, "stty size")
+    assert "38 118" in sessions.command(target, "stty size")
 
 
 @pytest.mark.parametrize("close", ["q", "\x1b"])
@@ -174,7 +174,7 @@ def test_readonly_quit_in_split_pane_returns_to_shell(sessions, close):
     terminal.command("printf returned", "readonly-exited", "returned")
     terminal.focus(0)
     terminal.command("printf ready", "other-pane-alive", "ready")
-    assert "40 120" in sessions.command(target, "stty size")
+    assert "38 118" in sessions.command(target, "stty size")
     assert {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "target": "1"}
 
 
@@ -207,7 +207,7 @@ def test_backend_rejects_modification_from_readonly_connection(sessions, tag, pa
                 if response == 10:
                     assert result == b"ReadOnlyClient"
                     break
-    assert "24 80" in sessions.command(writer, "stty size")
+    assert "22 78" in sessions.command(writer, "stty size")
     assert "FORBIDDEN" not in sessions.run("cat", "dev").stdout
 
 
@@ -227,20 +227,20 @@ def test_readonly_never_becomes_resize_leader(sessions):
     first = sessions.spawn(rows=30, cols=100)
     observer = observe(sessions)
     second = sessions.spawn(rows=40, cols=120)
-    assert "40 120" in sessions.command(first, "stty size")
+    assert "38 118" in sessions.command(first, "stty size")
     second.send("\x1b\\")
     second.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "2")
-    assert "30 100" in sessions.command(first, "stty size")
+    assert "28 98" in sessions.command(first, "stty size")
     first.send("\x1b\\")
     first.expect(pexpect.EOF)
     observer.child.setwinsize(10, 20)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "1")
     writer = sessions.spawn(rows=35, cols=110)
-    assert "35 110" in sessions.command(writer, "stty size")
+    assert "33 108" in sessions.command(writer, "stty size")
     observer.child.send("\x1bw")
     observer.child.expect(pexpect.EOF)
-    assert "35 110" in sessions.command(writer, "stty size")
+    assert "33 108" in sessions.command(writer, "stty size")
 
 
 def test_readonly_recovers_after_tiny_and_maximum_window_sizes(sessions):
@@ -253,7 +253,7 @@ def test_readonly_recovers_after_tiny_and_maximum_window_sizes(sessions):
     observer.screen.resize(256, 512)
     observer.child.setwinsize(256, 512)
     observer.visible("Read-only: dev")
-    assert "24 80" in sessions.command(writer, "stty size")
+    assert "22 78" in sessions.command(writer, "stty size")
     observer.screen.resize(20, 70)
     observer.child.setwinsize(20, 70)
     observer.visible("Read-only: dev")
@@ -268,17 +268,17 @@ def test_readonly_mouse_scroll_and_paste_keep_history_local(sessions, mouse_mode
     observer.visible("LOCAL-100")
     observer.child.send("\x1b[H")
     observer.visible("LOCAL-001")
-    assert "LOCAL-001" in observer.screen.display[0]
+    assert "LOCAL-001" in observer.screen.display[1]
     observer.child.send("\x1b[200~\x1b[F\x1bw\x1b[201~")
     observer.pump()
     observer.visible("LOCAL-001")
     observer.child.send("\x1b[<65;5;5M")
-    observer.wait(lambda: "LOCAL-004" in observer.screen.display[0])
+    observer.wait(lambda: "LOCAL-004" in observer.screen.display[1])
     observer.child.send("\x1b[<65;5;5M")
-    observer.wait(lambda: "LOCAL-007" in observer.screen.display[0])
+    observer.wait(lambda: "LOCAL-007" in observer.screen.display[1])
     observer.child.send("\x1b[F")
     observer.visible("LOCAL-100")
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
 
 
 def test_readonly_preserves_hyperlinks_through_local_redraw(sessions):

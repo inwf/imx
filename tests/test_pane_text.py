@@ -25,10 +25,10 @@ def test_unicode_input_reaches_application_unchanged(sessions, mode, layout):
     terminal.child.sendline(shlex.join([sys.executable, str(ROOT / "tests/pane_app.py"), str(destination), mode]))
     terminal.wait(destination.exists)
     if mode == "kitty":
-        sequence = "\x1b[>31u" if layout == "single" else "\x1b[=31u"
+        sequence = "\x1b[=31u"
         terminal.wait(lambda: sequence in terminal.capture.getvalue())
     text = "中文输入测试你好世界é界👩‍🚀"
-    expected = ("".join(f"\x1b[{ord(char)};;{ord(char)}u" for char in text) if layout != "single" and mode == "kitty" else text).encode()
+    expected = ("".join(f"\x1b[{ord(char)};;{ord(char)}u" for char in text) if mode == "kitty" else text).encode()
     terminal.child.send(text)
     terminal.wait(lambda: len(destination.read_bytes()) >= len(expected))
     assert destination.read_bytes() == expected
@@ -59,7 +59,8 @@ def test_unicode_input_across_byte_boundaries(sessions):
 
 
 def test_shell_panes_keep_ime_text_reporting(sessions):
-    terminal = PaneTerminal(sessions)
+    terminal = PaneTerminal(sessions, child=sessions.spawn(initialize=False))
+    terminal.child.expect_prompt()
     terminal.split()
     terminal.visible("1: shell")
     assert "\x1b[>5u" in terminal.capture.getvalue()

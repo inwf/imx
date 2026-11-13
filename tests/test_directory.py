@@ -19,8 +19,8 @@ def test_directory_tracks_cd_and_reattach(sessions, shell):
     directory = sessions.home / "项目 with spaces"
     directory.mkdir()
     child.sendline(f"cd {shlex.quote(str(directory))}; printf '\\nDIRECTORY_READY\\n'")
-    child.expect_exact("\r\nDIRECTORY_READY\r\n")
-    child.expect_exact("BASE:")
+    child.expect_screen("DIRECTORY_READY")
+    child.expect_prompt("[dev] BASE:~/项目 with spaces> ")
     current = sessions.sessions()[0]
     assert current["DIRECTORY"] == str(directory)
     assert current["PID"] == original["PID"]
@@ -29,10 +29,10 @@ def test_directory_tracks_cd_and_reattach(sessions, shell):
     child.expect(pexpect.EOF)
     sessions.path = sessions.home
     attached = sessions.spawn(initialize=False)
-    attached.expect_exact("BASE:")
+    attached.expect_prompt("[dev] BASE:~/项目 with spaces> ")
     assert sessions.sessions()[0]["DIRECTORY"] == str(directory)
     attached.sendline("cd ..; printf '\\nDIRECTORY_CHANGED\\n'")
-    attached.expect_exact("\r\nDIRECTORY_CHANGED\r\n")
+    attached.expect_screen("DIRECTORY_CHANGED")
     assert sessions.sessions()[0]["DIRECTORY"] == str(sessions.home)
 
 

@@ -81,7 +81,7 @@ def test_backend_crash_preserves_other_session_program_and_history(sessions):
     healthy.send("\x1b\\")
     healthy.expect(pexpect.EOF)
     attached = sessions.spawn("healthy", initialize=False)
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
     assert "retained" in sessions.command(attached, "printf '%s\\n' \"$ISOLATED_VALUE\"")
     sessions.spawn("lost")
     assert backends(sessions)["lost"].pid != processes["lost"].pid

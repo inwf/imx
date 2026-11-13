@@ -328,7 +328,7 @@ def test_uninstall_reports_edited_shell_integration(installation):
     assert path.read_text() == edited
     assert installation.binary.exists()
     child.sendline("true")
-    child.expect_exact("[dev] BASE:~> ")
+    child.expect_prompt("[dev] BASE:~> ")
     path.write_text(installed)
     installation.run("uninstall")
     child.expect(pexpect.EOF)

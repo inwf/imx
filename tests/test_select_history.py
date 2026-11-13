@@ -49,7 +49,7 @@ def test_preview_scroll_holds_history_and_returns_to_live(sessions):
     assert preview_rows(terminal) == original
     assert shown(terminal, "> alpha")
     assert sessions.sessions()[0]["CLIENTS"] == "1"
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
     wheel(terminal, 100)
     terminal.visible("NEW-050")
     sessions.command(writer, "printf '\\033[2J\\033[HFOLLOW_TOP\\n'")
@@ -83,7 +83,7 @@ def test_preview_history_survives_resize_and_list_changes(sessions):
     terminal.visible("BETA_LIVE")
     terminal.child.send("k")
     terminal.visible("HISTORY-200")
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
     cancel(terminal)
 
 
@@ -153,8 +153,8 @@ def test_preview_history_inside_current_session(sessions):
     wheel(terminal, 100)
     terminal.visible("HISTORY-200")
     writer.send("q")
-    writer.expect_exact("IMX_PROMPT> ")
-    assert "30 100" in sessions.command(writer, "stty size")
+    writer.expect_prompt("IMX_PROMPT> ")
+    assert "28 98" in sessions.command(writer, "stty size")
 
 
 def test_preview_history_inside_resized_split_pane(sessions):
@@ -175,7 +175,7 @@ def test_preview_history_inside_resized_split_pane(sessions):
     terminal.child.send("q")
     terminal.wait(lambda: not shown(terminal, "Click/Wheel"))
     terminal.command("printf done", "preview-finished", "done")
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
 
 
 def test_preview_scrolling_preserves_large_frame_delivery(sessions):

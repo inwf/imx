@@ -5,7 +5,7 @@ import shutil
 import pexpect
 import psutil
 
-from conftest import BINARY, SessionEnvironment
+from conftest import BINARY, ScreenProcess, SessionEnvironment
 
 
 def verify(prefix, terminate_legacy):
@@ -16,14 +16,14 @@ def verify(prefix, terminate_legacy):
     environment.environment["PATH"] = f"{environment.binary.parent}:{environment.environment['PATH']}"
     try:
         assert environment.run("-v").stdout == "imx 0.4.1\n"
-        client = pexpect.spawn(str(environment.binary), ["attach", "legacy"],
+        client = ScreenProcess(str(environment.binary), ["attach", "legacy"],
                                cwd=str(environment.path), env=environment.environment,
                                dimensions=(24, 80), encoding="utf-8", timeout=10)
         environment.clients.append(client)
         client.expect(r"[#$] ")
         client.sendline("stty -echo; PS1='IMX_PROMPT> '; PROMPT_COMMAND=; printf '\\nINITIALIZED\\n'")
         client.expect_exact("\r\nINITIALIZED\r\n")
-        client.expect_exact("IMX_PROMPT> ")
+        client.expect_prompt("IMX_PROMPT> ")
         environment.command(client, "export LEGACY_VALUE=retained; printf 'LEGACY_HISTORY\\n'")
         original = environment.sessions()[0]["PID"]
         assert (environment.runtime / "server.sock").exists()
@@ -36,7 +36,7 @@ def verify(prefix, terminate_legacy):
         assert environment.run("__complete", "sessions", "").stdout == "legacy\n"
         assert "LEGACY_HISTORY" in environment.run("cat", "legacy").stdout
         client = environment.spawn("legacy", initialize=False)
-        client.expect_exact("IMX_PROMPT> ")
+        client.expect_prompt("IMX_PROMPT> ")
         assert "retained" in environment.command(client, "printf '%s\\n' \"$LEGACY_VALUE\"")
         output = environment.command(client, "imx attach target; printf 'SWITCH_STATUS=%s\\n' \"$?\"")
         assert "SwitchUnsupportedByBackend" in output and "SWITCH_STATUS=1" in output

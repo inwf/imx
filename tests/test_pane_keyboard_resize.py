@@ -129,7 +129,7 @@ def test_keyboard_resize_all_four_central_edges(sessions, primary, shrink):
     terminal = PaneTerminal(sessions)
     terminal.screen.resize(lines=60, columns=180)
     terminal.child.setwinsize(60, 180)
-    terminal.command("stty size", "canvas-size", "60 180\n")
+    terminal.command("stty size", "canvas-size", "58 178\n")
     for number in (1, 2):
         terminal.split(primary)
         terminal.visible(f"{number}: shell")
@@ -207,8 +207,9 @@ def test_keyboard_resize_application_encodings_and_input(sessions, mode, number,
             for shrink in (False, True) for direction in OPPOSITE
         ))
         terminal.child.send("a")
-        terminal.wait(lambda: destination.read_bytes() == b"a")
-        assert json.loads(destination.with_suffix(".json").read_text())["cols"] == 100
+        first_key = b"\x1b[97;;97u" if mode == "kitty" else b"a"
+        terminal.wait(lambda: destination.read_bytes() == first_key)
+        assert json.loads(destination.with_suffix(".json").read_text())["cols"] == 98
         terminal.split()
         terminal.visible("1: shell")
         terminal.focus(0)
@@ -224,7 +225,7 @@ def test_keyboard_resize_application_encodings_and_input(sessions, mode, number,
     terminal.wait(lambda: json.loads(destination.with_suffix(".json").read_text())["cols"] == 48)
     terminal.child.send("b")
     encoded = b"\x1b[98;;98u" if mode == "kitty" else b"b"
-    terminal.wait(lambda: destination.read_bytes() == (b"a" if number == 0 else b"") + encoded)
+    terminal.wait(lambda: destination.read_bytes() == (first_key if number == 0 else b"") + encoded)
     terminal.focused(number)
 
 

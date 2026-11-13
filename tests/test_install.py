@@ -255,7 +255,7 @@ def test_reinstall_preserves_running_session(downloaded):
     child.send("\x1b\\")
     child.expect(pexpect.EOF)
     attached = downloaded.spawn(initialize=False)
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
     assert downloaded.sessions()[0]["PID"] == original_pid
     downloaded.run("uninstall")
     attached.expect(pexpect.EOF)

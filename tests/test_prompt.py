@@ -9,6 +9,8 @@ import pexpect
 import psutil
 import pytest
 
+from conftest import ScreenProcess
+
 
 BEGIN = "# BEGIN imx shell integration\n"
 END = "# END imx shell integration\n"
@@ -46,9 +48,9 @@ def setup_shell(environment, shell):
 
 def enter(environment, name="dev"):
     child = environment.spawn(name, initialize=False)
-    child.expect_exact(f"[{name}] BASE:")
+    child.expect_screen(f"[{name}] BASE:")
     child.sendline("cd")
-    child.expect_exact(f"[{name}] BASE:~> ")
+    child.expect_prompt(f"[{name}] BASE:~> ")
     return child
 
 
@@ -61,9 +63,9 @@ def test_session_prompt_preserves_shell_and_directory(sessions, shell):
     directory.mkdir()
     for _ in range(3):
         child.sendline("cd directory; cd ..; cd directory")
-        child.expect_exact("[dev] BASE:~/directory> ")
+        child.expect_prompt("[dev] BASE:~/directory> ")
         child.sendline("cd ..")
-        child.expect_exact("[dev] BASE:~> ")
+        child.expect_prompt("[dev] BASE:~> ")
     contents = path.read_text()
     assert contents.startswith(original)
     assert contents.count(BEGIN) == 1
@@ -84,14 +86,14 @@ def test_disabling_prompt_restores_files_and_running_prompt(sessions, shell):
     first = enter(sessions)
     settings(sessions, False)
     second = sessions.spawn("other", initialize=False)
-    second.expect_exact("BASE:")
+    second.expect_screen("BASE:")
     second.sendline("cd")
-    second.expect_exact("BASE:~> ")
+    second.expect_prompt("BASE:~> ")
     assert path.read_text() == original
     assert not (sessions.home / ".local/state/imx/shell").exists()
     first.sendline("true")
-    first.expect_exact("BASE:~> ")
-    assert "[dev]" not in first.before
+    first.expect_prompt("BASE:~> ")
+    assert "[dev]" not in first.screen.display[first.screen.cursor.y]
     if shell == "zsh":
         assert not (sessions.home / ".zlogin").exists()
     settings(sessions, True)
@@ -112,7 +114,7 @@ def test_bash_login_file_precedence(sessions, profile):
         (sessions.home / name).write_text(value)
     settings(sessions, True)
     child = sessions.spawn(initialize=False)
-    child.expect_exact(f"[dev] {profile}> ")
+    child.expect_prompt(f"[dev] {profile}> ")
     assert path.read_text().startswith(original)
     for name, value in originals.items():
         contents = (sessions.home / name).read_text()
@@ -133,13 +135,16 @@ def test_bash_prompt_command_theme_status_and_colors(sessions, array):
     )
     settings(sessions, True)
     child = sessions.spawn(initialize=False)
-    child.expect_exact("[dev] \x1b[32mSTATUS=0 BASE> \x1b[0m")
+    child.expect_prompt("[dev] STATUS=0 BASE> ")
+    assert child.screen.buffer[child.screen.cursor.y][7].fg == "green"
     for status, command in [(1, "false"), (0, "true"), (1, "false")]:
         child.sendline(command)
-        child.expect_exact(f"[dev] \x1b[32mSTATUS={status} BASE> \x1b[0m")
+        child.expect_prompt(f"[dev] STATUS={status} BASE> ")
+        assert child.screen.buffer[child.screen.cursor.y][7].fg == "green"
     child.sendline('. "$HOME/.bashrc"; printf "%s\\n" "${PROMPT_COMMAND[@]}"')
-    child.expect_exact("__user_prompt\r\n__imx_prompt\r\n")
-    child.expect_exact("[dev] \x1b[32mSTATUS=0 BASE> \x1b[0m")
+    child.expect_screen("__user_prompt")
+    child.expect_screen("__imx_prompt")
+    child.expect_prompt("[dev] STATUS=0 BASE> ")
 
 
 def test_fish_prompt_preserves_pipeline_status_and_theme_changes(sessions):
@@ -154,15 +159,15 @@ def test_fish_prompt_preserves_pipeline_status_and_theme_changes(sessions):
     )
     settings(sessions, True)
     child = sessions.spawn(initialize=False)
-    child.expect_exact("[dev] STATUS=0 PIPE=0 BASE> ")
+    child.expect_prompt("[dev] STATUS=0 PIPE=0 BASE> ")
     child.sendline("false | true")
-    child.expect_exact("[dev] STATUS=0 PIPE=1,0 BASE> ")
+    child.expect_prompt("[dev] STATUS=0 PIPE=1,0 BASE> ")
     child.sendline("false")
-    child.expect_exact("[dev] STATUS=1 PIPE=1 BASE> ")
+    child.expect_prompt("[dev] STATUS=1 PIPE=1 BASE> ")
     child.sendline("function fish_prompt; printf 'THEME> '; end")
-    child.expect_exact("[dev] THEME> ")
+    child.expect_prompt("[dev] THEME> ")
     child.sendline("true")
-    child.expect_exact("[dev] THEME> ")
+    child.expect_prompt("[dev] THEME> ")
 
 
 def test_zsh_zdotdir_and_login_theme(sessions):
@@ -176,9 +181,9 @@ def test_zsh_zdotdir_and_login_theme(sessions):
     login.write_text("precmd() { PROMPT=\"STATUS=$? LOGIN> \"; }\n")
     settings(sessions, True)
     child = sessions.spawn(initialize=False)
-    child.expect_exact("[dev] STATUS=0 LOGIN> ")
+    child.expect_prompt("[dev] STATUS=0 LOGIN> ")
     child.sendline("false")
-    child.expect_exact("[dev] STATUS=1 LOGIN> ")
+    child.expect_prompt("[dev] STATUS=1 LOGIN> ")
     assert rc.read_text().count(BEGIN) == 1
     assert login.read_text().count(BEGIN) == 1
     assert not (sessions.home / ".zshrc").exists()
@@ -189,15 +194,15 @@ def test_ordinary_shell_keeps_original_prompt(sessions, shell):
     setup_shell(sessions, shell)
     settings(sessions, True)
     enter(sessions)
-    child = pexpect.spawn(
+    child = ScreenProcess(
         sessions.environment["SHELL"], ["-l"], cwd=str(sessions.path),
         env=sessions.environment, encoding="utf-8", timeout=10,
     )
     sessions.clients.append(child)
-    child.expect_exact("BASE:")
+    child.expect_screen("BASE:")
     child.sendline("cd")
-    child.expect_exact("BASE:~> ")
-    assert "[dev]" not in child.before
+    child.expect_prompt("BASE:~> ")
+    assert "[dev]" not in child.screen.display[child.screen.cursor.y]
     child.sendline("exit")
     child.expect(pexpect.EOF)
 
@@ -221,8 +226,8 @@ def test_explicitly_disabled_prompt_preserves_shell_files(sessions, shell):
     path, original = setup_shell(sessions, shell)
     settings(sessions, False)
     child = sessions.spawn(initialize=False)
-    child.expect_exact("BASE:")
-    assert "[dev]" not in child.before
+    child.expect_screen("BASE:")
+    assert "[dev]" not in child.screen.display[child.screen.cursor.y]
     assert path.read_text() == original
     assert not (sessions.home / ".local/state/imx/shell").exists()
 
@@ -243,7 +248,7 @@ def test_shell_symlink_permissions_attributes_and_user_content(sessions):
         stream.write("\n# 用户追加的配置\n")
     settings(sessions, False)
     child = sessions.spawn("other", initialize=False)
-    child.expect_exact("BASE:")
+    child.expect_screen("BASE:")
     assert path.is_symlink()
     assert target.read_text() == original + "\n# 用户追加的配置\n"
     assert stat.S_IMODE(target.stat().st_mode) == 0o640
@@ -285,7 +290,7 @@ def test_connection_process_serializes_shell_setup(sessions):
         assert not list(sessions.runtime.glob("session-*.sock"))
     finally:
         os.close(descriptor)
-    child.expect_exact("[dev] BASE:")
+    child.expect_screen("[dev] BASE:")
     assert path.read_text().count(BEGIN) == 1
 
 

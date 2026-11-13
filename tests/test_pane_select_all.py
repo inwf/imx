@@ -136,11 +136,11 @@ def test_readonly_select_all_copies_source_history_without_footer_or_input(sessi
         observer.visible("1: shell")
         observer.focus(0)
     observer.child.send(shortcut)
-    observer.wait(lambda: observer.screen.buffer[0 if not split else 1][0 if not split else 1].reverse)
+    observer.wait(lambda: observer.screen.buffer[1][1].reverse)
     assert "\x1b]52;" not in observer.capture.getvalue()
     copy_text(observer, text)
     writer.child.send("\x03")
-    writer.command("stty size", "source-size-after-selection", "30 100\n")
+    writer.command("stty size", "source-size-after-selection", "28 98\n")
 
 
 def test_select_all_rejects_binding_conflicts(sessions):

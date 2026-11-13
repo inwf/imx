@@ -46,7 +46,7 @@ def snapshot_cycles(sessions, operation, cycles, sample_every=25):
             assert sessions.run("cat", "dev").stdout == expected
         elif operation == "attach":
             child = sessions.spawn(initialize=False)
-            child.expect_exact("IMX_PROMPT> ")
+            child.expect_prompt("IMX_PROMPT> ")
             child.send("\x1b\\")
             child.expect(pexpect.EOF)
             child.close()

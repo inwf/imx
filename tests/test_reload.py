@@ -195,7 +195,7 @@ def test_reload_updates_readonly_mouse_and_detach_without_resizing_source(sessio
     reload_terminal(observer)
     observer.child.send("\x1b[<64;5;5M" * 100)
     observer.visible("HISTORY-001")
-    assert "30 100" in sessions.command(writer, "stty size")
+    assert "28 98" in sessions.command(writer, "stty size")
     observer.focus(0)
     observer.child.send("\x1b[24~")
     observer.visible("0: shell")

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.18.0 — 2026-11-13
+
+### Changed
+
+- Attaching to a session immediately displays a highlighted pane border with its number and session name. Programs use the area inside the border, and resizing updates their terminal dimensions. Pane selection and copying are available immediately.
+- Alt+D and Alt+Shift+D split the focused pane. Detaching a standalone session connection returns to the outer terminal while keeping the session running; detaching within a split layout returns that pane to its shell.
+- Returning to the outer terminal preserves its existing contents and the session's final screen in history, and restores the terminal's display and input modes.
+
+### Fixed
+
+- Plain text input, including uppercase letters used by Vim, retains its original bytes when the application does not request all keys through the Kitty keyboard protocol.
+- Terminal response queue overflow reports an error and closes the affected session or pane while keeping other sessions and panes usable.
+- Temporary history and screen snapshot allocations return their pages to the operating system after transmission or disconnection, preventing retained memory after repeated requests.
+
+### Build and release
+
+- Compilation caches use GitHub's automatic eviction for unused or over-quota cache entries.
+
+### Upgrade notes
+
+- Start a new connection with the updated executable to use the bordered interface. Existing sessions keep their programs and history. The backend overflow and snapshot memory fixes apply to sessions started with the updated executable.
+
 ## 0.17.0 — 2026-11-11
 
 ### Added

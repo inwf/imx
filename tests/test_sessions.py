@@ -17,7 +17,7 @@ import psutil
 import pyte
 import pytest
 
-from conftest import BINARY, ROOT
+from conftest import BINARY, ROOT, ScreenProcess
 from test_prompt import configuration
 
 
@@ -25,7 +25,7 @@ def test_commands_and_empty_list(sessions):
     for args in [(), ("list",), ("ls",)]:
         assert sessions.run(*args).stdout == "No sessions.\n"
     assert not list(sessions.runtime.glob("*.sock"))
-    assert sessions.run("-v").stdout == "imx 0.17.0\n"
+    assert sessions.run("-v").stdout == "imx 0.18.0\n"
     help_text = sessions.run("help").stdout
     for command in ["attach", "read", "list", "cat", "detach", "kill", "update", "uninstall", "-v", "help"]:
         assert command in help_text
@@ -71,7 +71,7 @@ def test_session_creation_time(sessions, hours):
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
     sessions.environment["TZ"] = "UTC0"
     attached = sessions.spawn(initialize=False)
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
     assert sessions.sessions()[0]["CREATED"] == created
     assert sessions.sessions()[0]["PID"] == row["PID"]
 
@@ -95,14 +95,14 @@ def test_terminal_session_list_columns(sessions, created_format):
     for invocation in ("imx", "imx ls", "imx list"):
         output = sessions.command(clients[0], invocation)
         assert "\t" not in output
+        screen = clients[0].screen
+        header_line = max(index for index, line in enumerate(screen.display) if all(heading in line for heading in headings))
+        output = screen.display[header_line:header_line + len(rows) + 1]
         if baseline is None:
             baseline = output
         else:
             assert output == baseline
-        screen = pyte.Screen(240, 24)
-        pyte.Stream(screen).feed(output)
-        header_line = next(index for index, line in enumerate(screen.display) if all(heading in line for heading in headings))
-        positions = [screen.display[header_line].index(heading) for heading in headings] + [240]
+        positions = [screen.display[header_line].index(heading) for heading in headings] + [239]
         for line, row in enumerate(rows, start=header_line + 1):
             for index, heading in enumerate(headings):
                 text = "".join(screen.buffer[line][column].data
@@ -150,7 +150,7 @@ def test_detach_and_reattach_preserves_shell_and_history(sessions):
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
     assert "历史输出" in sessions.run("cat", "dev").stdout
     other = sessions.spawn(initialize=False)
-    other.expect_exact("IMX_PROMPT> ")
+    other.expect_prompt("IMX_PROMPT> ")
     assert "retained" in sessions.command(other, "printf '%s\\n' \"$IMX_VALUE\"")
     assert sessions.sessions()[0]["PID"] == original_pid
 
@@ -183,16 +183,16 @@ def test_history_overwrites_color_and_unicode(sessions):
 def test_terminal_resize_and_multiple_clients(sessions):
     first = sessions.spawn()
     second = sessions.spawn(initialize=False, rows=30, cols=100)
-    second.expect_exact("IMX_PROMPT> ")
-    assert "30 100" in sessions.command(second, "stty size")
+    second.expect_prompt("IMX_PROMPT> ")
+    assert "28 98" in sessions.command(second, "stty size")
     second.setwinsize(40, 120)
-    assert "40 120" in sessions.command(second, "stty size")
+    assert "38 118" in sessions.command(second, "stty size")
     assert sessions.sessions()[0]["CLIENTS"] == "2"
     second.send("\x1b\\")
     second.expect(pexpect.EOF)
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "1")
-    first.expect_exact("IMX_PROMPT> ")
-    assert "24 80" in sessions.command(first, "stty size")
+    first.expect_prompt("IMX_PROMPT> ")
+    assert "22 78" in sessions.command(first, "stty size")
 
 
 def test_kill_terminates_shell_and_background_jobs(sessions):
@@ -247,10 +247,10 @@ def test_attach_and_detach_preserve_terminal_colors(sessions, alternate):
     initial = io.StringIO()
     child = sessions.spawn(initialize=False)
     child.logfile_read = initial
-    child.expect(r"[#$] ")
-    child.sendline("stty -echo; PS1='IMX_PROMPT> '; PROMPT_COMMAND=; printf '\\nINITIALIZED\\n'")
-    child.expect_exact("\r\nINITIALIZED\r\n")
-    child.expect_exact("IMX_PROMPT> ")
+    child.expect_prompt()
+    child.sendline("stty -echo; PS1='IMX_PROMPT> '; PROMPT_COMMAND=; printf '\\nINITIAL%s\\n' IZED")
+    child.expect_screen("INITIALIZED")
+    child.expect_prompt("IMX_PROMPT> ")
     if alternate:
         sessions.command(child, "printf '\\033[?1049h'")
     sessions.command(child, "printf '\\033[2J\\033[H\\033[1;31mINDEXED\\033[0m\\n\\033[38;2;18;52;86mRGB\\033[0m\\n'")
@@ -261,12 +261,12 @@ def test_attach_and_detach_preserve_terminal_colors(sessions, alternate):
     replay = io.StringIO()
     attached = sessions.spawn(initialize=False)
     attached.logfile_read = replay
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
     screen = pyte.Screen(80, 24)
     pyte.Stream(screen).feed(replay.getvalue())
-    assert screen.buffer[0][0].bold
-    assert screen.buffer[0][0].fg != "default"
-    assert screen.buffer[1][0].fg == "123456"
+    assert screen.buffer[1][1].bold
+    assert screen.buffer[1][1].fg != "default"
+    assert screen.buffer[2][1].fg == "123456"
     attached.sendline("imx detach")
     attached.expect(pexpect.EOF)
     restored = replay.getvalue()
@@ -340,15 +340,16 @@ def test_runtime_directory_permissions(sessions):
 
 
 def test_frontend_restores_terminal_attributes(sessions):
-    child = pexpect.spawn(
+    child = ScreenProcess(
         "/bin/bash", ["--noprofile", "--norc"], env=sessions.environment,
         cwd=str(sessions.path), dimensions=(24, 80), encoding="utf-8", timeout=10,
     )
     sessions.clients.append(child)
     child.sendline("stty -g > before; imx attach attributes")
-    child.expect(r"[#$] ")
+    child.expect_screen("0: attributes")
+    child.expect_prompt()
     child.send("\x1b\\")
-    child.expect(r"[#$] ")
+    child.expect_prompt()
     child.sendline("stty -g > after; printf '\\nATTRIBUTES_SAVED\\n'")
     child.expect_exact("\r\nATTRIBUTES_SAVED\r\n")
     assert (sessions.path / "before").read_text() == (sessions.path / "after").read_text()
@@ -360,23 +361,24 @@ def test_vim_survives_detach_and_restores_document(sessions):
     child = sessions.spawn()
     sessions.command(child, "printf 'BEFORE_VIM\\n'")
     child.sendline("vim -u NONE -i NONE -n document.txt")
-    child.expect_exact("VIM_DOCUMENT_MARKER")
+    child.expect_screen("VIM_DOCUMENT_MARKER")
     child.send("\x1b\\")
     child.expect(pexpect.EOF)
     assert "VIM_DOCUMENT_MARKER" in sessions.run("cat", "dev").stdout
     attached = sessions.spawn(initialize=False)
-    attached.expect_exact("VIM_DOCUMENT_MARKER")
+    attached.expect_screen("VIM_DOCUMENT_MARKER")
     attached.send(":q!\r")
-    attached.expect_exact("IMX_PROMPT> ")
+    attached.expect_prompt("IMX_PROMPT> ")
     assert "BEFORE_VIM" in sessions.run("cat", "dev").stdout
 
 
 @pytest.mark.parametrize("size", [(24, 80), (160, 320)])
-def test_slow_terminal_detaches_without_stopping_output(sessions, size):
+def test_slow_terminal_preserves_output_and_remains_responsive(sessions, size):
     child = sessions.spawn(rows=size[0], cols=size[1])
     done = sessions.path / "slow-output.done"
     child.sendline(f"seq 1 1000000; printf DONE > '{done}'")
     sessions.wait(done.exists, timeout=30)
-    sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+    assert sessions.sessions()[0]["CLIENTS"] == "1"
     sessions.wait(lambda: "1000000\n" in sessions.run("cat", "dev").stdout)
+    assert "AFTER_OUTPUT" in sessions.command(child, "printf 'AFTER_OUTPUT\\n'")
     child.close(force=True)
