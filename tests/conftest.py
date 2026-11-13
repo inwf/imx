@@ -84,13 +84,21 @@ class ScreenProcess(pexpect.spawn):
             if self.output_revision <= self.sent_revision or self.screen.cursor.hidden:
                 return False
             y = self.screen.cursor.y
-            line = "".join(self.screen.buffer[y][x].data for x in range(self.screen.cursor.x))
-            if line.startswith("│"):
+            end = self.screen.cursor.x
+            pending_space = end == self.screen.columns - 2 and self.screen.buffer[y][end + 1].data == "│" and self.screen.buffer[y][end].data == " "
+            line = "".join(self.screen.buffer[y][x].data for x in range(end))
+            framed = line.startswith("│")
+            if framed:
                 line = line[1:]
-                while text is not None and len(line) < len(text) and y > 1:
-                    y -= 1
-                    line = self.screen.display[y][1:-1] + line
-            return line == text if text is not None else re.search(r"(?:[#$] |IMX_PROMPT> )$", line)
+            minimum = len(text) if text is not None else 2
+            while True:
+                candidates = (line, line + " ") if pending_space else (line,)
+                if any(value == text if text is not None else re.search(r"(?:[#$] |IMX_PROMPT> )$", value) for value in candidates):
+                    return True
+                if not framed or len(line) >= minimum or y <= 1:
+                    return False
+                y -= 1
+                line = self.screen.display[y][1:-1] + line
         self.wait_screen(ready, timeout)
 
 

@@ -1,5 +1,6 @@
 import shlex
 
+import pexpect
 import pytest
 
 from test_panes import PaneTerminal
@@ -44,12 +45,14 @@ def test_hyperlinks_survive_preview_and_reattach(sessions):
     terminal = PaneTerminal(sessions)
     print_link(terminal, "LINK_RESTORED", r"\007")
     terminal.child.send("\x1b\\")
-    terminal.child.expect_exact("\x1b[?1049l")
+    terminal.child.expect(pexpect.EOF)
     preview = selector(sessions)
     preview.visible("LINK_RESTORED")
     assert URL in preview.capture.getvalue()
     cancel(preview)
-    restored = PaneTerminal(sessions, initialize=False)
+    restored = PaneTerminal(sessions, child=sessions.spawn(initialize=False, rows=30, cols=100))
+    restored.visible("LINK_RESTORED")
+    restored.wait(lambda: URL in restored.capture.getvalue())
     restored.split()
     restored.visible("1: shell")
     assert URL in restored.capture.getvalue()

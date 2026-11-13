@@ -63,8 +63,9 @@ def test_switch_creates_target_with_current_directory_and_environment(sessions):
     source.sendline("stty -echo; PS1='IMX_PROMPT> '; PROMPT_COMMAND=; printf '\\nTARGET_%s\\n' READY")
     source.expect_screen("TARGET_READY")
     source.expect_prompt("IMX_PROMPT> ")
-    output = sessions.command(source, "printf '%s|%s|%s|%s\\n' \"$PWD\" \"$IMX_SESSION\" \"$SWITCH_VALUE\" \"${IMX_CLIENT_CAPABILITIES-unset}\"")
-    assert f"{directory}|dev2|from_source|unset" in output
+    destination = sessions.path / "switch-environment"
+    sessions.command(source, "printf '%s|%s|%s|%s\\n' \"$PWD\" \"$IMX_SESSION\" \"$SWITCH_VALUE\" \"${IMX_CLIENT_CAPABILITIES-unset}\" > " + shlex.quote(str(destination)))
+    assert destination.read_text() == f"{directory}|dev2|from_source|unset\n"
     assert rows(sessions)["dev1"]["CLIENTS"] == "0"
     assert rows(sessions)["dev2"]["DIRECTORY"] == str(directory)
 

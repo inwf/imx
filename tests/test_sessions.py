@@ -5,6 +5,7 @@ import io
 import json
 import os
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -373,12 +374,25 @@ def test_vim_survives_detach_and_restores_document(sessions):
 
 
 @pytest.mark.parametrize("size", [(24, 80), (160, 320)])
-def test_slow_terminal_preserves_output_and_remains_responsive(sessions, size):
+def test_slow_terminal_detaches_without_stopping_output(sessions, size):
     child = sessions.spawn(rows=size[0], cols=size[1])
     done = sessions.path / "slow-output.done"
-    child.sendline(f"seq 1 1000000; printf DONE > '{done}'")
-    sessions.wait(done.exists, timeout=30)
-    assert sessions.sessions()[0]["CLIENTS"] == "1"
-    sessions.wait(lambda: "1000000\n" in sessions.run("cat", "dev").stdout)
-    assert "AFTER_OUTPUT" in sessions.command(child, "printf 'AFTER_OUTPUT\\n'")
-    child.close(force=True)
+    ready = sessions.path / "slow-output.ready"
+    gate = sessions.path / "slow-output.gate"
+    os.mkfifo(gate)
+    child.sendline(f"printf READY > '{ready}'; read -r start < '{gate}'; seq 1 1000000; printf DONE > '{done}'")
+    sessions.wait(ready.exists)
+    os.kill(child.pid, signal.SIGSTOP)
+    try:
+        with gate.open("w") as stream:
+            stream.write("start\n")
+        sessions.wait(done.exists, timeout=30)
+        sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "0")
+        assert "1000000\n" in sessions.run("cat", "dev").stdout
+    finally:
+        os.kill(child.pid, signal.SIGCONT)
+    child.expect(pexpect.EOF)
+    child.close()
+    restored = sessions.spawn(initialize=False, rows=size[0], cols=size[1])
+    restored.expect_prompt("IMX_PROMPT> ")
+    assert "AFTER_OUTPUT" in sessions.command(restored, "printf 'AFTER_OUTPUT\\n'")

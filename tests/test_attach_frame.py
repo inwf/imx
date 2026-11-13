@@ -2,6 +2,22 @@ import pexpect
 import pytest
 
 from test_panes import PaneTerminal
+from test_prompt import settings, setup_shell
+
+
+@pytest.mark.parametrize("length", [77, 78, 79, 156, 157])
+def test_attach_preserves_prompts_at_inner_column_boundary(sessions, length):
+    path, _ = setup_shell(sessions, "bash")
+    settings(sessions, False)
+    prompt = "p" * (length - 2) + "$ "
+    path.write_text(f"PS1='{prompt}'\n")
+    child = sessions.spawn(initialize=False)
+    child.expect_prompt()
+    child.expect_prompt(prompt)
+    terminal = PaneTerminal(sessions, child=child)
+    terminal.command("printf ready", "long-prompt-command", "ready")
+    child.send("\x1b\\")
+    child.expect(pexpect.EOF)
 
 
 @pytest.mark.parametrize("rows, cols", [(24, 80), (30, 100), (5, 12)])
