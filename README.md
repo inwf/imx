@@ -104,10 +104,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-Install a specific published version, such as `v0.18.0`:
+Install a specific published version, such as `v0.19.0`:
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.18.0/install.sh | bash -s -- v0.18.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.19.0/install.sh | bash -s -- v0.19.0
 ```
 
 The installer places the license and completion files under the same prefix and removes its temporary download and extraction files when it finishes. System installations provide the Fish completion file under both `/usr/local` and `/usr`. With a custom prefix, Bash and Fish find the completion files through `XDG_DATA_DIRS` and Zsh through `fpath`.
@@ -180,6 +180,8 @@ Press **Alt+Z** to temporarily zoom the focused pane to fill the interface; a do
 Mouse mode defaults to off (`panes.mouse = false`). At ordinary shell prompts, drag to make a native terminal selection and use the terminal's copy shortcut, such as Command+C in iTerm2. Native selections may span multiple panes. Set `panes.mouse = true` to enable clicking to focus panes, scrolling pane history, dragging separators, and selecting text within a pane. Run `imx reload` in the current interface to apply changes. Applications that request mouse input still receive it; with mouse mode off, only the focused pane receives mouse events. In iTerm2, Option+drag makes a native selection while an application is using the mouse.
 
 With mouse mode enabled, drag a separator with the left mouse button to resize adjacent panes. Both edges of the separator accept dragging, including in nested splits. Programs receive their updated terminal dimensions while you drag. Each pane keeps at least 12 columns and 5 rows including its border; the adjusted proportions are retained when the terminal resizes.
+
+Double-click either edge of a separator or the gap between its edges to center it. A vertical separator divides the available width equally and a horizontal separator divides the height equally, subject to pane minimum sizes. In a nested layout, this applies only to the split you double-click.
 
 Press **Alt+Shift+Arrow** to grow the focused pane toward the arrow, or **Alt+Ctrl+Arrow** to shrink it by moving the opposite edge in the arrow direction. For example, Alt+Shift+Up moves the top edge up, and Alt+Ctrl+Down moves the top edge down. Each keypress moves the selected separator by one column or row. These shortcuts work with mouse mode off, preserve focus, and notify programs of their updated terminal dimensions.
 

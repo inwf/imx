@@ -103,10 +103,10 @@ curl -fsSL https://github.com/inwf/imx/releases/latest/download/install.sh | IMX
 "$HOME/apps/imx/bin/imx" -v
 ```
 
-安装已经发布的指定版本，例如 `v0.18.0`：
+安装已经发布的指定版本，例如 `v0.19.0`：
 
 ```bash
-curl -fsSL https://github.com/inwf/imx/releases/download/v0.18.0/install.sh | bash -s -- v0.18.0
+curl -fsSL https://github.com/inwf/imx/releases/download/v0.19.0/install.sh | bash -s -- v0.19.0
 ```
 
 安装脚本把许可证和补全文件安装到相同前缀下，并在完成后删除下载和解压产生的临时文件。系统安装会同时在 `/usr/local` 和 `/usr` 下提供 Fish 补全文件。使用自定义前缀时，Bash 和 Fish 通过 `XDG_DATA_DIRS` 查找补全文件，Zsh 通过 `fpath` 查找。
@@ -183,6 +183,8 @@ imx kill dev     # 终止会话
 鼠标模式默认关闭（`panes.mouse = false`）。普通 shell 中可以直接拖动建立终端本地选区，再使用终端的复制快捷键，例如 iTerm2 的 Command+C。本地选区可能跨越多个窗格。设置 `panes.mouse = true` 后启用鼠标点击聚焦、滚轮浏览窗格历史、拖动分隔线和窗格内文字选择；修改后在当前界面执行 `imx reload` 生效。窗格内程序主动请求的鼠标输入仍然有效；关闭鼠标模式时，只向当前聚焦窗格传递鼠标事件。在 iTerm2 中，程序使用鼠标时可以通过 Option+拖动建立本地选区。
 
 开启鼠标模式后，按住鼠标左键拖动窗格之间的分隔边框，即可调整相邻窗格的大小。分隔边框的两侧都可以拖动，嵌套分屏同样支持。拖动过程中，窗格内的程序实时获得新的终端尺寸。每个窗格至少保留 12 列、5 行（包括边框），终端窗口缩放时保留调整后的比例。
+
+使用鼠标左键双击分隔线的任意一侧边框或中间的空白区域，可以将分隔线移到中间。竖向分隔线平分可用宽度，横向分隔线平分可用高度，同时保留窗格的最小尺寸。在嵌套布局中，双击只调整选中的分隔线。
 
 `panes.horizontal_gap` 设置左右相邻窗格边框之间的空白列数，`panes.vertical_gap` 设置上下相邻窗格边框之间的空白行数。默认均为 `0`，接受 `0` 至 `255` 的整数。终端缩放时保持固定间距，开启鼠标模式后可以拖动间距区域调整大小。执行 `imx reload` 后应用到已有和新建分屏。
 

@@ -388,6 +388,7 @@ const App = struct {
     mouse_enabled: bool,
     mouse_mode: MouseMode = .none,
     resize_drag: ?struct { node: ?*Node, grab_offset: i32 } = null,
+    separator_click: ?struct { node: *Node, x: i32, y: i32, time: i64, repeated: bool } = null,
     selection_drag: ?struct { pane: ?*Pane } = null,
     zoomed: bool = false,
     dirty: bool = false,
@@ -851,6 +852,7 @@ const App = struct {
     }
 
     fn cancelResize(self: *App) void {
+        self.separator_click = null;
         if (self.resize_drag) |*drag| drag.node = null;
     }
 
@@ -876,12 +878,21 @@ const App = struct {
             if (pressed) self.mouse_pane = pane;
             return self.forwardMouse(pane, mouse, x, y);
         }
+        if (mouse.type == .press and mouse.button != .left) self.separator_click = null;
         if (mouse.type == .press and mouse.button == .left) {
+            const previous = if (self.resize_drag == null) self.separator_click else null;
+            self.separator_click = null;
             self.resize_drag = null;
             self.cancelSelection();
             self.selection_drag = null;
             if (!self.zoomed) if (self.root.separator(x, y)) |node| {
                 const divider = node.content.split;
+                const now = try sys.monotonicMilliseconds();
+                const repeated = if (previous) |click|
+                    click.node == node and @abs(x - click.x) + @abs(y - click.y) <= 1 and now - click.time <= 400
+                else
+                    false;
+                self.separator_click = .{ .node = node, .x = x, .y = y, .time = now, .repeated = repeated };
                 self.mouse_pane = null;
                 self.resize_drag = .{ .node = node, .grab_offset = if (divider.axis == .right) x - divider.second.rect.x else y - divider.second.rect.y };
                 return;
@@ -890,7 +901,15 @@ const App = struct {
         if (self.resize_drag) |drag| {
             const released = mouse.type == .release and (mouse.button == .left or mouse.button == .none);
             if ((mouse.type == .drag and mouse.button == .left) or released) {
-                if (drag.node) |node| if (node.resizeTo(x, y, drag.grab_offset)) try self.arrange();
+                if (self.separator_click) |click| {
+                    if (x != click.x or y != click.y) self.separator_click = null;
+                }
+                if (drag.node) |node| {
+                    if (released and self.separator_click != null and self.separator_click.?.repeated) {
+                        node.content.split.ratio = .{};
+                        self.separator_click = null;
+                    } else if (node.resizeTo(x, y, drag.grab_offset) and !released) try self.arrange();
+                }
                 if (released) {
                     self.resize_drag = null;
                     try self.arrange();

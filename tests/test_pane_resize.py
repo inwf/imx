@@ -1,6 +1,7 @@
 import json
 import shlex
 import sys
+import time
 
 import pytest
 
@@ -114,6 +115,27 @@ def test_drag_uses_final_release_position_and_preserves_click_size(sessions):
     terminal.click(62, 8)
     terminal.command("stty size", "clicked-size", "28 37\n")
     terminal.focused(1)
+
+
+def test_double_click_centers_only_the_selected_nested_split(sessions):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("1: shell")
+    terminal.split("down")
+    terminal.visible("2: shell")
+    drag(terminal, (50, 8), (60, 8))
+    drag(terminal, (80, 15), (80, 20))
+    terminal.wait(lambda: origin(terminal, 2) == (60, 20))
+    terminal.click(80, 20)
+    terminal.command("stty size", "after-single", "8 38\n")
+    time.sleep(0.5)
+    terminal.click(80, 20)
+    terminal.command("stty size", "after-timeout", "8 38\n")
+    terminal.click(84, 21)
+    terminal.click(84, 21)
+    terminal.wait(lambda: origin(terminal, 2) == (60, 15))
+    terminal.focused(2)
+    terminal.command("stty size", "after-double", "13 38\n")
 
 
 def test_drag_with_scrolled_small_terminal(sessions):

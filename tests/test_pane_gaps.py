@@ -121,6 +121,27 @@ def test_odd_gap_preserves_remaining_terminal_cells(sessions, direction, gap):
 
 
 @pytest.mark.parametrize("direction", ["right", "down"])
+def test_double_click_centers_split_and_keeps_equal_ratio(sessions, direction):
+    configure(sessions, 3, 3, mouse=True)
+    terminal = PaneTerminal(sessions)
+    terminal.split(direction)
+    terminal.visible("1: shell")
+    horizontal = direction == "right"
+    start = (50, 8) if horizontal else (25, 15)
+    end = (60, 8) if horizontal else (25, 19)
+    drag(terminal, start, end)
+    terminal.wait(lambda: origin(terminal, 1) == ((61, 0) if horizontal else (0, 20)))
+    terminal.click(*end)
+    terminal.click(*end)
+    terminal.wait(lambda: origin(terminal, 1) == ((51, 0) if horizontal else (0, 16)))
+    terminal.focused(1)
+    terminal.command("stty size", "centered-size", "28 47\n" if horizontal else "12 98\n")
+    terminal.screen.resize(lines=61, columns=201)
+    terminal.child.setwinsize(61, 201)
+    terminal.wait(lambda: origin(terminal, 1) == ((102, 0) if horizontal else (0, 32)))
+
+
+@pytest.mark.parametrize("direction", ["right", "down"])
 def test_gap_drag_preserves_nested_minimums(sessions, direction):
     configure(sessions, 2, 2, mouse=True)
     terminal = PaneTerminal(sessions)

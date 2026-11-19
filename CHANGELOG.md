@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.0 — 2026-11-19
+
+### Added
+
+- With `panes.mouse = true`, double-click either edge of a pane separator or the gap between its edges to center it. The selected split shares its available width or height equally, respecting minimum pane sizes and preserving focus. The equal ratio is retained when the terminal resizes.
+
 ## 0.18.0 — 2026-11-13
 
 ### Changed
