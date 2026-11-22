@@ -58,8 +58,8 @@ split_right = { key = 'd', alt = true }
 # Split top and bottom, starting a shell in the focused pane's directory.
 split_down = { key = 'd', alt = true, shift = true }
 
-# 关闭当前窗格并终止其中的会话及程序；保留会话请先 detach。
-# Close the focused pane and terminate its session and programs; detach first to keep the session.
+# 关闭当前窗格。终止可写会话及其中的程序需要按下大写 Y 确认。
+# Close the focused pane. Press uppercase Y to confirm termination of a writable session and its programs.
 close_pane = { key = 'w', alt = true }
 
 # 临时放大当前窗格，再次使用恢复原有布局。

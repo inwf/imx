@@ -102,6 +102,7 @@ def test_split_and_close_restore_mouse_mode_from_initial_application(sessions, e
     terminal.focus(0)
     terminal.wait(lambda: reporting_modes(terminal) == {1002 if enabled else 1000, 1006})
     terminal.child.send("\x1bw")
+    terminal.confirm_termination("dev")
     terminal.wait(lambda: " 0: " not in terminal.screen.display[0])
     terminal.focused(1)
     assert reporting_modes(terminal) == shell_modes

@@ -157,6 +157,7 @@ def test_layout_changes_cancel_selection_and_preserve_clipboard(sessions, action
         terminal.visible("[zoom]")
     else:
         terminal.child.send("\x1bw")
+        terminal.confirm_termination("dev")
         terminal.wait(lambda: all(" 0: " not in row for row in terminal.screen.display))
     terminal.child.send("\x1b[<32;10;2M\x1b[<0;10;2m")
     terminal.command("printf ready", "after-selection-cancel", "ready")

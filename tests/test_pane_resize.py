@@ -166,6 +166,7 @@ def test_closing_pane_during_drag_cancels_capture(sessions):
     terminal.wait(lambda: origin(terminal, 2) == (50, 20))
     terminal.focus(0)
     terminal.child.send("\x1b[<0;80;20M\x1bw")
+    terminal.confirm_termination("dev")
     terminal.wait(lambda: origin(terminal, 0) is None and origin(terminal, 2) == (0, 20))
     terminal.child.send("\x1b[<32;80;24M\x1b[<0;80;24m")
     terminal.command("stty size", "after-close", "18 98\n")

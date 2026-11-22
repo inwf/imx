@@ -341,20 +341,20 @@ const Pane = struct {
         }
     }
 
-    fn closeSession(self: *Pane, state: context.State) !void {
-        if (state.read_only) return;
+    fn prepareClose(self: *Pane, state: context.State) !?CloseRequest {
+        std.debug.assert(!state.read_only);
         const app = self.app;
         var root = try config.Config.initPath(app.allocator, app.io, state.directory);
         defer root.deinit();
         const fd = @import("connection.zig").open(app.allocator, app.io, &root, state.session, false) catch |err| switch (err) {
-            error.SessionNotFound => return,
+            error.SessionNotFound => return null,
             else => return err,
         };
         var request: CloseRequest = .{ .fd = fd };
         errdefer request.deinit(app.allocator);
         _ = try sys.nonblocking(fd, true);
         try request.input.message(app.allocator, .kill, state.session);
-        self.closing = request;
+        return request;
     }
 
     fn flushOptions(self: *Pane) !void {
@@ -404,6 +404,8 @@ const App = struct {
     keys: keyboard.Input,
     keyboard_flags: u5 = 5,
     status: ?[]u8 = null,
+    confirmation: ?struct { pane: *Pane, request: CloseRequest } = null,
+    prompt_buffer: [160]u8 = undefined,
     initial_read_only: bool = false,
     reload_listener: *reload.Listener,
     configuration_packet: ?[]u8 = null,
@@ -598,6 +600,7 @@ const App = struct {
         self.cancelResize();
         self.cancelSelection();
         const pane = self.panes.items[index];
+        self.cancelConfirmation(pane);
         if (self.panes.items.len > 1) _ = self.root.remove(self.allocator, pane);
         _ = self.panes.orderedRemove(index);
         if (pane == self.focused or self.panes.items.len < 2) self.zoomed = false;
@@ -611,12 +614,33 @@ const App = struct {
         for (self.panes.items, 0..) |pane, index| {
             if (!pane.close_requested or pane.closing != null or pane.detaching) continue;
             if (pane.attached) |state| {
-                try pane.closeSession(state.value);
-                if (pane.closing != null) continue;
+                if (!state.value.read_only) {
+                    if (self.focused != pane) {
+                        pane.close_requested = false;
+                        continue;
+                    }
+                    if (self.confirmation != null) continue;
+                    if (try pane.prepareClose(state.value)) |request| {
+                        self.cancelResize();
+                        self.cancelSelection();
+                        self.confirmation = .{ .pane = pane, .request = request };
+                        self.dirty = true;
+                        continue;
+                    }
+                }
             } else if (pane.initial and pane.exit_status == null) continue;
             try self.remove(index);
             break;
         }
+    }
+
+    fn cancelConfirmation(self: *App, pane: *Pane) void {
+        if (self.confirmation == null or self.confirmation.?.pane != pane) return;
+        self.confirmation.?.request.deinit(self.allocator);
+        self.confirmation = null;
+        pane.close_requested = false;
+        self.dirty = true;
+        self.repaint = true;
     }
 
     fn split(self: *App, axis: Axis) !void {
@@ -701,7 +725,9 @@ const App = struct {
             }
             try render.draw(self.allocator, &pane.render_cache, &self.vx.screen, &pane.term, &pane.state, pane.rect, self.offset, pane == self.focused, self.zoomed, self.focused_border_color, title, self.repaint);
         }
-        if (self.status) |text| for (text[0..@min(text.len, self.size.cols)], 0..) |_, col| self.vx.screen.writeCell(@intCast(col), self.size.rows - 1, .{ .char = .{ .grapheme = text[col..][0..1] }, .style = .{ .fg = .{ .index = 0 }, .bg = .{ .index = 3 } } });
+        if (self.confirmation) |confirmation| {
+            try self.drawConfirmation(confirmation.pane);
+        } else if (self.status) |text| for (text[0..@min(text.len, self.size.cols)], 0..) |_, col| self.vx.screen.writeCell(@intCast(col), self.size.rows - 1, .{ .char = .{ .grapheme = text[col..][0..1] }, .style = .{ .fg = .{ .index = 0 }, .bg = .{ .index = 3 } } });
         self.frame_writer.clearRetainingCapacity();
         try self.vx.render(&self.frame_writer.writer);
         try self.output.append(self.allocator, self.frame_writer.written());
@@ -710,9 +736,38 @@ const App = struct {
         self.next_frame = try sys.monotonicMilliseconds() + 16;
     }
 
+    fn drawConfirmation(self: *App, pane: *Pane) !void {
+        const style: vaxis.Style = .{ .fg = .{ .index = 0 }, .bg = .{ .index = 3 }, .bold = true };
+        const cache = &pane.render_cache;
+        render.drawTitle(&self.vx.screen, pane.rect, self.offset, cache.title[0..cache.title_len], style);
+        self.vx.screen.cursor_vis = false;
+        const width = self.size.cols;
+        const height = self.size.rows;
+        if (width == 0 or height == 0) return;
+        const controls = "Y: terminate  Esc: cancel";
+        const message_text = try std.fmt.bufPrint(&self.prompt_buffer, "Terminate session {s} and its programs?  " ++ controls, .{pane.attached.?.value.session});
+        if (message_text.len <= width) {
+            self.drawPromptRow(height - 1, message_text, style);
+            return;
+        }
+        const question = message_text[0 .. message_text.len - controls.len - 2];
+        const hints: []const u8 = if (width >= controls.len) controls else "Y:yes Esc:no";
+        const lines = @min(height - 1, std.math.divCeil(usize, question.len, width) catch unreachable);
+        for (0..lines) |line| {
+            const start = line * width;
+            self.drawPromptRow(@intCast(height - 1 - lines + line), question[start..@min(start + width, question.len)], style);
+        }
+        self.drawPromptRow(height - 1, hints, style);
+    }
+
+    fn drawPromptRow(self: *App, row: u16, text: []const u8, style: vaxis.Style) void {
+        for (0..self.size.cols) |col| self.vx.screen.writeCell(@intCast(col), row, .{ .char = .{ .grapheme = if (col < text.len) text[col..][0..1] else " " }, .style = style });
+    }
+
     fn finishDisplay(self: *App) !void {
         defer @import("client.zig").resetDisplay() catch {};
         if (self.panes.items.len == 0) return;
+        self.cancelConfirmation(self.focused);
         self.output.bytes.clearRetainingCapacity();
         self.output.offset = 0;
         self.frame_writer.clearRetainingCapacity();
@@ -748,6 +803,23 @@ const App = struct {
 
     fn input(self: *App, result: keyboard.Input.Result) !void {
         const pane = self.focused;
+        if (self.confirmation) |*confirmation| {
+            const event = result.event orelse return;
+            if (event != .key_press) return;
+            const key = event.key_press;
+            if (key.matchExact(vaxis.Key.escape, .{}) or key.matchExact(vaxis.Key.enter, .{})) {
+                self.cancelConfirmation(confirmation.pane);
+            } else if (key.codepoint == 'y' and key.matchExact('y', .{ .shift = key.mods.shift }) and
+                (if (key.text) |typed| std.mem.eql(u8, typed, "Y") else key.mods.shift != key.mods.caps_lock))
+            {
+                pane.closing = confirmation.request;
+                self.confirmation = null;
+                self.dirty = true;
+                self.repaint = true;
+                try self.setZoom(false);
+            }
+            return;
+        }
         if (result.event) |event| if (event == .mouse) return self.handleMouse(event.mouse);
         if (result.action) |action| {
             if (result.bytes.len != 0 and !pane.close_requested) try pane.input.append(self.allocator, result.bytes);
@@ -772,7 +844,6 @@ const App = struct {
                 .split_right => try self.split(.right),
                 .split_down => try self.split(.down),
                 .close_pane => {
-                    try self.setZoom(false);
                     pane.close_requested = true;
                 },
                 .zoom_pane => try self.setZoom(!self.zoomed),
@@ -1227,12 +1298,10 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                 if (app.visible(pane)) app.dirty = true;
             }
         };
-        if (count == 0) {
-            if (app.keys.deadline) |until| if (after_poll >= until) {
-                try app.input(app.keys.expire());
-            };
-            continue;
-        }
+        if (count == 0 or app.confirmation != null) if (app.keys.deadline) |until| if (after_poll >= until) {
+            try app.input(app.keys.expire());
+        };
+        if (count == 0) continue;
         if (fds.items[0].revents & c.POLLIN != 0) {
             var info: c.struct_signalfd_siginfo = undefined;
             while ((try sys.read(signals, std.mem.asBytes(&info))) != null) {
@@ -1286,12 +1355,14 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                     return error.UnsafePaneClient;
                 }
                 if (pane.control) |previous| sys.close(previous);
+                app.cancelConfirmation(pane);
                 pane.control = fd;
                 pane.options_pending = false;
             }
             if (events[2].revents & (c.POLLIN | c.POLLHUP) != 0) {
                 var buffer: [8192]u8 = undefined;
                 if (try sys.read(pane.control.?, &buffer)) |n| {
+                    app.cancelConfirmation(pane);
                     if (pane.attached) |state| state.deinit();
                     pane.attached = null;
                     if (n == 0) {
@@ -1342,6 +1413,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
                 if (try sys.readPty(pane.fd, &buffer)) |n| {
                     if (n == 0) {
                         var status: c_int = pane.exit_status orelse 0;
+                        app.cancelConfirmation(pane);
                         if (pane.exit_status == null) _ = try sys.check(c.waitpid(pane.pid, &status, 0), "waitpid(pane)");
                         pane.pid = 0;
                         sys.close(pane.fd);

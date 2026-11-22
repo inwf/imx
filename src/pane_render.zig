@@ -121,7 +121,11 @@ fn drawBorder(screen: *vaxis.Screen, rect: Rect, offset: [2]u16, selected: bool,
     }
     const corners: [4][]const u8 = if (zoomed) .{ "╔", "╗", "╚", "╝" } else .{ "┌", "┐", "└", "┘" };
     for (corners, 0..) |grapheme, i| put(screen, @as(i32, rect.x) + (if (i % 2 == 0) @as(i32, 0) else rect.width - 1) - offset[0], @as(i32, rect.y) + (if (i < 2) @as(i32, 0) else rect.height - 1) - offset[1], .{ .char = .{ .grapheme = grapheme }, .style = border });
-    for (title[0..@min(title.len, rect.width - 4)], 0..) |_, i| put(screen, @as(i32, rect.x) + 2 + @as(i32, @intCast(i)) - offset[0], @as(i32, rect.y) - offset[1], .{ .char = .{ .grapheme = title[i..][0..1] }, .style = border });
+    drawTitle(screen, rect, offset, title, border);
+}
+
+pub fn drawTitle(screen: *vaxis.Screen, rect: Rect, offset: [2]u16, title: []const u8, style: vaxis.Style) void {
+    for (title[0..@min(title.len, rect.width - 4)], 0..) |_, i| put(screen, @as(i32, rect.x) + 2 + @as(i32, @intCast(i)) - offset[0], @as(i32, rect.y) - offset[1], .{ .char = .{ .grapheme = title[i..][0..1] }, .style = style });
 }
 
 fn clearRow(screen: *vaxis.Screen, rect: Rect, offset: [2]u16, y: usize) void {

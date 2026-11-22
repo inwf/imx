@@ -245,6 +245,7 @@ def test_rename_updates_all_pane_titles_and_close_target(sessions):
     terminal.visible("0: renamed")
     terminal.visible("1: renamed")
     terminal.child.send("\x1bw")
+    terminal.confirm_termination("renamed")
     terminal.wait(lambda: sessions.sessions() == [])
 
 
