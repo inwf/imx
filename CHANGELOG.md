@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.20.0 — 2026-11-22
+
+### Added
+
+- Closing a writable session with Alt+W or a custom close shortcut now highlights the target pane and shows its session name on the bottom border. Press uppercase Y to terminate the session and its programs, or Esc or Enter to cancel. Output continues while the prompt is open.
+- The new `panes.confirm_session_close` setting defaults to `true`. Set it to `false` and run `imx reload` to close writable sessions immediately. Disabling confirmation cancels any pending prompt.
+
+### Upgrade notes
+
+- Open a new connection with the updated executable to use the confirmation prompt. Existing sessions keep their programs and history.
+
 ## 0.19.0 — 2026-11-19
 
 ### Added
