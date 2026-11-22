@@ -214,7 +214,7 @@ pub const Input = struct {
                                     const shortcut = self.pending[0..self.pending_len];
                                     self.pending_len = 0;
                                     self.deadline = null;
-                                    return .{ .bytes = self.output[0..self.output_len], .action = action, .shortcut = shortcut };
+                                    return .{ .bytes = self.output[0..self.output_len], .action = action, .shortcut = shortcut, .event = if (self.report_events) event else null };
                                 }
                             }
                         },

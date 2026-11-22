@@ -80,6 +80,7 @@ def test_last_pane_terminal_response_overflow(sessions):
     terminal.visible("1: shell")
     terminal.focus(0)
     terminal.child.send("\x1bw")
+    terminal.confirm_termination("dev")
     terminal.wait(lambda: all(" 0: " not in row for row in terminal.screen.display))
     terminal.focused(1)
     directory, writer = start_queries(sessions, terminal.child, False)

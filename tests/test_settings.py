@@ -18,7 +18,7 @@ DEFAULT_SETTINGS = {
     "prompt": {"show_session": True},
     "list": {"created_format": "%m-%d %H:%M:%S"},
     "completion": {"enabled": True},
-    "panes": {"mouse": False, "focused_border_color": "#969CD5"},
+    "panes": {"mouse": False, "confirm_session_close": True, "focused_border_color": "#969CD5"},
 }
 
 

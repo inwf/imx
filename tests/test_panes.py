@@ -46,6 +46,10 @@ class PaneTerminal:
     def visible(self, value):
         self.wait(lambda: any(value in row for row in self.screen.display))
 
+    def confirm_termination(self, name, key="Y"):
+        self.visible(f"Terminate session {name} and its programs?")
+        self.child.send(key)
+
     def split(self, direction="right"):
         self.child.send("\x1bd" if direction == "right" else "\x1bD")
 
@@ -217,6 +221,7 @@ def test_new_panes_reuse_the_smallest_available_number(sessions):
         terminal.command("printf '%s' \"$IMX_SESSION\"", f"plain-shell-{iteration}", "")
     terminal.focus(0)
     terminal.child.send("\x1bw")
+    terminal.confirm_termination("dev")
     terminal.wait(lambda: all(" 0: " not in row for row in terminal.screen.display))
     terminal.focus(2)
     terminal.split("down")
@@ -326,6 +331,7 @@ def test_close_shortcut_terminates_focused_session_and_jobs(sessions, initial, m
     application_pid = json.loads(destination.with_suffix(".json").read_text())["pid"]
     terminal.visible("PANE_APPLICATION")
     terminal.child.send(shortcut)
+    terminal.confirm_termination(target, {"legacy": "Y", "kitty": "\x1b[121;2u", "modify": "\x1b[27;2;89~"}[mode])
     terminal.wait(lambda: all(f" {pane_id}: " not in row for row in terminal.screen.display))
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {remaining: "1"})
     sessions.wait(lambda: all(not psutil.pid_exists(pid) for pid in [shell_pid, background_pid, application_pid, backend_pid]))
@@ -350,6 +356,53 @@ def test_detach_then_close_in_one_write_preserves_session(sessions, initial):
     terminal.command("printf '%s' \"$IMX_SESSION\"", "remaining-session", remaining)
 
 
+@pytest.mark.parametrize("cancel,columns", [("\x1b", 100), ("\r", 42)])
+def test_cancel_session_close_keeps_zoom_size_output_and_input(sessions, cancel, columns):
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("1: shell")
+    terminal.focus(0)
+    terminal.child.send("\x1bz")
+    terminal.visible("[zoom]")
+    terminal.screen.resize(lines=30, columns=columns)
+    terminal.child.setwinsize(30, columns)
+    capture = sessions.path / "keys.bin"
+    trigger = sessions.path / "print-now"
+    command = shlex.join([sys.executable, str(ROOT / "tests/pane_app.py"), str(capture), "legacy"])
+    terminal.child.sendline(f"(while [ ! -e {trigger} ]; do sleep 0.05; done; printf '\\r\\nLIVE_OUTPUT') & {command}")
+    terminal.visible("PANE_APPLICATION")
+    terminal.wait(lambda: capture.exists() and capture.with_suffix(".json").exists())
+    size = capture.with_suffix(".json").stat().st_mtime_ns
+    terminal.child.send("\x1bw")
+    terminal.visible("Terminate session dev and its programs?")
+    assert "Esc: cancel" in terminal.screen.display[-1]
+    assert "[zoom]" in terminal.screen.display[0]
+    assert terminal.screen.buffer[0][4].bg == terminal.screen.buffer[29][0].bg != "default"
+    terminal.child.send("y\x1b[200~Y\r\x1b[201~\x1b[121;2:3u\x1bd\x1b[<0;10;3M")
+    trigger.touch()
+    terminal.visible("LIVE_OUTPUT")
+    assert "Esc: cancel" in terminal.screen.display[-1]
+    terminal.child.send(cancel)
+    terminal.wait(lambda: terminal.screen.display[-1].startswith("╚═"))
+    assert "[zoom]" in terminal.screen.display[0]
+    assert capture.with_suffix(".json").stat().st_mtime_ns == size
+    terminal.child.send("x")
+    terminal.wait(lambda: capture.read_bytes() == b"x")
+
+
+def test_rename_cancels_pending_close(sessions):
+    terminal = PaneTerminal(sessions)
+    terminal.child.send("\x1bw")
+    terminal.visible("Terminate session dev")
+    sessions.run("rename", "dev", "renamed")
+    terminal.visible("0: renamed")
+    assert "Esc: cancel" not in terminal.screen.display[-1]
+    terminal.child.send("\x1bw")
+    terminal.confirm_termination("renamed")
+    terminal.child.expect(pexpect.EOF)
+    assert sessions.sessions() == []
+
+
 def test_close_session_shared_with_another_pane(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
@@ -358,6 +411,7 @@ def test_close_session_shared_with_another_pane(sessions):
     terminal.visible("1: dev")
     sessions.wait(lambda: sessions.sessions()[0]["CLIENTS"] == "2")
     terminal.child.send("\x1bw")
+    terminal.confirm_termination("dev")
     terminal.child.expect(pexpect.EOF)
     assert sessions.sessions() == []
 
@@ -373,6 +427,11 @@ def test_configured_close_shortcut(sessions, key, shortcut):
     terminal.child.send(shortcut)
     terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
     assert sessions.sessions()[0]["CLIENTS"] == "1"
+    terminal.child.send(shortcut)
+    terminal.visible("Terminate session dev")
+    terminal.child.send("\x1b")
+    terminal.wait(lambda: terminal.screen.display[-1].startswith("└─"))
+    terminal.command("printf alive", "configured-close-cancelled", "alive")
 
 
 def test_closing_pane_waits_for_backend_without_blocking_other_panes(sessions):
@@ -386,6 +445,8 @@ def test_closing_pane_waits_for_backend_without_blocking_other_panes(sessions):
     backend.suspend()
     try:
         terminal.child.send("\x1bw")
+        terminal.confirm_termination("test")
+        terminal.wait(lambda: "Esc: cancel" not in terminal.screen.display[-1])
         terminal.child.send("\x1b[1;3D")
         terminal.command("printf responsive", "healthy-pane", "responsive")
     finally:
@@ -397,6 +458,8 @@ def test_closing_pane_waits_for_backend_without_blocking_other_panes(sessions):
 def test_close_shortcut_before_splitting_ends_session(sessions):
     child = sessions.spawn()
     child.send("\x1bw")
+    child.expect_screen("Terminate session dev and its programs?")
+    child.send("Y")
     child.expect(pexpect.EOF)
     child.close()
     assert child.exitstatus == 0
@@ -413,6 +476,7 @@ def test_close_uses_attached_sessions_runtime_directory(sessions):
         terminal.visible("1: dev")
         assert other.sessions()[0]["CLIENTS"] == "1"
         terminal.child.send("\x1bw")
+        terminal.confirm_termination("dev")
         terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
         assert other.sessions() == []
         assert sessions.sessions()[0]["CLIENTS"] == "1"
@@ -563,6 +627,7 @@ def test_switching_in_a_pane_updates_its_title_and_split_directory(sessions):
     assert {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "second": "0", "third": "1"}
     terminal.focus(1)
     terminal.child.send("\x1bw")
+    terminal.confirm_termination("third")
     terminal.wait(lambda: all(" 1: " not in row for row in terminal.screen.display))
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {"dev": "1", "second": "0"})
     terminal.command("printf ready", "remaining-shell", "ready")

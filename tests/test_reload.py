@@ -86,6 +86,35 @@ def test_reload_changes_only_the_invoking_interface_of_a_shared_session(sessions
     assert sessions.sessions()[0]["CLIENTS"] == "2"
 
 
+def test_close_confirmation_can_be_enabled_and_disabled_at_runtime(sessions):
+    path = configuration(sessions)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("[panes]\nconfirm_session_close = false\n")
+    terminal = PaneTerminal(sessions)
+    terminal.split()
+    terminal.visible("1: shell")
+    environment = pane_environment(terminal)
+    terminal.focus(0)
+    terminal.child.send("\x1bw")
+    terminal.wait(lambda: origin(terminal, 0) is None)
+    assert sessions.sessions() == []
+
+    terminal.child.sendline("imx attach second")
+    terminal.visible("1: second")
+    path.write_text("[panes]\n")
+    reload_terminal(terminal)
+    terminal.child.send("\x1bw")
+    terminal.visible("Terminate session second")
+
+    path.write_text("[panes]\nconfirm_session_close = false\n")
+    subprocess.run([str(sessions.binary), "reload"], env=environment, check=True, capture_output=True, timeout=5)
+    terminal.wait(lambda: "Esc: cancel" not in terminal.screen.display[-1])
+    terminal.command("printf alive", "pending-close-cancelled", "alive")
+    terminal.child.send("\x1bw")
+    terminal.child.expect(pexpect.EOF)
+    assert sessions.sessions() == []
+
+
 def test_reload_preserves_zoom_and_applies_gaps_to_existing_layout(sessions):
     terminal = PaneTerminal(sessions)
     terminal.split()
@@ -110,6 +139,7 @@ def test_reload_preserves_zoom_and_applies_gaps_to_existing_layout(sessions):
 @pytest.mark.parametrize("contents, message", [
     ("[panes\n", "InvalidConfiguration"),
     ("[panes]\nmouse = 'true'\n", "panes.mouse"),
+    ("[panes]\nconfirm_session_close = 'false'\n", "panes.confirm_session_close: expected a boolean"),
     ("[panes]\nfocused_border_color = '#abcdef'\n[keybindings]\ndetach = { key = 'd', alt = true }\n", "DuplicateKeybinding"),
     (None, "FileNotFound"),
 ])

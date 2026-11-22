@@ -100,7 +100,7 @@ Alt+Shift+方向键向箭头方向扩大当前窗格，Alt+Ctrl+方向键将相�
 
 分离快捷键（默认 Alt+\\）只分离当前聚焦窗格的连接，随后回到该窗格的普通 shell。其他窗格保持连接，即使它们连接同一个会话。会话中的 shell 退出后，所在窗格返回普通 shell；普通 shell 退出后关闭窗格，剩余窗格重新分配空间。最后一个窗格关闭后退出整个界面。
 
-按下 Alt+W 关闭当前聚焦的窗格。可写连接会自动终止其中的会话及程序，其他连接到同一会话的客户端也会断开；需要保留会话时，先 detach（默认 Alt+\\）。只读连接会保留会话及其他连接。关闭普通 shell 窗格会终止其中的程序。在普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`，同样可以关闭窗格。在会话的 shell 中直接执行 `exit` 会结束该会话。
+按下 Alt+W 关闭当前聚焦的窗格。对于可写会话，底边框默认会显示会话名称并请求确认。按下大写 Y 会终止该会话及其中的程序，并断开其他客户端。按下 Esc 或 Enter 可以取消。设置 `panes.confirm_session_close = false` 后，按下 Alt+W 会立即终止会话。如果执行 `imx reload` 时关闭了此选项，正在等待确认的请求会取消。需要保留会话时，使用分离快捷键（默认 Alt+\\）。只读连接会保留会话及其他连接。关闭普通 shell 窗格会终止其中的程序。在普通 shell 提示符下输入 `exit`，或者在命令行为空时按下 `Ctrl+D`，同样可以关闭窗格。在会话的 shell 中直接执行 `exit` 会结束该会话。
 
 分屏布局只存在于当前客户端内存中。关闭终端或者断开 SSH 连接会释放布局，并终止窗格中的普通 shell 及其作业，已经进入的会话继续在各自后台运行。重新连接时自行分屏和 attach。窗口缩小时保留全部窗格，空间不足时显示聚焦窗格所在区域；重新扩大窗口后恢复完整布局。新分屏需要每个窗格至少 12 列、5 行（包括边框）。
 
@@ -233,7 +233,7 @@ focused_border_color = "#969CD5"
 imx reload
 ```
 
-命令读取该界面启动时选定的配置路径，完整校验后更新全部 `keybindings`、`panes.mouse`、`panes.focused_border_color`、`panes.horizontal_gap` 和 `panes.vertical_gap`。成功时输出 `Configuration reloaded.`，退出状态为 0。修改窗格内 shell 的 `HOME` 或 `XDG_CONFIG_HOME` 保持原有界面的配置路径。
+命令读取该界面启动时选定的配置路径，完整校验后更新全部 `keybindings`、`panes.mouse`、`panes.confirm_session_close`、`panes.focused_border_color`、`panes.horizontal_gap` 和 `panes.vertical_gap`。成功时输出 `Configuration reloaded.`，退出状态为 0。修改窗格内 shell 的 `HOME` 或 `XDG_CONFIG_HOME` 保持原有界面的配置路径。
 
 重新加载作用于当前界面的全部窗格，包括只读连接。会话中的程序和历史、窗格编号、焦点、临时全屏状态以及布局比例继续保留；改变间距会按照原比例重新计算窗格尺寸。已完成的文字选区保留，正在进行的鼠标拖动结束。重新加载后，新连接到该界面的客户端也会使用当前快捷键和鼠标设置。
 
