@@ -386,6 +386,7 @@ const App = struct {
     focused: *Pane = undefined,
     mouse_pane: ?*Pane = null,
     mouse_enabled: bool,
+    confirm_session_close: bool,
     mouse_mode: MouseMode = .none,
     resize_drag: ?struct { node: ?*Node, grab_offset: i32 } = null,
     separator_click: ?struct { node: *Node, x: i32, y: i32, time: i64, repeated: bool } = null,
@@ -434,6 +435,8 @@ const App = struct {
         self.mouse_pane = null;
         self.keys.bindings = preferences.keybindings;
         self.mouse_enabled = preferences.mouse_enabled;
+        self.confirm_session_close = preferences.confirm_session_close;
+        if (!self.confirm_session_close) self.cancelConfirmation(self.focused);
         const rgb = preferences.focused_border_color;
         self.focused_border_color = .{ .rgb = .{ rgb.r, rgb.g, rgb.b } };
         self.horizontal_gap = preferences.horizontal_gap;
@@ -615,12 +618,17 @@ const App = struct {
             if (!pane.close_requested or pane.closing != null or pane.detaching) continue;
             if (pane.attached) |state| {
                 if (!state.value.read_only) {
-                    if (self.focused != pane) {
+                    if (self.confirm_session_close and self.focused != pane) {
                         pane.close_requested = false;
                         continue;
                     }
                     if (self.confirmation != null) continue;
                     if (try pane.prepareClose(state.value)) |request| {
+                        if (!self.confirm_session_close) {
+                            pane.closing = request;
+                            try self.setZoom(false);
+                            continue;
+                        }
                         self.cancelResize();
                         self.cancelSelection();
                         self.confirmation = .{ .pane = pane, .request = request };
@@ -1191,7 +1199,7 @@ pub fn run(allocator: std.mem.Allocator, io: std.Io, environ: std.process.Enviro
     const rgb = preferences.focused_border_color;
     var reload_listener = try reload.Listener.init(allocator);
     defer reload_listener.deinit(allocator);
-    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .focused_border_color = .{ .rgb = .{ rgb.r, rgb.g, rgb.b } }, .horizontal_gap = preferences.horizontal_gap, .vertical_gap = preferences.vertical_gap, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator), .reload_listener = &reload_listener };
+    var app: App = .{ .allocator = allocator, .io = io, .environ = environ, .executable = executable[0..length], .termios = undefined, .size = try sys.Size.get(0), .vx = try vaxis.init(io, allocator, &environment, .{}), .mouse_enabled = preferences.mouse_enabled, .confirm_session_close = preferences.confirm_session_close, .focused_border_color = .{ .rgb = .{ rgb.r, rgb.g, rgb.b } }, .horizontal_gap = preferences.horizontal_gap, .vertical_gap = preferences.vertical_gap, .keys = .{ .bindings = preferences.keybindings, .workspace = true, .report_events = true }, .frame_writer = .init(allocator), .reload_listener = &reload_listener };
     defer {
         var writer: std.Io.Writer.Allocating = .init(allocator);
         defer writer.deinit();

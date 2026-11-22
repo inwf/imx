@@ -42,6 +42,7 @@ pub const Settings = struct {
     completion_enabled: bool = true,
     keybindings: keyboard.Bindings = .{},
     mouse_enabled: bool = false,
+    confirm_session_close: bool = true,
     focused_border_color: vt.color.RGB = .{ .r = 0x96, .g = 0x9c, .b = 0xd5 },
     horizontal_gap: u16 = 0,
     vertical_gap: u16 = 0,
@@ -172,11 +173,16 @@ fn parseDocument(context: Context, contents: []const u8) !Settings {
     if (panes.type != toml.TOML_UNKNOWN) {
         const field = context.child("panes");
         if (panes.type != toml.TOML_TABLE) return field.reject(error.InvalidPanesConfiguration, "expected a table");
-        try validateKeys(field, panes, &.{ "mouse", "focused_border_color", "horizontal_gap", "vertical_gap" });
+        try validateKeys(field, panes, &.{ "mouse", "confirm_session_close", "focused_border_color", "horizontal_gap", "vertical_gap" });
         const mouse = toml.toml_get(panes, "mouse");
         if (mouse.type != toml.TOML_UNKNOWN) {
             if (mouse.type != toml.TOML_BOOLEAN) return field.child("mouse").reject(error.PaneMouseMustBeBoolean, "expected a boolean (true or false)");
             preferences.mouse_enabled = mouse.u.boolean;
+        }
+        const confirm = toml.toml_get(panes, "confirm_session_close");
+        if (confirm.type != toml.TOML_UNKNOWN) {
+            if (confirm.type != toml.TOML_BOOLEAN) return field.child("confirm_session_close").reject(error.ConfirmSessionCloseMustBeBoolean, "expected a boolean (true or false)");
+            preferences.confirm_session_close = confirm.u.boolean;
         }
         const color = toml.toml_get(panes, "focused_border_color");
         if (color.type != toml.TOML_UNKNOWN) {
@@ -242,6 +248,7 @@ test "default configuration matches built-in settings" {
     try std.testing.expectEqual(defaults.completion_enabled, preferences.completion_enabled);
     try std.testing.expectEqualDeep(defaults.keybindings, preferences.keybindings);
     try std.testing.expectEqual(defaults.mouse_enabled, preferences.mouse_enabled);
+    try std.testing.expectEqual(defaults.confirm_session_close, preferences.confirm_session_close);
     try std.testing.expectEqualDeep(defaults.focused_border_color, preferences.focused_border_color);
     try std.testing.expectEqual(defaults.horizontal_gap, preferences.horizontal_gap);
     try std.testing.expectEqual(defaults.vertical_gap, preferences.vertical_gap);

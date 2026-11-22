@@ -21,6 +21,10 @@ enabled = true
 # Enable mouse focus, history scrolling, separator dragging, text selection, session list selection, and preview history scrolling.
 mouse = false
 
+# 关闭窗格会终止可写会话时，请求确认。设置为 false 后立即终止会话及其中的程序。
+# Ask before closing a pane terminates a writable session. Set to false to terminate it and its programs immediately.
+confirm_session_close = true
+
 # 设置聚焦窗格的边框和标题颜色（"#RRGGBB"）。
 # Set the focused pane's border and title color ("#RRGGBB").
 focused_border_color = "#969CD5"
