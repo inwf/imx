@@ -46,7 +46,7 @@ class PaneTerminal:
     def visible(self, value):
         self.wait(lambda: any(value in row for row in self.screen.display))
 
-    def confirm_termination(self, name, key="Y"):
+    def confirm_termination(self, name, key="\r"):
         self.visible(f"Terminate session {name} and its programs?")
         self.child.send(key)
 
@@ -331,7 +331,7 @@ def test_close_shortcut_terminates_focused_session_and_jobs(sessions, initial, m
     application_pid = json.loads(destination.with_suffix(".json").read_text())["pid"]
     terminal.visible("PANE_APPLICATION")
     terminal.child.send(shortcut)
-    terminal.confirm_termination(target, {"legacy": "Y", "kitty": "\x1b[121;2u", "modify": "\x1b[27;2;89~"}[mode])
+    terminal.confirm_termination(target, {"legacy": "\r", "kitty": "\x1b[13u", "modify": "\x1b[27;1;13~"}[mode])
     terminal.wait(lambda: all(f" {pane_id}: " not in row for row in terminal.screen.display))
     sessions.wait(lambda: {row["NAME"]: row["CLIENTS"] for row in sessions.sessions()} == {remaining: "1"})
     sessions.wait(lambda: all(not psutil.pid_exists(pid) for pid in [shell_pid, background_pid, application_pid, backend_pid]))
@@ -356,8 +356,8 @@ def test_detach_then_close_in_one_write_preserves_session(sessions, initial):
     terminal.command("printf '%s' \"$IMX_SESSION\"", "remaining-session", remaining)
 
 
-@pytest.mark.parametrize("cancel,columns", [("\x1b", 100), ("\r", 42)])
-def test_cancel_session_close_keeps_zoom_size_output_and_input(sessions, cancel, columns):
+@pytest.mark.parametrize("columns", [100, 42])
+def test_cancel_session_close_keeps_zoom_size_output_and_input(sessions, columns):
     terminal = PaneTerminal(sessions)
     terminal.split()
     terminal.visible("1: shell")
@@ -379,10 +379,11 @@ def test_cancel_session_close_keeps_zoom_size_output_and_input(sessions, cancel,
     assert "[zoom]" in terminal.screen.display[0]
     assert terminal.screen.buffer[0][4].bg == terminal.screen.buffer[29][0].bg != "default"
     terminal.child.send("y\x1b[200~Y\r\x1b[201~\x1b[121;2:3u\x1bd\x1b[<0;10;3M")
+    assert "Enter: confirm" in terminal.screen.display[-1]
     trigger.touch()
     terminal.visible("LIVE_OUTPUT")
     assert "Esc: cancel" in terminal.screen.display[-1]
-    terminal.child.send(cancel)
+    terminal.child.send("\x1b")
     terminal.wait(lambda: terminal.screen.display[-1].startswith("╚═"))
     assert "[zoom]" in terminal.screen.display[0]
     assert capture.with_suffix(".json").stat().st_mtime_ns == size
@@ -459,7 +460,7 @@ def test_close_shortcut_before_splitting_ends_session(sessions):
     child = sessions.spawn()
     child.send("\x1bw")
     child.expect_screen("Terminate session dev and its programs?")
-    child.send("Y")
+    child.send("\r")
     child.expect(pexpect.EOF)
     child.close()
     assert child.exitstatus == 0

@@ -752,14 +752,14 @@ const App = struct {
         const width = self.size.cols;
         const height = self.size.rows;
         if (width == 0 or height == 0) return;
-        const controls = "Y: terminate  Esc: cancel";
+        const controls = "Enter: confirm  Esc: cancel";
         const message_text = try std.fmt.bufPrint(&self.prompt_buffer, "Terminate session {s} and its programs?  " ++ controls, .{pane.attached.?.value.session});
         if (message_text.len <= width) {
             self.drawPromptRow(height - 1, message_text, style);
             return;
         }
         const question = message_text[0 .. message_text.len - controls.len - 2];
-        const hints: []const u8 = if (width >= controls.len) controls else "Y:yes Esc:no";
+        const hints: []const u8 = if (width >= controls.len) controls else "Enter:yes Esc:no";
         const lines = @min(height - 1, std.math.divCeil(usize, question.len, width) catch unreachable);
         for (0..lines) |line| {
             const start = line * width;
@@ -815,11 +815,9 @@ const App = struct {
             const event = result.event orelse return;
             if (event != .key_press) return;
             const key = event.key_press;
-            if (key.matchExact(vaxis.Key.escape, .{}) or key.matchExact(vaxis.Key.enter, .{})) {
+            if (key.matchExact(vaxis.Key.escape, .{})) {
                 self.cancelConfirmation(confirmation.pane);
-            } else if (key.codepoint == 'y' and key.matchExact('y', .{ .shift = key.mods.shift }) and
-                (if (key.text) |typed| std.mem.eql(u8, typed, "Y") else key.mods.shift != key.mods.caps_lock))
-            {
+            } else if (key.matchExact(vaxis.Key.enter, .{})) {
                 pane.closing = confirmation.request;
                 self.confirmation = null;
                 self.dirty = true;
