@@ -356,8 +356,12 @@ def test_detach_then_close_in_one_write_preserves_session(sessions, initial):
     terminal.command("printf '%s' \"$IMX_SESSION\"", "remaining-session", remaining)
 
 
-@pytest.mark.parametrize("columns", [100, 42])
-def test_cancel_session_close_keeps_zoom_size_output_and_input(sessions, columns):
+@pytest.mark.parametrize("columns,custom_color,foreground", [(100, None, "000000"), (42, "203050", "ffffff")])
+def test_cancel_session_close_keeps_zoom_size_output_and_input(sessions, columns, custom_color, foreground):
+    if custom_color:
+        config = sessions.home / ".config/imx/config.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text(f"[panes]\nfocused_border_color = '#{custom_color}'\n")
     terminal = PaneTerminal(sessions)
     terminal.split()
     terminal.visible("1: shell")
@@ -377,7 +381,11 @@ def test_cancel_session_close_keeps_zoom_size_output_and_input(sessions, columns
     terminal.visible("Terminate session dev and its programs?")
     assert "Esc: cancel" in terminal.screen.display[-1]
     assert "[zoom]" in terminal.screen.display[0]
-    assert terminal.screen.buffer[0][4].bg == terminal.screen.buffer[29][0].bg != "default"
+    border_color = terminal.screen.buffer[0][0].fg
+    assert border_color == (custom_color or "969cd5")
+    for cell in (terminal.screen.buffer[0][4], terminal.screen.buffer[29][0]):
+        assert cell.bg == border_color
+        assert cell.fg == foreground
     terminal.child.send("y\x1b[200~Y\r\x1b[201~\x1b[121;2:3u\x1bd\x1b[<0;10;3M")
     assert "Enter: confirm" in terminal.screen.display[-1]
     trigger.touch()

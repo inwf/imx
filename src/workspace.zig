@@ -745,7 +745,15 @@ const App = struct {
     }
 
     fn drawConfirmation(self: *App, pane: *Pane) !void {
-        const style: vaxis.Style = .{ .fg = .{ .index = 0 }, .bg = .{ .index = 3 }, .bold = true };
+        const rgb = self.focused_border_color.rgb;
+        const background: vt.color.RGB = .{ .r = rgb[0], .g = rgb[1], .b = rgb[2] };
+        const black_contrast = background.contrast(.{ .r = 0, .g = 0, .b = 0 });
+        const white_contrast = background.contrast(.{ .r = 255, .g = 255, .b = 255 });
+        const style: vaxis.Style = .{
+            .fg = .{ .rgb = if (black_contrast >= white_contrast) .{ 0, 0, 0 } else .{ 255, 255, 255 } },
+            .bg = self.focused_border_color,
+            .bold = true,
+        };
         const cache = &pane.render_cache;
         render.drawTitle(&self.vx.screen, pane.rect, self.offset, cache.title[0..cache.title_len], style);
         self.vx.screen.cursor_vis = false;
