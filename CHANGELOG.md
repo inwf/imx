@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.0 — 2026-11-26
+
+### Changed
+
+- In the writable-session close prompt, press Enter to terminate the session and its programs or Esc to cancel. This changes the confirmation key from uppercase Y to Enter. Confirmation remains enabled by default.
+- The close prompt and target pane title now use the focused pane's border color as their background, including custom `panes.focused_border_color` values. Text automatically uses black or white for contrast.
+
 ## 0.20.0 — 2026-11-22
 
 ### Added
